@@ -104,14 +104,22 @@ export function parseCommands(output: string): string[] | null {
   const lines = output.slice(0, -1).split("\n");
   const commands: string[] = [];
   let awaitingCommand = false;
+  let acceptingFileFields = false;
   for (const line of lines) {
     if (/^p[0-9]+$/.test(line)) {
       if (awaitingCommand) return null;
       awaitingCommand = true;
+      acceptingFileFields = false;
     } else if (line.startsWith("c") && line.length > 1) {
       if (!awaitingCommand) return null;
       commands.push(line.slice(1));
       awaitingCommand = false;
+      acceptingFileFields = true;
+    } else if (
+      /^[aCdDFGfgikKlLmMnNoPrRsStTuUzZ].*$/.test(line) &&
+      acceptingFileFields
+    ) {
+      continue;
     } else {
       return null;
     }

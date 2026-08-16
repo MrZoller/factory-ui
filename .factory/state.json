@@ -5,7 +5,7 @@
   "plan_approved": true,
   "current_task": "T9",
   "branch": "factory/t9-peer-fanout",
-  "pr": null,
+  "pr": 9,
   "hold": false,
-  "updated": "2026-08-16T12:02:53Z"
+  "updated": "2026-08-16T12:23:17Z"
 }

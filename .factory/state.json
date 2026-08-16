@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T9",
+  "branch": "factory/t9-peer-fanout",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-16T12:01:39Z"
+  "updated": "2026-08-16T12:02:53Z"
 }

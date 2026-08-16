@@ -545,7 +545,19 @@ describe("config", () => {
           { name: "peer1", origin: "http://localhost:8081" },
         ],
       };
-      expect(() => parseConfig(input)).toThrow("peer names must be unique");
+      expect(() => parseConfig(input)).toThrow(
+        "machine and peer names must be unique",
+      );
+    });
+
+    test("rejects a peer name that collides with the local machine name", () => {
+      const input = {
+        ...baseInput,
+        peers: [{ name: "test-machine", origin: "http://localhost:8080" }],
+      };
+      expect(() => parseConfig(input)).toThrow(
+        "machine and peer names must be unique",
+      );
     });
 
     test("rejects duplicate peer origins", () => {

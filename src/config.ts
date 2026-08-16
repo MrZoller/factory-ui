@@ -270,6 +270,7 @@ export function parseConfig(value: unknown): AppConfig {
     throw new Error("port must be an integer from 1 to 65535");
   }
 
+  const machine = readString(value.machine, "machine", MAX_MACHINE_LENGTH);
   const repositories = value.repositories.map(parseRepository);
   const peers = value.peers.map(parsePeer);
   const developmentOrigins = (developmentValues as unknown[]).map(
@@ -285,8 +286,8 @@ export function parseConfig(value: unknown): AppConfig {
     "repository roots must be unique",
   );
   requireUnique(
-    peers.map(({ name }) => name),
-    "peer names must be unique",
+    [machine, ...peers.map(({ name }) => name)],
+    "machine and peer names must be unique",
   );
   requireUnique(
     peers.map(({ origin }) => origin),
@@ -299,7 +300,7 @@ export function parseConfig(value: unknown): AppConfig {
   );
 
   return {
-    machine: readString(value.machine, "machine", MAX_MACHINE_LENGTH),
+    machine,
     repositories,
     peers,
     port: port as number,

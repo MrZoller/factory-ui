@@ -663,6 +663,66 @@ describe("fleet summary and machine tabs", () => {
     ]);
   });
 
+  test("summarizes an all-stopped machine with stopped liveness styling", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            liveness: {
+              state: "STOPPED",
+              checkedAt: "2026-08-16T11:59:00.000Z",
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    expect(summaryCells(document, "mini")[1]).toBe("STOPPED");
+    expect(
+      summaryRow(document, "mini")?.querySelector(".liveness.stopped"),
+    ).not.toBeNull();
+  });
+
+  test("joins multiple repository tasks and pull requests in repository order", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            name: "api",
+            state: {
+              status: "available",
+              data: { currentTask: "T7", pr: 17, hold: false },
+              warnings: [],
+            },
+          }),
+          richRepository({
+            name: "web",
+            state: {
+              status: "available",
+              data: { currentTask: "T9", pr: 23, hold: false },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    expect(summaryCells(document, "mini").slice(2, 4)).toEqual([
+      "api: T7, web: T9",
+      "api: PR #17, web: PR #23",
+    ]);
+  });
+
   test("switches tabs through click and hash changes, defaulting and falling back to local", () => {
     const document = dashboardDocument();
     const window = document.defaultView!;

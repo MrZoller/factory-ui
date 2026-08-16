@@ -4,3 +4,5 @@ dist/
 .env.*
 .DS_Store
 .factory/logs/
+factory-ui.config*.json
+!factory-ui.config.example.json

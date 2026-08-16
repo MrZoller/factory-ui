@@ -40,10 +40,10 @@ task.
 - [x] T8 (major) — Render the complete local repository dashboard safely
   - acceptance: In `src/public/index.html`, `src/public/app.js`, `src/public/styles.css`, browser-focused tests, and server tests, make current task/branch/PR/hold, active and review work, next runnable work, done and blocked work, open questions, worklog, narration, timing, liveness, warnings, and data age visually distinct and responsive; construct all source-derived content with text nodes or `textContent`, use only API-validated PR URLs with safe external-link behavior, and enforce a restrictive no-inline-script CSP plus `nosniff` and referrer policy; hostile fixtures containing tags, scripts, entities, event handlers, URL schemes, and closing-script text must remain literal and inert (spec 7, 8).
   - deps: T7
-- [~] T9 (standard) — Fan out to peers in the browser with failure isolation
+- [x] T9 (standard) — Fan out to peers in the browser with failure isolation
   - acceptance: In `src/public/app.js`, `src/config.ts`, `src/contracts.ts`, and tests with mocked fetch and clocks, render every configured peer immediately and fetch each peer's `/api/fleet` directly from the browser with fixed timeout and concurrency bounds; keep local and successful peers usable when another request rejects, times out, violates CORS, or returns malformed data; show each failed peer in place as `UNREACHABLE`, never retain its prior data as current, allow refresh recovery, and add no server-side peer proxy (spec 3, 6, 10).
   - deps: T2, T8
-- [ ] T10 (standard) — Document and package three-machine operation
+- [~] T10 (standard) — Document and package three-machine operation
   - acceptance: In `src/index.ts`, `package.json`, `README.md`, `.gitignore`, `factory-ui.config.example.json`, and tests, provide a documented `serve --config <path>` launch path with fail-before-listen validation and port 7777 default; ignore machine-local config while committing a credential-free example for mini, macbook, and legion with different clone paths; document loopback/tailnet binds, peer/CORS symmetry, MagicDNS and ACL assumptions, repository-equivalent trust, fixed limits, `lsof` uncertainty, troubleshooting, and the no-registry/no-proxy read-only model; verify the full test and lint commands are green (spec 1, 5, 10).
   - deps: T9
 

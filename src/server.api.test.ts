@@ -257,6 +257,36 @@ describe("versioned read-only API", () => {
     expect(task.issueUrls).toBeUndefined();
   });
 
+  test.each(["-private", "/private"])(
+    "omits a branch link for rejected branch %s",
+    async (branch) => {
+      const fixture = createFactoryFixture();
+      fixtures.push(fixture);
+      await fixture.writeState({
+        project: "factory-ui",
+        phase: "build",
+        branch,
+        pr: null,
+      });
+      const handler = createRequestHandler(
+        config([
+          {
+            name: "factory-ui",
+            path: fixture.root,
+            githubUrl: "https://github.com/example/factory-ui",
+          },
+        ]),
+      );
+
+      const body = (await (
+        await handler(new Request("http://localhost/api/repo/factory-ui"))
+      ).json()) as Record<string, unknown>;
+
+      expect(body.repositoryUrl).toBe("https://github.com/example/factory-ui");
+      expect(body.branchUrl).toBeUndefined();
+    },
+  );
+
   test("rejects selectors before repository I/O and decodes exactly once", async () => {
     const readRepository = vi.fn(async (_repository: RepositorySource) =>
       unavailable("repo-one"),

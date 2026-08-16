@@ -325,6 +325,163 @@ that span several lines`;
       });
     });
 
+    describe("time field parsing", () => {
+      test("parses entry with time as HH:MM format", () => {
+        const worklog = `- 2026-08-16 14:30 UTC - Started work on T1`;
+        const result = parseFactoryWorklog(worklog);
+        expect(result.status).toBe("available");
+        if (result.status === "available") {
+          expect(result.data.entries[0]!.date).toBe("2026-08-16");
+          expect(result.data.entries[0]!.time).toBe("14:30");
+          expect(result.data.entries[0]!.text).toBe(worklog);
+        }
+      });
+
+      test("parses legacy entry without time field", () => {
+        const worklog = `- 2026-08-16 UTC - Started work on T1`;
+        const result = parseFactoryWorklog(worklog);
+        expect(result.status).toBe("available");
+        if (result.status === "available") {
+          expect(result.data.entries[0]!.date).toBe("2026-08-16");
+          expect(result.data.entries[0]!.time).toBeUndefined();
+        }
+      });
+
+      test("parses mixed old and new format entries in order", () => {
+        const worklog = `- 2026-08-14 UTC - Legacy entry 1
+- 2026-08-15 09:00 UTC - Timed entry 1
+- 2026-08-16 UTC - Legacy entry 2
+- 2026-08-17 23:45 UTC - Timed entry 2`;
+        const result = parseFactoryWorklog(worklog);
+        expect(result.status).toBe("available");
+        if (result.status === "available") {
+          expect(result.data.entries).toHaveLength(4);
+          expect(result.data.entries[0]!.date).toBe("2026-08-14");
+          expect(result.data.entries[0]!.time).toBeUndefined();
+          expect(result.data.entries[1]!.date).toBe("2026-08-15");
+          expect(result.data.entries[1]!.time).toBe("09:00");
+          expect(result.data.entries[2]!.date).toBe("2026-08-16");
+          expect(result.data.entries[2]!.time).toBeUndefined();
+          expect(result.data.entries[3]!.date).toBe("2026-08-17");
+          expect(result.data.entries[3]!.time).toBe("23:45");
+        }
+      });
+
+      test("counts mixed entries identically within bounds", () => {
+        const timedEntries = Array.from(
+          { length: 5 },
+          (_, i) =>
+            `- 2026-08-${String(i + 1).padStart(2, "0")} 12:00 UTC - Entry ${i + 1}`,
+        ).join("\n");
+        const legacyEntries = Array.from(
+          { length: 5 },
+          (_, i) =>
+            `- 2026-08-${String(i + 1).padStart(2, "0")} UTC - Entry ${i + 1}`,
+        ).join("\n");
+
+        const timedResult = parseFactoryWorklog(timedEntries);
+        const legacyResult = parseFactoryWorklog(legacyEntries);
+
+        expect(timedResult.status).toBe("available");
+        expect(legacyResult.status).toBe("available");
+        if (
+          timedResult.status === "available" &&
+          legacyResult.status === "available"
+        ) {
+          expect(timedResult.data.entries).toHaveLength(
+            legacyResult.data.entries.length,
+          );
+          expect(timedResult.data.entries).toHaveLength(5);
+        }
+      });
+
+      test("accepts edge time 00:00", () => {
+        const worklog = `- 2026-08-16 00:00 UTC - Midnight entry`;
+        const result = parseFactoryWorklog(worklog);
+        expect(result.status).toBe("available");
+        if (result.status === "available") {
+          expect(result.data.entries[0]!.time).toBe("00:00");
+        }
+      });
+
+      test("accepts edge time 23:59", () => {
+        const worklog = `- 2026-08-16 23:59 UTC - Late night entry`;
+        const result = parseFactoryWorklog(worklog);
+        expect(result.status).toBe("available");
+        if (result.status === "available") {
+          expect(result.data.entries[0]!.time).toBe("23:59");
+        }
+      });
+
+      test("rejects malformed time 24:00", () => {
+        const worklog = `- 2026-08-16 24:00 UTC - Invalid hour`;
+        const result = parseFactoryWorklog(worklog);
+        expect(result.status).toBe("partial");
+        expect(
+          result.warnings.some((w) => w.code === "WORKLOG_MALFORMED_ENTRY"),
+        ).toBe(true);
+      });
+
+      test("rejects malformed time 9:05 (unpadded hour)", () => {
+        const worklog = `- 2026-08-16 9:05 UTC - Invalid unpadded hour`;
+        const result = parseFactoryWorklog(worklog);
+        expect(result.status).toBe("partial");
+        expect(
+          result.warnings.some((w) => w.code === "WORKLOG_MALFORMED_ENTRY"),
+        ).toBe(true);
+      });
+
+      test("rejects malformed time 13:5 (unpadded minute)", () => {
+        const worklog = `- 2026-08-16 13:5 UTC - Invalid unpadded minute`;
+        const result = parseFactoryWorklog(worklog);
+        expect(result.status).toBe("partial");
+        expect(
+          result.warnings.some((w) => w.code === "WORKLOG_MALFORMED_ENTRY"),
+        ).toBe(true);
+      });
+
+      test("rejects malformed time 13:05:00 (seconds included)", () => {
+        const worklog = `- 2026-08-16 13:05:00 UTC - Invalid with seconds`;
+        const result = parseFactoryWorklog(worklog);
+        expect(result.status).toBe("partial");
+        expect(
+          result.warnings.some((w) => w.code === "WORKLOG_MALFORMED_ENTRY"),
+        ).toBe(true);
+      });
+
+      test("rejects malformed time followed by valid entry", () => {
+        const worklog = `- 2026-08-16 24:00 UTC - Invalid hour
+- 2026-08-17 UTC - Valid entry after invalid`;
+        const result = parseFactoryWorklog(worklog);
+        expect(result.status).toBe("partial");
+        expect(
+          result.warnings.some((w) => w.code === "WORKLOG_MALFORMED_ENTRY"),
+        ).toBe(true);
+        expect(
+          result.warnings.filter((w) => w.code === "WORKLOG_MALFORMED_ENTRY"),
+        ).toHaveLength(1);
+        if (result.status === "partial" || result.status === "available") {
+          expect(result.data.entries).toHaveLength(1);
+          expect(result.data.entries[0]!.date).toBe("2026-08-17");
+        }
+      });
+
+      test("rejects malformed time 9:05 followed by valid entry", () => {
+        const worklog = `- 2026-08-16 9:05 UTC - Invalid unpadded hour
+- 2026-08-17 10:00 UTC - Valid entry after invalid`;
+        const result = parseFactoryWorklog(worklog);
+        expect(result.status).toBe("partial");
+        expect(
+          result.warnings.some((w) => w.code === "WORKLOG_MALFORMED_ENTRY"),
+        ).toBe(true);
+        if (result.status === "partial" || result.status === "available") {
+          expect(result.data.entries).toHaveLength(1);
+          expect(result.data.entries[0]!.date).toBe("2026-08-17");
+          expect(result.data.entries[0]!.time).toBe("10:00");
+        }
+      });
+    });
+
     describe("continuation text handling", () => {
       test("includes continuation lines in entry text", () => {
         const worklog = `- 2026-08-16 UTC - Main entry

@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T13",
+  "branch": "factory/t13-worklog-clock-time",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-16T14:41:13Z"
+  "updated": "2026-08-16T14:41:51Z"
 }

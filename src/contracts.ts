@@ -129,6 +129,7 @@ export interface QuestionsData {
 
 export interface WorklogEntry {
   date: string;
+  time?: string;
   text: string;
 }
 

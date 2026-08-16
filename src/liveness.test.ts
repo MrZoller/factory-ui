@@ -585,23 +585,23 @@ describe("liveness", () => {
 
       test("browser/repository values cannot alter lsof args", async () => {
         const hostileDir = mkdtempSync(join(process.cwd(), "tmp-hostile-"));
-        const hostileLogs = join(hostileDir, ".factory", "logs");
-        mkdirSync(hostileLogs, { recursive: true });
-
-        writeFileSync(
-          join(hostileLogs, "driver-20240101-120000-0.log"),
-          "test",
-        );
-
-        const mockRunner: LivenessDependencies["runner"] = vi.fn(
-          async (): Promise<ProbeResult> => ({
-            exitCode: 1,
-            stdout: "",
-            stderr: "",
-          }),
-        );
-
         try {
+          const hostileLogs = join(hostileDir, ".factory", "logs");
+          mkdirSync(hostileLogs, { recursive: true });
+
+          writeFileSync(
+            join(hostileLogs, "driver-20240101-120000-0.log"),
+            "test",
+          );
+
+          const mockRunner: LivenessDependencies["runner"] = vi.fn(
+            async (): Promise<ProbeResult> => ({
+              exitCode: 1,
+              stdout: "",
+              stderr: "",
+            }),
+          );
+
           await checkRepositoryLiveness(hostileDir, { runner: mockRunner });
           const mockFn = mockRunner as unknown as Mock<ProbeRunner>;
           expect(mockFn.mock.calls).toHaveLength(1);

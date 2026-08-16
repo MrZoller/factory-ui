@@ -62,7 +62,8 @@ network.
   origins; names are at most 64 characters; port range is 1–65535.
 - State: 64 KiB. Plan, questions, and worklog inputs: 256 KiB, 4,096 lines,
   and 8,192 characters per line. Plans expose at most 256 tasks and 32
-  dependencies per task; worklogs expose the newest 20 entries.
+  dependencies per task; questions expose at most 128 entries; worklogs expose
+  the newest 20 entries.
 - Logs: at most 256 directory entries are considered; narration is capped at
   64 KiB, 100 lines, and 2,000 bytes per line.
 - Liveness: the fixed, shell-free `lsof` probe has a two-second timeout and

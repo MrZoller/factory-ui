@@ -112,4 +112,15 @@ describe("distribution artifacts", () => {
     expect(JSON.stringify(source)).not.toContain("password");
     expect(JSON.stringify(source)).not.toContain("token");
   });
+
+  test("documents distinct clone roots and bounded question output", async () => {
+    const readme = await Bun.file(
+      new URL("../README.md", import.meta.url),
+    ).text();
+
+    expect(readme).toContain("/Users/factory/code/factory-ui");
+    expect(readme).toContain("/Users/chris/code/factory-ui");
+    expect(readme).toContain("/home/factory/code/factory-ui");
+    expect(readme).toContain("questions expose at most 128 entries");
+  });
 });

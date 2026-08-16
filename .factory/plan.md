@@ -82,3 +82,7 @@ task.
   - Add `O_NONBLOCK` when opening validated `state.json` so a locally planted FIFO cannot block the fleet snapshot before the existing regular-file check rejects it (PR #2 review).
   - Preserve `.factory/logs` directory and selected-file identity across driver-log selection and the `lsof` probe to harden against concurrent local directory swaps (PR #3 review).
   - Ignore task-shaped lines inside fenced Markdown blocks so documentation examples cannot appear as runnable plan tasks (PR #4 review).
+
+- [~] T12 (standard) — Add MIT license and clean test scratch directories
+  - acceptance: add a root `LICENSE` containing the MIT license text with `Copyright (c) 2026 Chris Zoller`; ensure tests remove `tmp-hostile-*`, `tmp-logs-debug-*`, and `tmp-test-oversized-*` scratch directories on success or failure; remove current scratch-directory litter; add the `tmp-` pattern to `.gitignore`; and pass `bun test` plus `bun run lint`.
+  - deps: none

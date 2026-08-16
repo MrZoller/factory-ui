@@ -29,6 +29,7 @@ function unavailable(name: string): RepositoryFactorySnapshot {
     worklog: { status: "unavailable", warnings: [warning] },
     logs: { status: "unavailable", warnings: [warning] },
     routing: { status: "unavailable", warnings: [warning] },
+    costs: { status: "unavailable", warnings: [warning] },
     liveness: {
       state: "CANNOT_VERIFY",
       checkedAt: "2026-08-16T11:59:00.000Z",

@@ -408,6 +408,8 @@ describe("server", () => {
       );
       const data = await response.json();
       expect(data).toEqual({
+        schemaVersion: 1,
+        generatedAt: expect.any(String),
         hostname: "test-machine",
         repositories: [
           {
@@ -511,7 +513,9 @@ describe("server", () => {
         /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
       );
       expect(data.repositories[0].status).toBe("unavailable");
-      expect(data.repositories[0].warning).toBe("state.json could not be read");
+      expect(data.repositories[0].warning).toBe(
+        "repository state is unavailable",
+      );
     });
   });
 

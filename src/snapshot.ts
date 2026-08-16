@@ -3,6 +3,9 @@ import {
   type FleetSnapshot,
   type RepositorySource,
   type RepositoryFactoryData,
+  type FactoryFleetData,
+  type ReaderResult,
+  type RepositoryFactorySnapshot,
   type RepositorySnapshot,
 } from "./contracts";
 import {
@@ -37,6 +40,70 @@ export async function readRepositoryFactoryData(
     worklog,
     logs: logsRead.result,
     liveness,
+  };
+}
+
+function unavailableResult(code: string, message: string): ReaderResult<never> {
+  return { status: "unavailable", warnings: [{ code, message }] };
+}
+
+export function unavailableRepositoryFactorySnapshot(
+  name: string,
+  checkedAt = new Date().toISOString(),
+): RepositoryFactorySnapshot {
+  return {
+    name,
+    status: "unavailable",
+    warning: "repository data could not be read",
+    state: unavailableResult("STATE_UNAVAILABLE", "state could not be read"),
+    plan: unavailableResult("PLAN_UNAVAILABLE", "plan could not be read"),
+    questions: unavailableResult(
+      "QUESTIONS_UNAVAILABLE",
+      "questions could not be read",
+    ),
+    worklog: unavailableResult(
+      "WORKLOG_UNAVAILABLE",
+      "worklog could not be read",
+    ),
+    logs: unavailableResult("LOGS_UNAVAILABLE", "logs could not be read"),
+    liveness: { state: "CANNOT_VERIFY", checkedAt },
+  };
+}
+
+export async function readRepositoryFactorySnapshot(
+  repository: RepositorySource,
+): Promise<RepositoryFactorySnapshot> {
+  const data = await readRepositoryFactoryData(repository);
+  const state =
+    data.state.status === "unavailable" ? undefined : data.state.data;
+  const available = state?.project !== undefined && state.phase !== undefined;
+  return {
+    ...data,
+    status: available ? "available" : "unavailable",
+    ...(available
+      ? { project: state.project, phase: state.phase }
+      : { warning: "repository state is unavailable" }),
+  };
+}
+
+export async function createFactoryFleetData(
+  config: AppConfigSource,
+  readRepository: (
+    repository: RepositorySource,
+  ) => Promise<RepositoryFactorySnapshot> = readRepositoryFactorySnapshot,
+): Promise<FactoryFleetData> {
+  return {
+    hostname: config.machine,
+    repositories: await Promise.all(
+      config.repositories.map(async (repository) => {
+        try {
+          return await readRepository(repository);
+        } catch {
+          return unavailableRepositoryFactorySnapshot(repository.name);
+        }
+      }),
+    ),
+    peers: config.peers,
   };
 }
 

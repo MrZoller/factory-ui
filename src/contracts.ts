@@ -165,3 +165,29 @@ export interface RepositoryFactoryData {
   logs: ReaderResult<LogsData>;
   liveness: LivenessSnapshot;
 }
+
+export const API_SCHEMA_VERSION = 1 as const;
+
+export interface RepositoryFactorySnapshot extends RepositoryFactoryData {
+  status: "available" | "unavailable";
+  project?: string;
+  phase?: FactoryPhase;
+  warning?: string;
+}
+
+export interface FactoryFleetData {
+  hostname: string;
+  repositories: RepositoryFactorySnapshot[];
+  peers: PeerConfig[];
+}
+
+export interface FleetApiResponse extends FactoryFleetData {
+  schemaVersion: typeof API_SCHEMA_VERSION;
+  generatedAt: string;
+}
+
+export interface RepositoryApiResponse extends RepositoryFactorySnapshot {
+  schemaVersion: typeof API_SCHEMA_VERSION;
+  generatedAt: string;
+  hostname: string;
+}

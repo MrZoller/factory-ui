@@ -28,7 +28,7 @@ task.
 - [x] T4 (standard) — Parse bounded state and runnable plan data
   - acceptance: In `src/readers/state.ts`, `src/readers/plan.ts`, `src/test-support.ts`, `src/contracts.ts`, and tests, conservatively parse the approved state fields and exact top-level `[ ]`, `[~]`, `[R]`, `[x]`, and `[!]` plan tasks with sizes and dependencies; group active/review, next runnable, completed, blocked, and remaining work without treating nested bullets as tasks; mark work runnable only when all declared dependencies are completed; return bounded partial/unavailable results and warnings for missing, malformed, duplicate, oversized, hostile, or partially written input without inventing values or losing configured repository identity (spec 2, 5, 7).
   - deps: T2
-- [~] T5 (standard) — Add open-question and recent-worklog readers
+- [R] T5 (standard) — Add open-question and recent-worklog readers
   - acceptance: In `src/readers/questions.ts`, `src/readers/worklog.ts`, `src/snapshot.ts`, `src/contracts.ts`, and tests, return only explicitly open questions and the newest bounded worklog entries supported by the factory protocol; preserve question, narration, and worklog text verbatim within byte, entry, line, and line-length limits; treat Markdown and HTML as uninterpreted text; and produce explicit warnings rather than crashes for empty, malformed, oversized, hostile, or partially written content (spec 2, 5, 7, 8).
   - deps: T4
 - [ ] T6 (standard) — Add bounded narration, timing, and source-age data

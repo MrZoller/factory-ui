@@ -5,7 +5,11 @@ import {
   type RepositoryFactoryData,
   type RepositorySnapshot,
 } from "./contracts";
-import { checkRepositoryLiveness } from "./liveness";
+import {
+  checkRepositoryLiveness,
+  checkTrustedDriverLiveness,
+} from "./liveness";
+import { readFactoryLogsWithSelection } from "./readers/logs";
 import { readFactoryPlan } from "./readers/plan";
 import { readFactoryQuestions } from "./readers/questions";
 import { readFactoryState } from "./readers/state";
@@ -15,14 +19,25 @@ export { MAX_PROJECT_LENGTH, MAX_STATE_BYTES } from "./readers/state";
 
 export async function readRepositoryFactoryData(
   repository: RepositorySource,
+  readLiveness: typeof checkTrustedDriverLiveness = checkTrustedDriverLiveness,
 ): Promise<RepositoryFactoryData> {
-  const [state, plan, questions, worklog] = await Promise.all([
+  const [state, plan, questions, worklog, logsRead] = await Promise.all([
     readFactoryState(repository.path),
     readFactoryPlan(repository.path),
     readFactoryQuestions(repository.path),
     readFactoryWorklog(repository.path),
+    readFactoryLogsWithSelection(repository.path),
   ]);
-  return { name: repository.name, state, plan, questions, worklog };
+  const liveness = await readLiveness(logsRead.driver);
+  return {
+    name: repository.name,
+    state,
+    plan,
+    questions,
+    worklog,
+    logs: logsRead.result,
+    liveness,
+  };
 }
 
 export async function readRepositorySnapshot(

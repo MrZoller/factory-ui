@@ -869,6 +869,22 @@ describe("logs reader", () => {
       ).toBe(true);
       expect(result.driver).toBeNull();
     });
+
+    test("rejects a logs directory swap while reading the selected driver", async () => {
+      const filename = "driver-20240101-120000-0.log";
+      writeFileSync(join(logsDir, filename), "content\n");
+
+      const result = await readFactoryLogsWithSelection(tempDir, {
+        afterOpen: () => {
+          renameSync(logsDir, `${logsDir}.replaced`);
+          mkdirSync(logsDir);
+          writeFileSync(join(logsDir, filename), "replacement\n");
+        },
+      });
+
+      expect(result.result.status).toBe("unavailable");
+      expect(result.driver).toBeNull();
+    });
   });
 
   describe("timing derivation", () => {
@@ -1080,6 +1096,23 @@ describe("logs reader", () => {
       expect(liveness.state).toBe("CANNOT_VERIFY");
     });
 
+    test("returns CANNOT_VERIFY when the logs directory is swapped during lsof", async () => {
+      const filename = "driver-20240101-120000-0.log";
+      writeFileSync(join(logsDir, filename), "test");
+      const logsRead = await readFactoryLogsWithSelection(tempDir);
+
+      const liveness = await checkTrustedDriverLiveness(logsRead.driver, {
+        runner: async () => {
+          renameSync(logsDir, `${logsDir}.replaced`);
+          mkdirSync(logsDir);
+          writeFileSync(join(logsDir, filename), "replacement");
+          return { exitCode: 1, stdout: "", stderr: "" };
+        },
+      });
+
+      expect(liveness.state).toBe("CANNOT_VERIFY");
+    });
+
     test("returns CANNOT_VERIFY when log dev/inode changes", async () => {
       const content = "test";
       const filepath = join(logsDir, "driver-20240101-120000-0.log");
@@ -1135,6 +1168,9 @@ describe("logs reader", () => {
         expect(result.driver.path).toBe(filepath);
         expect(typeof result.driver.device).toBe("bigint");
         expect(typeof result.driver.inode).toBe("bigint");
+        expect(result.driver.directoryPath).toBe(logsDir);
+        expect(typeof result.driver.directoryDevice).toBe("bigint");
+        expect(typeof result.driver.directoryInode).toBe("bigint");
       }
     });
 

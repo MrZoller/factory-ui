@@ -38,7 +38,12 @@ export interface TrustedDriverLog {
   path: string;
   device: bigint;
   inode: bigint;
+  directoryPath: string;
+  directoryDevice: bigint;
+  directoryInode: bigint;
 }
+
+type OpenedDriverLog = Pick<TrustedDriverLog, "path" | "device" | "inode">;
 
 export interface FactoryLogsRead {
   result: ReaderResult<LogsData>;
@@ -205,7 +210,7 @@ async function readSelected(
   dependencies: LogReaderDependencies,
 ): Promise<{
   timing: LogTiming;
-  trusted?: TrustedDriverLog;
+  trusted?: OpenedDriverLog;
   narration?: string;
 }> {
   const path = join(logsPath, selected.name);
@@ -226,7 +231,7 @@ async function readSelected(
     const modifiedAt = new Date(Number(opened.mtimeMs));
     const value: {
       timing: LogTiming;
-      trusted?: TrustedDriverLog;
+      trusted?: OpenedDriverLog;
       narration?: string;
     } = { timing: timing(selected.parsed.startedAt, modifiedAt) };
     if (value.timing.durationMs === undefined) {
@@ -301,94 +306,126 @@ export async function readFactoryLogsWithSelection(
         driver: null,
       };
     }
+    const directoryHandle = await open(
+      logsPath,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_DIRECTORY,
+    );
+    const openedDirectory = await directoryHandle.stat({ bigint: true });
+    const verifyDirectory = async (): Promise<void> => {
+      const currentDirectory = await lstat(logsPath, { bigint: true });
+      if (
+        !openedDirectory.isDirectory() ||
+        !currentDirectory.isDirectory() ||
+        openedDirectory.dev !== currentDirectory.dev ||
+        openedDirectory.ino !== currentDirectory.ino
+      ) {
+        throw new Error("logs directory changed");
+      }
+    };
+    await verifyDirectory();
     const selected: Partial<Record<LogKind, SelectedLog>> = {};
     let entries = 0;
-    const directory = await opendir(logsPath);
-    for await (const entry of directory) {
-      entries += 1;
-      if (entries > MAX_LOG_ENTRIES) throw new Error("too many log entries");
-      const parsed = entry.isFile() ? parseLogName(entry.name) : null;
-      if (parsed === null) {
-        if (/^(driver|cycle|shepherd)-/.test(entry.name)) {
+    try {
+      const directory = await opendir(logsPath);
+      for await (const entry of directory) {
+        entries += 1;
+        if (entries > MAX_LOG_ENTRIES) throw new Error("too many log entries");
+        const parsed = entry.isFile() ? parseLogName(entry.name) : null;
+        if (parsed === null) {
+          if (/^(driver|cycle|shepherd)-/.test(entry.name)) {
+            addWarning(
+              warnings,
+              warning(
+                "LOG_NAME_INVALID",
+                "factory logs contain an unrecognized log name",
+              ),
+            );
+          }
+          continue;
+        }
+        const candidate = { name: entry.name, parsed };
+        if (isNewer(candidate, selected[parsed.kind]))
+          selected[parsed.kind] = candidate;
+      }
+      await verifyDirectory();
+
+      const data: LogsData = { narration: "", asOf: {} };
+      let trusted: TrustedDriverLog | null = null;
+      for (const kind of ["driver", "cycle", "shepherd"] as const) {
+        const choice = selected[kind];
+        if (choice === undefined) continue;
+        try {
+          await verifyDirectory();
+          const value = await readSelected(
+            logsPath,
+            choice,
+            kind === "driver",
+            warnings,
+            dependencies,
+          );
+          await verifyDirectory();
+          data[kind] = value.timing;
+          data.asOf[kind] = value.timing.lastActivityAt;
+          if (kind === "driver") {
+            data.narration = value.narration ?? "";
+            trusted = value.trusted
+              ? {
+                  ...value.trusted,
+                  directoryPath: logsPath,
+                  directoryDevice: openedDirectory.dev,
+                  directoryInode: openedDirectory.ino,
+                }
+              : null;
+          }
+        } catch {
           addWarning(
             warnings,
-            warning(
-              "LOG_NAME_INVALID",
-              "factory logs contain an unrecognized log name",
-            ),
+            warning("LOG_UNAVAILABLE", `${kind} log could not be read safely`),
           );
         }
-        continue;
       }
-      const candidate = { name: entry.name, parsed };
-      if (isNewer(candidate, selected[parsed.kind]))
-        selected[parsed.kind] = candidate;
-    }
-
-    const data: LogsData = { narration: "", asOf: {} };
-    let trusted: TrustedDriverLog | null = null;
-    for (const kind of ["driver", "cycle", "shepherd"] as const) {
-      const choice = selected[kind];
-      if (choice === undefined) continue;
-      try {
-        const value = await readSelected(
-          logsPath,
-          choice,
-          kind === "driver",
-          warnings,
-          dependencies,
-        );
-        data[kind] = value.timing;
-        data.asOf[kind] = value.timing.lastActivityAt;
-        if (kind === "driver") {
-          data.narration = value.narration ?? "";
-          trusted = value.trusted ?? null;
-        }
-      } catch {
+      await verifyDirectory();
+      const ages = Object.values(data.asOf).filter(
+        (value): value is string => typeof value === "string",
+      );
+      if (ages.length > 0) data.asOf.overall = ages.sort().at(-1);
+      if (data.driver === undefined) {
         addWarning(
           warnings,
-          warning("LOG_UNAVAILABLE", `${kind} log could not be read safely`),
+          warning("DRIVER_LOG_MISSING", "no usable driver log was found"),
         );
       }
-    }
-    const ages = Object.values(data.asOf).filter(
-      (value): value is string => typeof value === "string",
-    );
-    if (ages.length > 0) data.asOf.overall = ages.sort().at(-1);
-    if (data.driver === undefined) {
-      addWarning(
-        warnings,
-        warning("DRIVER_LOG_MISSING", "no usable driver log was found"),
-      );
-    }
-    if (
-      data.driver === undefined &&
-      data.cycle === undefined &&
-      data.shepherd === undefined
-    ) {
+      if (
+        data.driver === undefined &&
+        data.cycle === undefined &&
+        data.shepherd === undefined
+      ) {
+        return {
+          result: {
+            status: "unavailable",
+            warnings:
+              warnings.length > 0
+                ? warnings
+                : [
+                    warning(
+                      "LOGS_EMPTY",
+                      "no recognized factory logs were found",
+                    ),
+                  ],
+          },
+          driver: null,
+        };
+      }
       return {
-        result: {
-          status: "unavailable",
-          warnings:
-            warnings.length > 0
-              ? warnings
-              : [
-                  warning(
-                    "LOGS_EMPTY",
-                    "no recognized factory logs were found",
-                  ),
-                ],
-        },
-        driver: null,
+        result:
+          warnings.length === 0
+            ? { status: "available", data, warnings: [] }
+            : { status: "partial", data, warnings },
+        driver: trusted,
       };
+    } finally {
+      await directoryHandle.close();
     }
-    return {
-      result:
-        warnings.length === 0
-          ? { status: "available", data, warnings: [] }
-          : { status: "partial", data, warnings },
-      driver: trusted,
-    };
   } catch {
     return {
       result: {

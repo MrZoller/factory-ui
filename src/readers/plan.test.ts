@@ -325,6 +325,45 @@ describe("plan", () => {
     });
 
     describe("dependency parsing", () => {
+      test("ignores task-shaped lines inside Markdown fences", () => {
+        const result = parseFactoryPlan(`\`\`\`markdown
+- [ ] T99 (major) — Documentation example
+  - deps: none
+\`\`\`
+- [ ] T1 (standard) — Real task
+  - deps: none`);
+
+        expect(result.status).toBe("available");
+        if (result.status === "available") {
+          expect(result.data.tasks.map((task) => task.id)).toEqual(["T1"]);
+        }
+      });
+
+      test("accepts issue references followed by colon, bang, or question punctuation", () => {
+        const result = parseFactoryPlan(`- [ ] T17 (standard) — Link work
+  - acceptance: Fixes #12: detail; Fixes #13! Fixes #14?
+  - deps: none`);
+
+        expect(result.status).toBe("available");
+        if (result.status === "available") {
+          expect(result.data.tasks[0]?.issueNumbers).toEqual([12, 13, 14]);
+        }
+      });
+
+      test("warns when PR metadata is present with an empty value", () => {
+        const result = parseFactoryPlan(`- [ ] T17 (standard) — Link work
+  - pr:
+  - deps: none`);
+
+        expect(result.status).toBe("partial");
+        if (result.status === "partial") {
+          expect(result.data.tasks[0]).toHaveProperty("pr", undefined);
+        }
+        expect(result.warnings.map((warning) => warning.code)).toContain(
+          "PLAN_MALFORMED_PR",
+        );
+      });
+
       test("ignores malformed PR and Fixes values with bounded warnings", () => {
         const plan = `- [ ] T17 (standard) — Link GitHub work
   - acceptance: Fixes #0, Fixes #-3, Fixes #9007199254740992

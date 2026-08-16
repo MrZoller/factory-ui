@@ -128,6 +128,12 @@ export function parseFactoryCosts(bytes: Uint8Array): ReaderResult<CostsData> {
       "costs.json contains a missing or invalid field",
     );
   }
+  if (value.currency !== "USD") {
+    return unavailable(
+      "COSTS_UNSUPPORTED_CURRENCY",
+      "costs.json currency must be USD",
+    );
+  }
 
   const taskEntries = Object.entries(value.tasks);
   if (taskEntries.length > MAX_COST_TASKS) {

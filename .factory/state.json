@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T23",
-  "branch": "factory/t23-task-costs",
-  "pr": 23,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-16T20:50:53Z"
+  "updated": "2026-08-16T21:08:00Z"
 }

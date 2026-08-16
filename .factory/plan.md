@@ -87,6 +87,8 @@ task.
   - Distinguish a successfully fetched but already-old snapshot from `refresh failed`; T20's closed reason set currently has no truthful age-only reason (T20 panel review).
   - Guard peer-timeout status updates by load generation so a late timeout from an older overlapping refresh cannot temporarily mark a newer successful snapshot stale (PR #20 review).
   - Add `overflow-wrap: anywhere` to the dynamic dashboard machine heading so a valid long unbroken configured hostname cannot be clipped by the no-horizontal-body-scroll layout (PR #21 review).
+  - Reject or visibly segregate non-USD `costs.json` data so the UI never formats another currency as dollars or mixes currencies in aggregate totals (PR #23 review).
+  - Prevent finite per-task USD counters from overflowing aggregate repository, machine, or fleet totals to `$Infinity` (PR #23 review).
 
 - [x] T12 (standard) — Add MIT license and clean test scratch directories
   - acceptance: add a root `LICENSE` containing the MIT license text with `Copyright (c) 2026 Chris Zoller`; ensure tests remove `tmp-hostile-*`, `tmp-logs-debug-*`, and `tmp-test-oversized-*` scratch directories on success or failure; remove current scratch-directory litter; add the `tmp-` pattern to `.gitignore`; and pass `bun test` plus `bun run lint`.
@@ -141,7 +143,7 @@ task.
   - deps: T21
   - pr: 22
 
-- [R] T23 (standard) — Show what each task cost
+- [x] T23 (standard) — Show what each task cost
   - acceptance: The factory engine now writes `.factory/logs/costs.json` (schemaVersion 1: `recordedAt`, `currency`, `tasks.<T-id|unattributed>.{usd,messages,sessions,tokens{input,output,reasoning,cacheRead,cacheWrite},byModel{"<provider>/<model>": same counters},firstAt,lastAt}`; metered lanes carry real USD, subscription lanes report 0 and count as tokens). In `src/paths.ts`, `src/readers/`, `src/contracts.ts`, `src/snapshot.ts`, `src/public/app.js`, `src/public/styles.css`, README, and colocated tests: add `logs/costs.json` as a fixed documented `.factory` read target (same containment/symlink/size/type checks; bounded ≤ 64 KiB), parse it into a bounded, validated `costs` reader result on the repository snapshot (unknown keys ignored; missing/oversized/unparseable/wrong schemaVersion → `unavailable` with a warning; task-id keys validated `^T[1-9][0-9]*$` or `unattributed`; numbers finite and non-negative; at most 256 tasks and 64 models per task); render on each task line a compact metered cost (`$1.23`) with tokens on a title/secondary line, and `sub` (tokens only) when usd is 0 but tokens are non-zero; show `unattributed` and a per-repository metered total in the repository strip row and a per-machine total in the fleet strip; a task with no entry shows nothing (not `$0`); hostile keys/values remain literal and inert; document the target and schema in the README's read-surface section (spec 3, 7, 8). External dependency: opencode-factory writes the file (PR pending at task start); until it lands the reader reports `Unavailable`.
   - deps: T21
   - pr: 23

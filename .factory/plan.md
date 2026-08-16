@@ -86,6 +86,7 @@ task.
   - Warn when a present `pr:` metadata line has an empty value rather than silently treating it as absent (PR #17 review).
   - Distinguish a successfully fetched but already-old snapshot from `refresh failed`; T20's closed reason set currently has no truthful age-only reason (T20 panel review).
   - Guard peer-timeout status updates by load generation so a late timeout from an older overlapping refresh cannot temporarily mark a newer successful snapshot stale (PR #20 review).
+  - Add `overflow-wrap: anywhere` to the dynamic dashboard machine heading so a valid long unbroken configured hostname cannot be clipped by the no-horizontal-body-scroll layout (PR #21 review).
 
 - [x] T12 (standard) — Add MIT license and clean test scratch directories
   - acceptance: add a root `LICENSE` containing the MIT license text with `Copyright (c) 2026 Chris Zoller`; ensure tests remove `tmp-hostile-*`, `tmp-logs-debug-*`, and `tmp-test-oversized-*` scratch directories on success or failure; remove current scratch-directory litter; add the `tmp-` pattern to `.gitignore`; and pass `bun test` plus `bun run lint`.
@@ -130,7 +131,7 @@ task.
   - deps: T19
   - pr: 20
 
-- [R] T21 (standard) — UI design pass: layout grid, card alignment, spacing and type rhythm
+- [x] T21 (standard) — UI design pass: layout grid, card alignment, spacing and type rhythm
   - acceptance: In `src/public/index.html`, `src/public/styles.css`, `src/public/app.js` (structure only — no behaviour change), and colocated tests: introduce a documented design system in `styles.css` — CSS custom properties for a spacing scale, type scale, radii, and light/dark colour tokens (theme-aware, honouring `prefers-color-scheme` and any existing theme hook) — and lay every repository panel out on a single 12-column CSS grid with explicit, consistent card spans (e.g. Current 8 + Active 4; In review / Next runnable / Blocked 4+4+4; Completed 6 + Open questions 6; Worklog / Logs / Warnings on the same grid) so cards in a row share edges and rows share gutters, with a defined collapse order at narrow widths (≥ 1200 three-up, ≥ 800 two-up, else one column) and no horizontal body scroll; align task-line elements on shared columns (id, title, size label right-aligned on a fixed column, `deps:` on its own muted line) so size labels no longer float at differing x; make empty-state cards (`None`) compact rather than min-height-padded; unify header, strip, tab, and card typography (weights, tracking, mono for identifiers only) and status pill styling; keep every source-derived string a text node and the CSP unchanged; tests assert the grid classes/spans on each card and that no rendering behaviour (tristate text, badges, links) changed. Motivation: Screenshot 2026-08-16 2:03 PM — Current+Active leave a third of the width empty, the three middle cards have three different widths, Completed is narrow beside a wide Open questions.
   - deps: T20
   - pr: 21

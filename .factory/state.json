@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T21",
-  "branch": "factory/t21-dashboard-design-grid",
-  "pr": 21,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-16T20:01:56Z"
+  "updated": "2026-08-16T20:10:18Z"
 }

@@ -20,6 +20,22 @@ export const MAX_NARRATION_LINES = 100;
 export const MAX_NARRATION_LINE_BYTES = 2_000;
 const MAX_WARNINGS = 16;
 
+export const LOGS_WARNING_CODES = [
+  "WARNINGS_TRUNCATED",
+  "LOG_NARRATION_TRUNCATED",
+  "LOG_LINE_TOO_LONG",
+  "LOG_LINES_TRUNCATED",
+  "LOG_INVALID_UTF8",
+  "LOG_INVALID_DURATION",
+  "LOG_CHANGED_DURING_READ",
+  "LOGS_MISSING",
+  "LOG_NAME_INVALID",
+  "LOG_UNAVAILABLE",
+  "DRIVER_LOG_MISSING",
+  "LOGS_EMPTY",
+  "LOGS_UNAVAILABLE",
+] as const;
+
 export type LogKind = "driver" | "cycle" | "shepherd";
 
 export interface ParsedLogName {

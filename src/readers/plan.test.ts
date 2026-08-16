@@ -14,6 +14,7 @@ import {
 } from "./plan";
 import { readRepositoryFactoryData } from "../snapshot";
 import { type PlanData, type PlanTask } from "../contracts";
+import { MAX_WARNING_EXCERPT_CODE_POINTS } from "./warnings";
 
 describe("plan", () => {
   describe("constants", () => {
@@ -74,9 +75,14 @@ describe("plan", () => {
     describe("line length validation", () => {
       test("returns unavailable for line exceeding MAX_PLAN_LINE_LENGTH", () => {
         const longLine = `- [ ] T1 (standard) — ${"x".repeat(MAX_PLAN_LINE_LENGTH + 1)}`;
-        const result = parseFactoryPlan(longLine);
+        const result = parseFactoryPlan(`first\n${longLine}`);
         expect(result.status).toBe("unavailable");
         expect(result.warnings[0]!.code).toBe("PLAN_LINE_TOO_LONG");
+        expect(result.warnings[0]!.line).toBe(2);
+        expect(Array.from(result.warnings[0]!.excerpt ?? "")).toHaveLength(
+          MAX_WARNING_EXCERPT_CODE_POINTS,
+        );
+        expect(result.warnings[0]!.excerpt?.endsWith("…")).toBe(true);
       });
 
       test("returns partial for line with exactly MAX_PLAN_LINE_LENGTH (missing deps)", () => {
@@ -288,6 +294,23 @@ describe("plan", () => {
         expect(
           result.warnings.some((w) => w.code === "PLAN_MALFORMED_TASK"),
         ).toBe(true);
+      });
+
+      test("bounds a hostile warning excerpt by Unicode code points", () => {
+        const source = `- [?] T1 (standard) — <img onerror=alert(1)>\u0000${"😀".repeat(220)}`;
+        const result = parseFactoryPlan(source);
+        const warning = result.warnings.find(
+          (item) => item.code === "PLAN_MALFORMED_TASK",
+        );
+
+        expect(warning?.line).toBe(1);
+        expect(warning?.excerpt?.startsWith("- [?] T1")).toBe(true);
+        expect(warning?.excerpt).toContain("<img onerror=alert(1)>");
+        expect(warning?.excerpt).toContain("\u0000");
+        expect(Array.from(warning?.excerpt ?? "")).toHaveLength(
+          MAX_WARNING_EXCERPT_CODE_POINTS,
+        );
+        expect(warning?.excerpt?.endsWith("…")).toBe(true);
       });
 
       test("warns about malformed task line (lowercase t)", () => {

@@ -104,6 +104,38 @@ describe("snapshot", () => {
     }
   });
 
+  test("carries a reader warning line excerpt through the repository snapshot", async () => {
+    const root = mkdtempSync(
+      join(process.cwd(), "tmp-factory-warning-excerpt-"),
+    );
+    const factoryPath = join(root, ".factory");
+    mkdirSync(factoryPath);
+    const sourceLine = `- [?] T1 (standard) — <img onerror=alert(1)>\u0001${"x".repeat(8_192)}`;
+    try {
+      await Promise.all([
+        Bun.write(
+          join(factoryPath, "state.json"),
+          JSON.stringify({ project: "factory-ui", phase: "build" }),
+        ),
+        Bun.write(join(factoryPath, "plan.md"), sourceLine),
+      ]);
+
+      const result = await readRepositoryFactoryData({
+        name: "factory-ui",
+        path: root,
+      });
+
+      expect(result.plan.warnings).toContainEqual({
+        code: "PLAN_LINE_TOO_LONG",
+        message: "plan.md contains an oversized line",
+        line: 1,
+        excerpt: `${Array.from(sourceLine).slice(0, 199).join("")}…`,
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   describe("readRepositorySnapshot", () => {
     let tempDir: string;
 

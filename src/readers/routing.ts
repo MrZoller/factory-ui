@@ -11,6 +11,19 @@ export const MAX_AGENT_NAME_LENGTH = 128;
 export const MAX_ROUTING_STRING_LENGTH = 1024;
 export const MAX_ROUTING_STEPS = 1_000_000;
 
+export const ROUTING_WARNING_CODES = [
+  "ROUTING_INVALID_UTF8",
+  "ROUTING_INVALID_JSON",
+  "ROUTING_INVALID_ROOT",
+  "ROUTING_UNSUPPORTED_SCHEMA",
+  "ROUTING_INVALID_FIELD",
+  "ROUTING_TOO_MANY_AGENTS",
+  "ROUTING_INVALID_AGENT",
+  "ROUTING_MISSING",
+  "ROUTING_TOO_LARGE",
+  "ROUTING_UNAVAILABLE",
+] as const;
+
 const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

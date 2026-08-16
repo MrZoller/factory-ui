@@ -86,3 +86,7 @@ task.
 - [x] T12 (standard) — Add MIT license and clean test scratch directories
   - acceptance: add a root `LICENSE` containing the MIT license text with `Copyright (c) 2026 Chris Zoller`; ensure tests remove `tmp-hostile-*`, `tmp-logs-debug-*`, and `tmp-test-oversized-*` scratch directories on success or failure; remove current scratch-directory litter; add the `tmp-` pattern to `.gitignore`; and pass `bun test` plus `bun run lint`.
   - deps: none
+
+- [ ] T13 (standard) — Accept and display a UTC clock time in worklog entry stamps
+  - acceptance: In `src/readers/worklog.ts`, `src/contracts.ts`, `src/public/app.js`, `README.md`, and colocated tests, accept worklog entries stamped either `- YYYY-MM-DD UTC - ` (current form) or `- YYYY-MM-DD HH:MM UTC - ` (new form; 24-hour, zero-padded, `00`–`23` / `00`–`59`); expose an optional per-entry `time` field (`"HH:MM"`, absent when the stamp carries no time) alongside the existing `date`; render each entry heading text-only as `YYYY-MM-DD HH:MM UTC` when a time is present and `YYYY-MM-DD` otherwise; entries in either form parse, order, and count against the existing bounds identically; a malformed time (`24:00`, `9:05`, `13:5`, `13:05:00`) is rejected as a malformed line exactly like a malformed date; the README documents both stamp forms. Motivation: the factory protocol is moving its worklog stamp from date-only to date + `HH:MM` UTC (opencode-factory), and mixed-form worklogs must keep rendering.
+  - deps: none

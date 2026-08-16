@@ -50,9 +50,46 @@ p {
   color: #ffad8a;
 }
 
+.machine-list,
 .repository-grid {
   display: grid;
   gap: 1.5rem;
+}
+
+.machine {
+  display: grid;
+  gap: 1rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #385047;
+}
+
+.machine > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem 1rem;
+}
+
+.machine > header h2,
+.machine > header p {
+  margin-bottom: 0;
+}
+
+.peer-status {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+}
+
+.peer-status.loading {
+  color: #9fc4ff;
+}
+
+.peer-status.unreachable {
+  color: #ffad8a;
 }
 
 .repository {

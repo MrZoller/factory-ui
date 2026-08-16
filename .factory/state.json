@@ -5,7 +5,7 @@
   "plan_approved": true,
   "current_task": "T2",
   "branch": "factory/t2-security-boundaries",
-  "pr": null,
-  "hold": false,
-  "updated": "2026-08-16T02:59:53Z"
+  "pr": 2,
+  "hold": true,
+  "updated": "2026-08-16T03:27:27Z"
 }

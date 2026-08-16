@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T4",
-  "branch": "factory/t4-parse-state-plan",
-  "pr": 4,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-16T07:19:00Z"
+  "updated": "2026-08-16T07:29:03Z"
 }

@@ -84,6 +84,7 @@ task.
   - Ignore task-shaped lines inside fenced Markdown blocks so documentation examples cannot appear as runnable plan tasks (PR #4 review).
   - Recognize `Fixes #N` references followed by `:`, `!`, or `?` punctuation without treating the valid issue number as malformed (PR #17 review).
   - Warn when a present `pr:` metadata line has an empty value rather than silently treating it as absent (PR #17 review).
+  - Distinguish a successfully fetched but already-old snapshot from `refresh failed`; T20's closed reason set currently has no truthful age-only reason (T20 panel review).
 
 - [x] T12 (standard) — Add MIT license and clean test scratch directories
   - acceptance: add a root `LICENSE` containing the MIT license text with `Copyright (c) 2026 Chris Zoller`; ensure tests remove `tmp-hostile-*`, `tmp-logs-debug-*`, and `tmp-test-oversized-*` scratch directories on success or failure; remove current scratch-directory litter; add the `tmp-` pattern to `.gitignore`; and pass `bun test` plus `bun run lint`.

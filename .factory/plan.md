@@ -16,7 +16,7 @@ task.
 
 ## Tasks
 
-- [~] T1 (standard) — Ship a loopback local-dashboard walking skeleton
+- [R] T1 (standard) — Ship a loopback local-dashboard walking skeleton
   - acceptance: In `src/config.ts`, `src/contracts.ts`, `src/snapshot.ts`, `src/server.ts`, `src/index.ts`, and `src/public/`, load a minimal JSON config containing a machine name, multiple named clone paths, peers, and an optional port defaulting to 7777; serve loopback only; make `GET /api/fleet` return hostname plus bounded project/phase data from each clone's `state.json`; make `GET /` fetch and render that local data with text-only DOM APIs; isolate a missing or malformed clone, return 404/405 for unsupported requests, and cover the handler/config/temp-tree behavior with Bun tests; format `BRIEF.md` so the existing full lint command is green (spec 1, 2, 5, 6, 8, 9).
   - deps: none
 - [ ] T2 (major) — Establish configuration, filesystem, bind, and CORS boundaries

@@ -7,4 +7,11 @@ export function renderFleet(
 export function loadFleet(
   documentRoot?: Document,
   fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+  dependencies?: {
+    setTimeout?: typeof globalThis.setTimeout;
+    clearTimeout?: typeof globalThis.clearTimeout;
+    now?: () => Date;
+  },
 ): Promise<void>;
+export const PEER_FETCH_TIMEOUT_MS: 5000;
+export const MAX_CONCURRENT_PEER_FETCHES: 4;

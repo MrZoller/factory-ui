@@ -1,7 +1,12 @@
 import { describe, expect, test, vi } from "bun:test";
 import { Window } from "happy-dom";
 
-import { loadFleet, renderFleet } from "./app.js";
+import {
+  loadFleet,
+  MAX_CONCURRENT_PEER_FETCHES,
+  PEER_FETCH_TIMEOUT_MS,
+  renderFleet,
+} from "./app.js";
 
 const NOW = new Date("2026-08-16T12:00:00.000Z");
 
@@ -103,6 +108,31 @@ function richRepository(overrides: Record<string, unknown> = {}) {
     liveness: { state: "RUNNING", checkedAt: "2026-08-16T11:59:30.000Z" },
     ...overrides,
   };
+}
+
+function fleet(
+  hostname: string,
+  peers: Array<{ name: string; origin: string }> = [],
+  repositories: unknown[] = [],
+) {
+  return {
+    schemaVersion: 1,
+    hostname,
+    generatedAt: "2026-08-16T12:00:00.000Z",
+    repositories,
+    peers,
+  };
+}
+
+function jsonResponse(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+async function flushPromises(): Promise<void> {
+  for (let index = 0; index < 20; index += 1) await Promise.resolve();
 }
 
 describe("local dashboard rendering", () => {
@@ -369,5 +399,228 @@ describe("local dashboard rendering", () => {
     expect(document.querySelector("#error")?.textContent).toBe(
       "Request failed (503)",
     );
+  });
+});
+
+describe("browser peer fan-out", () => {
+  test("uses fixed timeout and concurrency bounds", () => {
+    expect(PEER_FETCH_TIMEOUT_MS).toBe(5_000);
+    expect(MAX_CONCURRENT_PEER_FETCHES).toBe(4);
+  });
+
+  test("renders peer slots immediately and isolates direct peer failures", async () => {
+    const document = dashboardDocument();
+    const peers = [
+      { name: "macbook", origin: "http://100.64.0.2:7777" },
+      { name: "legion", origin: "https://legion.example:7777" },
+    ];
+    const pending: Array<{
+      resolve: (response: Response) => void;
+      reject: (cause: Error) => void;
+    }> = [];
+    const peerRequests: Array<{ url: string; signal?: AbortSignal | null }> =
+      [];
+    const fetcher = vi.fn(
+      (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = String(input);
+        if (url === "/api/fleet") {
+          return Promise.resolve(jsonResponse(fleet("mini", peers)));
+        }
+        peerRequests.push({ url, signal: init?.signal });
+        return new Promise((resolve, reject) =>
+          pending.push({ resolve, reject }),
+        );
+      },
+    );
+
+    const loading = loadFleet(document, fetcher);
+    await flushPromises();
+
+    expect(document.querySelector("#machine")?.textContent).toBe("mini");
+    expect(
+      Array.from(document.querySelectorAll(".peer-status"), (node) =>
+        node.textContent?.trim(),
+      ),
+    ).toEqual(["LOADING", "LOADING"]);
+    expect(peerRequests.map(({ url }) => url)).toEqual([
+      "http://100.64.0.2:7777/api/fleet",
+      "https://legion.example:7777/api/fleet",
+    ]);
+    expect(
+      peerRequests.every(({ signal }) => signal instanceof AbortSignal),
+    ).toBe(true);
+
+    pending[0]!.resolve(
+      jsonResponse(
+        fleet(
+          "remote-macbook",
+          [{ name: "ignored", origin: "https://ignored.example" }],
+          [richRepository({ name: "peer-project" })],
+        ),
+      ),
+    );
+    pending[1]!.reject(new TypeError("CORS failure"));
+    await loading;
+
+    const slots = document.querySelectorAll(".peer-machine");
+    expect(slots.item(0).textContent).toContain("AVAILABLE");
+    expect(slots.item(0).textContent).toContain("peer-project");
+    expect(slots.item(0).textContent).not.toContain("ignored");
+    expect(slots.item(1).textContent).toContain("UNREACHABLE");
+    expect(document.querySelector("#error")?.textContent).toBe("");
+  });
+
+  test("marks malformed and non-success peer responses unreachable", async () => {
+    const document = dashboardDocument();
+    const peers = [
+      { name: "bad-json", origin: "http://100.64.0.3:7777" },
+      { name: "bad-schema", origin: "http://100.64.0.4:7777" },
+      { name: "http-error", origin: "http://100.64.0.5:7777" },
+    ];
+    let request = 0;
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === "/api/fleet") {
+        return Promise.resolve(jsonResponse(fleet("mini", peers)));
+      }
+      request += 1;
+      if (request === 1) return Promise.resolve(new Response("{"));
+      if (request === 2) {
+        return Promise.resolve(
+          jsonResponse({ ...fleet("peer"), schemaVersion: 2 }),
+        );
+      }
+      return Promise.resolve(new Response("unavailable", { status: 503 }));
+    });
+
+    await loadFleet(document, fetcher);
+
+    expect(
+      Array.from(document.querySelectorAll(".peer-status"), (node) =>
+        node.textContent?.trim(),
+      ),
+    ).toEqual(["UNREACHABLE", "UNREACHABLE", "UNREACHABLE"]);
+  });
+
+  test("never starts more than four peer requests concurrently", async () => {
+    const document = dashboardDocument();
+    const peers = Array.from({ length: 6 }, (_, index) => ({
+      name: `peer-${index}`,
+      origin: `http://100.64.0.${index + 10}:7777`,
+    }));
+    let active = 0;
+    let maximum = 0;
+    const pending: Array<(response: Response) => void> = [];
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === "/api/fleet") {
+        return Promise.resolve(jsonResponse(fleet("mini", peers)));
+      }
+      active += 1;
+      maximum = Math.max(maximum, active);
+      return new Promise((resolve) => {
+        pending.push((response) => {
+          active -= 1;
+          resolve(response);
+        });
+      });
+    });
+
+    const loading = loadFleet(document, fetcher);
+    await flushPromises();
+    expect(pending).toHaveLength(4);
+    pending
+      .splice(0)
+      .forEach((resolve) => resolve(jsonResponse(fleet("peer"))));
+    await flushPromises();
+    expect(pending).toHaveLength(2);
+    pending
+      .splice(0)
+      .forEach((resolve) => resolve(jsonResponse(fleet("peer"))));
+    await loading;
+
+    expect(maximum).toBe(4);
+    expect(document.querySelectorAll(".peer-status.available")).toHaveLength(6);
+  });
+
+  test("aborts and replaces a timed-out peer in place", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "slow", origin: "http://100.64.0.30:7777" };
+    let timeoutCallback: (() => void) | undefined;
+    let signal: AbortSignal | null | undefined;
+    const fetcher = vi.fn(
+      (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        if (String(input) === "/api/fleet") {
+          return Promise.resolve(jsonResponse(fleet("mini", [peer])));
+        }
+        signal = init?.signal;
+        return new Promise(() => undefined);
+      },
+    );
+    const loading = loadFleet(document, fetcher, {
+      setTimeout: ((callback: () => void, milliseconds: number) => {
+        expect(milliseconds).toBe(PEER_FETCH_TIMEOUT_MS);
+        timeoutCallback = callback;
+        return 1;
+      }) as typeof setTimeout,
+      clearTimeout: vi.fn() as unknown as typeof clearTimeout,
+      now: () => NOW,
+    });
+    await flushPromises();
+
+    timeoutCallback?.();
+    await loading;
+
+    expect(signal?.aborted).toBe(true);
+    expect(document.querySelector(".peer-status")?.textContent).toBe(
+      "UNREACHABLE",
+    );
+  });
+
+  test("refresh discards stale peer data and can recover", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "macbook", origin: "http://100.64.0.40:7777" };
+    let localRequests = 0;
+    let peerRequests = 0;
+    let resolveOldPeer: ((response: Response) => void) | undefined;
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === "/api/fleet") {
+        localRequests += 1;
+        return Promise.resolve(
+          jsonResponse(fleet(`mini-${localRequests}`, [peer])),
+        );
+      }
+      peerRequests += 1;
+      if (peerRequests === 1) {
+        return new Promise((resolve) => {
+          resolveOldPeer = resolve;
+        });
+      }
+      if (peerRequests === 2) return Promise.reject(new Error("offline"));
+      return Promise.resolve(
+        jsonResponse(
+          fleet("macbook", [], [richRepository({ name: "recovered" })]),
+        ),
+      );
+    });
+
+    const first = loadFleet(document, fetcher);
+    await flushPromises();
+    expect(document.querySelector(".peer-status")?.textContent).toBe("LOADING");
+
+    await loadFleet(document, fetcher);
+    expect(document.querySelector(".peer-status")?.textContent).toBe(
+      "UNREACHABLE",
+    );
+    resolveOldPeer?.(
+      jsonResponse(fleet("old", [], [richRepository({ name: "stale" })])),
+    );
+    await first;
+    expect(document.body.textContent).not.toContain("stale");
+
+    await loadFleet(document, fetcher);
+    expect(document.querySelector(".peer-status")?.textContent).toBe(
+      "AVAILABLE",
+    );
+    expect(document.body.textContent).toContain("recovered");
+    expect(document.body.textContent).not.toContain("UNREACHABLE");
   });
 });

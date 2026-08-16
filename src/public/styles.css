@@ -36,6 +36,12 @@ p {
   color: #9aaba4;
 }
 
+#generated.stale,
+.age.stale {
+  color: #ffbf69;
+  font-weight: 700;
+}
+
 .eyebrow,
 .status,
 .liveness,

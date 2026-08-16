@@ -123,7 +123,7 @@ task.
   - deps: T18
   - pr: 19
 
-- [ ] T20 (trivial) — Show snapshot freshness only when it is a signal
+- [~] T20 (trivial) — Show snapshot freshness only when it is a signal
   - acceptance: In `src/public/app.js`, `src/public/styles.css`, and colocated tests: replace the always-visible `Snapshot <age> · <time>` line with a muted `Updated <local time>` (absolute time only, no ticking age) while the latest refresh succeeded within the active refresh interval; when the last successful snapshot is older than the interval, a refresh has failed, or refresh is paused (hidden tab), render instead a visibly classed `Stale · last good snapshot <age> (<time>) — <reason>` where reason is one of `refresh failed`, `paused`, `peer timed out`; clear back to `Updated …` on the next successful fetch; apply the same rule to the fleet strip's per-machine data-age cell (blank/muted within the interval, highlighted with the age beyond it); tests cover healthy → stale → healthy transitions and the three reasons (spec 7).
   - deps: T19
 

@@ -5,6 +5,10 @@ const API_SCHEMA_VERSION = 1;
 const MAX_FLEET_RESPONSE_BYTES = 32 * 1024 * 1024;
 const MAX_REPOSITORIES = 32;
 const MAX_PEERS = 32;
+const MAX_ROUTING_AGENTS = 64;
+const MAX_AGENT_NAME_LENGTH = 128;
+const MAX_ROUTING_STRING_LENGTH = 1024;
+const MAX_ROUTING_STEPS = 1_000_000;
 const loadGenerations = new WeakMap();
 const tabControllers = new WeakMap();
 const machineViews = new WeakMap();
@@ -304,6 +308,7 @@ function renderWarnings(card, repository) {
     ["questions", repository.questions],
     ["worklog", repository.worklog],
     ["logs", repository.logs],
+    ["routing", repository.routing],
   ]) {
     if (!Array.isArray(result?.warnings)) continue;
     for (const warning of result.warnings) {
@@ -317,6 +322,57 @@ function renderWarnings(card, repository) {
   const list = panel.ownerDocument.createElement("ul");
   warnings.forEach((warning) => appendText(list, "li", warning));
   panel.append(list);
+}
+
+function providerCategory(provider) {
+  if (provider === "openai") return "openai";
+  if (provider === "opencode") return "opencode";
+  if (provider === "amazon-bedrock") return "amazon-bedrock";
+  return "other";
+}
+
+function renderRoutingStrip(fleet, documentRoot) {
+  const strip = documentRoot.createElement("section");
+  strip.className = "routing-strip";
+  appendText(strip, "h3", "Routing");
+  const routing = fleet?.repositories?.find(
+    (repository) => repository.routing?.status === "available",
+  )?.routing.data;
+  if (!routing) {
+    appendText(strip, "p", "Unavailable", "unavailable");
+    return strip;
+  }
+
+  appendText(
+    strip,
+    "p",
+    `Default ${routing.model} · Small ${routing.smallModel}`,
+    "routing-defaults",
+  );
+  const list = documentRoot.createElement("ul");
+  list.className = "routing-agents";
+  for (const [name, agent] of Object.entries(routing.agents ?? {})) {
+    const item = documentRoot.createElement("li");
+    appendText(item, "span", name, "routing-agent");
+    appendText(item, "span", "→", "routing-arrow");
+    appendText(
+      item,
+      "span",
+      agent?.provider ?? "other",
+      `routing-provider provider-${providerCategory(agent?.provider)}`,
+    );
+    appendText(item, "span", `/${agent?.model ?? "Unknown"}`, "routing-model");
+    if (agent?.steps !== null && agent?.steps !== undefined) {
+      appendText(item, "span", `steps ≤ ${agent.steps}`, "routing-steps");
+    }
+    list.append(item);
+  }
+  if (list.childElementCount === 0) {
+    appendText(strip, "p", "No agent overrides", "empty");
+  } else {
+    strip.append(list);
+  }
+  return strip;
 }
 
 function renderRepository(repository, documentRoot, now) {
@@ -358,6 +414,72 @@ function isReaderResult(value) {
   return value.status === "unavailable" || isRecord(value.data);
 }
 
+function isBoundedRoutingString(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= MAX_ROUTING_STRING_LENGTH
+  );
+}
+
+function isRoutingModelId(value) {
+  if (!isBoundedRoutingString(value)) return false;
+  const separator = value.indexOf("/");
+  return separator > 0 && separator < value.length - 1;
+}
+
+function isRoutingTimestamp(value) {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value)
+  ) {
+    return false;
+  }
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.valueOf())) return false;
+  const normalized = value.replace(/(?:\.(\d{1,3}))?Z$/, (_, fraction) =>
+    fraction === undefined ? ".000Z" : `.${fraction.padEnd(3, "0")}Z`,
+  );
+  return timestamp.toISOString() === normalized;
+}
+
+function isRoutingData(value) {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    !isRoutingTimestamp(value.recordedAt) ||
+    !isRoutingModelId(value.model) ||
+    !isRoutingModelId(value.smallModel) ||
+    !isRecord(value.agents)
+  ) {
+    return false;
+  }
+  const agents = Object.entries(value.agents);
+  return (
+    agents.length <= MAX_ROUTING_AGENTS &&
+    agents.every(
+      ([name, agent]) =>
+        name.length > 0 &&
+        name.length <= MAX_AGENT_NAME_LENGTH &&
+        isRecord(agent) &&
+        isBoundedRoutingString(agent.provider) &&
+        isBoundedRoutingString(agent.model) &&
+        (agent.steps === null ||
+          (typeof agent.steps === "number" &&
+            Number.isSafeInteger(agent.steps) &&
+            agent.steps >= 0 &&
+            agent.steps <= MAX_ROUTING_STEPS)),
+    )
+  );
+}
+
+function isRoutingResult(value) {
+  return (
+    isReaderResult(value) &&
+    (value.status === "unavailable" || isRoutingData(value.data))
+  );
+}
+
 function isPeer(value) {
   if (
     !isRecord(value) ||
@@ -393,6 +515,7 @@ function isRepository(value) {
     isReaderResult(value.questions) &&
     isReaderResult(value.worklog) &&
     isReaderResult(value.logs) &&
+    (value.routing === undefined || isRoutingResult(value.routing)) &&
     isRecord(value.liveness) &&
     ["RUNNING", "STOPPED", "CANNOT_VERIFY"].includes(value.liveness.state) &&
     isTimestamp(value.liveness.checkedAt)
@@ -604,13 +727,17 @@ function createMachineView(identity, index, documentRoot, isPeer) {
   panel.setAttribute("aria-labelledby", tabId);
   panel.hidden = true;
   grid.className = `repository-grid${isPeer ? " peer-repositories" : ""}`;
-  panel.append(grid);
-  return { identity, row, tab, panel, grid };
+  const routing = renderRoutingStrip(null, documentRoot);
+  panel.append(routing, grid);
+  return { identity, row, tab, panel, routing, grid };
 }
 
 function updateMachineView(view, summary, fleet, now, unreachable = false) {
   renderSummaryRow(view.row, summary);
   renderTabLabel(view.tab, summary);
+  const routing = renderRoutingStrip(fleet, view.grid.ownerDocument);
+  view.routing.replaceWith(routing);
+  view.routing = routing;
   if (unreachable) {
     view.grid.replaceChildren(
       textElement(view.grid.ownerDocument, "p", "UNREACHABLE", "unreachable"),

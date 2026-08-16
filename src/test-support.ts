@@ -9,6 +9,7 @@ export interface FactoryFixture {
   writePlan(value: string | Uint8Array): Promise<void>;
   writeQuestions(value: string | Uint8Array): Promise<void>;
   writeWorklog(value: string | Uint8Array): Promise<void>;
+  writeRouting(value: unknown | string | Uint8Array): Promise<void>;
   writeDriverLog(name: string, content: string | Uint8Array): void;
   writeCycleLog(name: string, content: string | Uint8Array): void;
   writeShepherdLog(name: string, content: string | Uint8Array): void;
@@ -39,6 +40,14 @@ export function createFactoryFixture(): FactoryFixture {
     },
     writeWorklog: async (value) => {
       await Bun.write(join(factoryPath, "worklog.md"), value);
+    },
+    writeRouting: async (value) => {
+      await Bun.write(
+        join(factoryPath, "logs", "routing.json"),
+        typeof value === "string" || value instanceof Uint8Array
+          ? value
+          : JSON.stringify(value),
+      );
     },
     writeDriverLog: (name, content) => {
       writeFileSync(join(factoryPath, "logs", name), content);

@@ -69,6 +69,14 @@ describe("paths", () => {
       expect(result).toBe(logsDir);
     });
 
+    test("resolves only the fixed logs/routing.json target", async () => {
+      mkdirSync(`${tempDir}/.factory/logs`, { recursive: true });
+      const routingPath = join(tempDir, ".factory", "logs", "routing.json");
+      await Bun.write(routingPath, '{"schemaVersion":1}');
+
+      expect(await resolveFactoryPath(tempDir, "routing")).toBe(routingPath);
+    });
+
     test("returns null when .factory directory does not exist", async () => {
       const result = await resolveFactoryPath(tempDir, "state");
       expect(result).toBeNull();
@@ -260,13 +268,9 @@ describe("paths", () => {
 
     test("all factory path keys are resolvable", async () => {
       mkdirSync(`${tempDir}/.factory`, { recursive: true });
-      const keys: Array<"state" | "plan" | "questions" | "worklog" | "logs"> = [
-        "state",
-        "plan",
-        "questions",
-        "worklog",
-        "logs",
-      ];
+      const keys: Array<
+        "state" | "plan" | "questions" | "worklog" | "logs" | "routing"
+      > = ["state", "plan", "questions", "worklog", "logs", "routing"];
 
       for (const key of keys) {
         const expected = {
@@ -275,11 +279,14 @@ describe("paths", () => {
           questions: "questions.md",
           worklog: "worklog.md",
           logs: "logs",
+          routing: "logs/routing.json",
         }[key];
 
         if (key === "logs") {
           mkdirSync(join(tempDir, ".factory", expected), { recursive: true });
         } else {
+          if (key === "routing")
+            mkdirSync(join(tempDir, ".factory", "logs"), { recursive: true });
           await Bun.write(join(tempDir, ".factory", expected), "{}");
         }
 

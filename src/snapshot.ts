@@ -15,6 +15,7 @@ import {
 import { readFactoryLogsWithSelection } from "./readers/logs";
 import { readFactoryPlan } from "./readers/plan";
 import { readFactoryQuestions } from "./readers/questions";
+import { readFactoryRouting } from "./readers/routing";
 import { readFactoryState } from "./readers/state";
 import { readFactoryWorklog } from "./readers/worklog";
 
@@ -24,13 +25,15 @@ export async function readRepositoryFactoryData(
   repository: RepositorySource,
   readLiveness: typeof checkTrustedDriverLiveness = checkTrustedDriverLiveness,
 ): Promise<RepositoryFactoryData> {
-  const [state, plan, questions, worklog, logsRead] = await Promise.all([
-    readFactoryState(repository.path),
-    readFactoryPlan(repository.path),
-    readFactoryQuestions(repository.path),
-    readFactoryWorklog(repository.path),
-    readFactoryLogsWithSelection(repository.path),
-  ]);
+  const [state, plan, questions, worklog, logsRead, routing] =
+    await Promise.all([
+      readFactoryState(repository.path),
+      readFactoryPlan(repository.path),
+      readFactoryQuestions(repository.path),
+      readFactoryWorklog(repository.path),
+      readFactoryLogsWithSelection(repository.path),
+      readFactoryRouting(repository.path),
+    ]);
   const liveness = await readLiveness(logsRead.driver);
   return {
     name: repository.name,
@@ -39,6 +42,7 @@ export async function readRepositoryFactoryData(
     questions,
     worklog,
     logs: logsRead.result,
+    routing,
     liveness,
   };
 }
@@ -66,6 +70,10 @@ export function unavailableRepositoryFactorySnapshot(
       "worklog could not be read",
     ),
     logs: unavailableResult("LOGS_UNAVAILABLE", "logs could not be read"),
+    routing: unavailableResult(
+      "ROUTING_UNAVAILABLE",
+      "routing could not be read",
+    ),
     liveness: { state: "CANNOT_VERIFY", checkedAt },
   };
 }

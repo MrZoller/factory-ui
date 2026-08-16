@@ -107,6 +107,19 @@ function richRepository(overrides: Record<string, unknown> = {}) {
       },
       warnings: [{ code: "LOG_TRUNCATED", message: "old lines omitted" }],
     },
+    routing: {
+      status: "available",
+      data: {
+        schemaVersion: 1,
+        recordedAt: "2026-08-16T11:59:00.000Z",
+        model: "openai/gpt-5.6",
+        smallModel: "opencode/gpt-5-mini",
+        agents: {
+          builder: { provider: "openai", model: "gpt-5.6", steps: null },
+        },
+      },
+      warnings: [],
+    },
     liveness: { state: "RUNNING", checkedAt: "2026-08-16T11:59:30.000Z" },
     ...overrides,
   };
@@ -535,6 +548,142 @@ describe("local dashboard rendering", () => {
 });
 
 describe("fleet summary and machine tabs", () => {
+  test("renders routing once per machine from the first repository where it is available", () => {
+    const document = dashboardDocument();
+    const unavailableRouting = {
+      status: "unavailable",
+      warnings: [
+        { code: "ROUTING_MISSING", message: "routing.json is missing" },
+      ],
+    };
+    const selected = richRepository({
+      name: "second",
+      routing: {
+        status: "available",
+        data: {
+          schemaVersion: 1,
+          recordedAt: "2026-08-16T11:59:00Z",
+          model: "openai/default",
+          smallModel: "opencode/small",
+          agents: {
+            build: { provider: "openai", model: "gpt", steps: 20 },
+            plan: { provider: "opencode", model: "mini", steps: null },
+            review: {
+              provider: "amazon-bedrock",
+              model: "claude",
+              steps: 5,
+            },
+            custom: { provider: "local", model: "model", steps: null },
+          },
+        },
+        warnings: [],
+      },
+    });
+    const ignored = richRepository({
+      name: "third",
+      routing: {
+        ...selected.routing,
+        data: {
+          ...selected.routing.data,
+          model: "other/ignored",
+          agents: {},
+        },
+      },
+    });
+
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({ name: "first", routing: unavailableRouting }),
+          selected,
+          ignored,
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const strip = document.querySelector(".routing-strip")!;
+    expect(document.querySelectorAll(".routing-strip")).toHaveLength(1);
+    expect(strip.textContent).toContain("Default openai/default");
+    expect(strip.textContent).not.toContain("ignored");
+    expect(strip.querySelector(".provider-openai")?.textContent).toBe("openai");
+    expect(strip.querySelector(".provider-opencode")?.textContent).toBe(
+      "opencode",
+    );
+    expect(strip.querySelector(".provider-amazon-bedrock")?.textContent).toBe(
+      "amazon-bedrock",
+    );
+    expect(strip.querySelector(".provider-other")?.textContent).toBe("local");
+    expect(strip.textContent).toContain("steps ≤ 20");
+  });
+
+  test("renders routing unavailable when no repository has routing", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            routing: { status: "unavailable", warnings: [] },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+    expect(document.querySelector(".routing-strip")?.textContent).toBe(
+      "RoutingUnavailable",
+    );
+  });
+
+  test("keeps hostile routing names, providers, and models literal and inert", () => {
+    const document = dashboardDocument();
+    const hostile =
+      '<img src=x onerror="globalThis.pwned=1"><script>pwned=2</script>';
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            routing: {
+              status: "available",
+              data: {
+                schemaVersion: 1,
+                recordedAt: "2026-08-16T11:59:00Z",
+                model: `other/${hostile}`,
+                smallModel: `other/${hostile}`,
+                agents: {
+                  [hostile]: { provider: hostile, model: hostile, steps: null },
+                },
+              },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    expect(document.querySelector(".routing-strip")?.textContent).toContain(
+      hostile,
+    );
+    expect(
+      document.querySelectorAll(
+        ".routing-strip script, .routing-strip img, [onerror]",
+      ),
+    ).toHaveLength(0);
+    expect(document.querySelector(".routing-provider")?.classList).toContain(
+      "provider-other",
+    );
+    expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
+  });
+
   test("renders one local-first summary row and tab per configured machine with matching badges", () => {
     const document = dashboardDocument();
     const localEmpty = richRepository({
@@ -888,7 +1037,7 @@ describe("browser peer fan-out", () => {
     ]);
     expect(document.querySelectorAll('[role="tab"]')).toHaveLength(3);
     expect(
-      document.querySelectorAll(".peer-machine .unavailable"),
+      document.querySelectorAll(".peer-repositories > .unavailable"),
     ).toHaveLength(2);
     expect(peerRequests.map(({ url }) => url)).toEqual([
       "http://100.64.0.2:7777/api/fleet",
@@ -960,6 +1109,61 @@ describe("browser peer fan-out", () => {
     expect(document.querySelectorAll("#fleet-summary tbody tr")).toHaveLength(
       4,
     );
+  });
+
+  test("accepts peers without routing and rejects invalid peer routing", async () => {
+    const document = dashboardDocument();
+    const peers = [
+      { name: "missing-routing-field", origin: "http://100.64.0.6:7777" },
+      {
+        name: "too-many-routing-agents",
+        origin: "http://100.64.0.7:7777",
+      },
+    ];
+    let request = 0;
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === "/api/fleet") {
+        return Promise.resolve(jsonResponse(fleet("mini", peers)));
+      }
+      request += 1;
+      const repository =
+        request === 1
+          ? (() => {
+              const { routing: _routing, ...withoutRouting } = richRepository();
+              return withoutRouting;
+            })()
+          : richRepository({
+              routing: {
+                status: "available",
+                data: {
+                  schemaVersion: 1,
+                  recordedAt: "2026-08-16T11:59:00.000Z",
+                  model: "openai/gpt-5.6",
+                  smallModel: "opencode/gpt-5-mini",
+                  agents: Object.fromEntries(
+                    Array.from({ length: 65 }, (_, index) => [
+                      `agent-${index}`,
+                      { provider: "openai", model: "gpt", steps: null },
+                    ]),
+                  ),
+                },
+                warnings: [],
+              },
+            });
+      return Promise.resolve(jsonResponse(fleet("peer", [], [repository])));
+    });
+
+    await loadFleet(document, fetcher);
+
+    expect(
+      document.querySelectorAll(".peer-machine .unreachable"),
+    ).toHaveLength(1);
+    expect(
+      document.querySelectorAll(".peer-machine").item(0).textContent,
+    ).toContain("factory-ui");
+    expect(
+      document.querySelectorAll(".peer-machine").item(0).textContent,
+    ).toContain("Unavailable");
   });
 
   test("never starts more than four peer requests concurrently", async () => {

@@ -252,6 +252,33 @@ describe("local dashboard rendering", () => {
       "ago",
     );
     const card = document.querySelector(".repository")!;
+    const panelSpans = Object.fromEntries(
+      Array.from(card.querySelectorAll(".panel"), (panel) => [
+        panel.querySelector("h4")?.textContent,
+        Array.from(panel.classList).find((name) =>
+          name.startsWith("panel-span-"),
+        ),
+      ]),
+    );
+    expect(panelSpans).toEqual({
+      Current: "panel-span-8",
+      Active: "panel-span-4",
+      "In review": "panel-span-4",
+      "Next runnable": "panel-span-4",
+      Blocked: "panel-span-4",
+      Completed: "panel-span-6",
+      "Open questions": "panel-span-6",
+      "Recent worklog": "panel-span-4",
+      "Driver activity": "panel-span-4",
+      Warnings: "panel-span-4",
+    });
+    const task = card.querySelector(".task")!;
+    expect(
+      ["task-id", "task-title", "task-size"].every((name) =>
+        task.querySelector(`.${name}`),
+      ),
+    ).toBe(true);
+    expect(task.querySelector(".task-deps")?.textContent).toContain("deps:");
     expect(card.textContent).toContain("T8");
     expect(card.textContent).toContain("factory/t8-safe-dashboard");
     expect(card.textContent).toContain("HELD");
@@ -920,6 +947,10 @@ describe("fleet summary and machine tabs", () => {
       "1",
       "",
     ]);
+    expect(
+      document.querySelectorAll(".panel-empty .empty").length,
+    ).toBeGreaterThan(0);
+    expect(document.querySelector(".panel-empty .unavailable")).toBeNull();
     expect(summaryCells(document, "macbook")).toEqual([
       "macbook",
       "Unavailable",

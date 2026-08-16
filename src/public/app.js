@@ -172,7 +172,7 @@ function appendExternalOrText(parent, text, value, kind) {
 const WORKLOG_EVENT_PATTERNS = [
   [
     "opened PR",
-    /\b(?:opened|created)(?: as)? (?:PR|pull request)\b|\bPR #\d+ opened\b/i,
+    /\b(?:opened|created)(?: as)?(?: (?:held|major))* (?:PR|pull request)\b|\bPR #\d+ opened\b/i,
   ],
   ["merged", /\bmerged\b|\bmerge completed\b/i],
   [

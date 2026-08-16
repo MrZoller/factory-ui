@@ -793,4 +793,97 @@ describe("snapshot", () => {
       });
     });
   });
+
+  describe("readRepositoryFactoryData", () => {
+    let tempDir: string;
+
+    beforeEach(() => {
+      tempDir = join(process.cwd(), "tmp-factory-data-logs");
+      mkdirSync(tempDir, { recursive: true });
+      mkdirSync(`${tempDir}/.factory`, { recursive: true });
+      mkdirSync(`${tempDir}/.factory/logs`, { recursive: true });
+    });
+
+    afterEach(() => {
+      try {
+        rmSync(tempDir, { recursive: true, force: true });
+      } catch {
+        // ignore
+      }
+    });
+
+    test("integrates logs reader and liveness check", async () => {
+      // Write state.json
+      await Bun.write(
+        `${tempDir}/.factory/state.json`,
+        JSON.stringify({
+          project: "test-project",
+          phase: "build",
+          spec_approved: true,
+          plan_approved: true,
+          current_task: null,
+          branch: null,
+          pr: null,
+          hold: false,
+          updated: "2026-08-16T00:00:00Z",
+        }),
+      );
+
+      // Write a driver log
+      await Bun.write(
+        `${tempDir}/.factory/logs/driver-20240101-120000-0.log`,
+        "test driver log",
+      );
+
+      let probedPath: string | undefined;
+      const result = await readRepositoryFactoryData(
+        { name: "test-repo", path: tempDir },
+        async (driver) => {
+          probedPath = driver?.path;
+          return { state: "STOPPED", checkedAt: "2026-08-16T00:00:00Z" };
+        },
+      );
+
+      // Verify logs are present
+      expect(result.logs.status).toBe("available");
+      if (result.logs.status === "available") {
+        expect(result.logs.data.narration).toBe("test driver log");
+        expect(result.logs.data.driver).toBeDefined();
+      }
+
+      // Verify liveness is integrated with driver log
+      expect(probedPath).toEndWith("driver-20240101-120000-0.log");
+      expect(result.liveness.state).toBe("STOPPED");
+      expect(result.liveness.checkedAt).toBe("2026-08-16T00:00:00Z");
+    });
+
+    test("returns CANNOT_VERIFY liveness when no driver log exists", async () => {
+      // Write state.json
+      await Bun.write(
+        `${tempDir}/.factory/state.json`,
+        JSON.stringify({
+          project: "test-project",
+          phase: "build",
+          spec_approved: true,
+          plan_approved: true,
+          current_task: null,
+          branch: null,
+          pr: null,
+          hold: false,
+          updated: "2026-08-16T00:00:00Z",
+        }),
+      );
+
+      const result = await readRepositoryFactoryData({
+        name: "test-repo",
+        path: tempDir,
+      });
+
+      // Verify logs are unavailable
+      expect(result.logs.status).toBe("unavailable");
+
+      // Verify liveness is CANNOT_VERIFY
+      expect(result.liveness.state).toBe("CANNOT_VERIFY");
+    });
+  });
 });

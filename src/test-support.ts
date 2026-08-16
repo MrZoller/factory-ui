@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,6 +9,9 @@ export interface FactoryFixture {
   writePlan(value: string | Uint8Array): Promise<void>;
   writeQuestions(value: string | Uint8Array): Promise<void>;
   writeWorklog(value: string | Uint8Array): Promise<void>;
+  writeDriverLog(name: string, content: string | Uint8Array): void;
+  writeCycleLog(name: string, content: string | Uint8Array): void;
+  writeShepherdLog(name: string, content: string | Uint8Array): void;
   cleanup(): void;
 }
 
@@ -16,6 +19,7 @@ export function createFactoryFixture(): FactoryFixture {
   const root = mkdtempSync(join(tmpdir(), "factory-ui-"));
   const factoryPath = join(root, ".factory");
   mkdirSync(factoryPath);
+  mkdirSync(join(factoryPath, "logs"));
   return {
     root,
     factoryPath,
@@ -35,6 +39,15 @@ export function createFactoryFixture(): FactoryFixture {
     },
     writeWorklog: async (value) => {
       await Bun.write(join(factoryPath, "worklog.md"), value);
+    },
+    writeDriverLog: (name, content) => {
+      writeFileSync(join(factoryPath, "logs", name), content);
+    },
+    writeCycleLog: (name, content) => {
+      writeFileSync(join(factoryPath, "logs", name), content);
+    },
+    writeShepherdLog: (name, content) => {
+      writeFileSync(join(factoryPath, "logs", name), content);
     },
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };

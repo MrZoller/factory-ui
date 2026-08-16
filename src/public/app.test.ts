@@ -242,6 +242,16 @@ describe("local dashboard rendering", () => {
                 { code: "QUESTIONS_MISSING", message: "questions unavailable" },
               ],
             },
+            worklog: {
+              status: "unavailable",
+              warnings: [
+                { code: "WORKLOG_MISSING", message: "worklog unavailable" },
+              ],
+            },
+            logs: {
+              status: "unavailable",
+              warnings: [{ code: "LOGS_MISSING", message: "logs unavailable" }],
+            },
           }),
         ],
       },
@@ -256,6 +266,12 @@ describe("local dashboard rendering", () => {
       "Unavailable",
     );
     expect(document.querySelector(".questions-panel")?.textContent).toContain(
+      "Unavailable",
+    );
+    expect(document.querySelector(".worklog-panel")?.textContent).toContain(
+      "Unavailable",
+    );
+    expect(document.querySelector(".logs-panel")?.textContent).toContain(
       "Unavailable",
     );
     expect(document.querySelector(".warnings-panel")?.textContent).toContain(

@@ -215,6 +215,10 @@ function renderQuestions(card, repository) {
 function renderWorklog(card, repository) {
   const panel = addPanel(card, "Recent worklog", "worklog-panel");
   const entries = readerData(repository.worklog)?.entries;
+  if (entries === undefined) {
+    appendText(panel, "p", "Unavailable", "unavailable");
+    return;
+  }
   if (!Array.isArray(entries) || entries.length === 0) {
     appendText(panel, "p", "None", "empty");
     return;
@@ -273,7 +277,7 @@ function renderLogs(card, repository, now) {
   appendText(
     panel,
     "pre",
-    logs?.narration || "No narration",
+    logs === undefined ? "Unavailable" : logs.narration || "No narration",
     "verbatim narration",
   );
 }

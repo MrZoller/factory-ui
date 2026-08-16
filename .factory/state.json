@@ -5,7 +5,7 @@
   "plan_approved": true,
   "current_task": "T20",
   "branch": "factory/t20-snapshot-freshness",
-  "pr": null,
+  "pr": 20,
   "hold": false,
-  "updated": "2026-08-16T19:30:08Z"
+  "updated": "2026-08-16T19:37:30Z"
 }

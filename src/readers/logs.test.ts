@@ -3,6 +3,7 @@ import {
   appendFileSync,
   mkdirSync,
   mkdtempSync,
+  renameSync,
   rmSync,
   writeFileSync,
   symlinkSync,
@@ -1067,8 +1068,9 @@ describe("logs reader", () => {
       writeFileSync(filepath, content);
 
       const logsRead = await readFactoryLogsWithSelection(tempDir);
-      // Replace the file by removing and recreating (different inode
-      rmSync(filepath, { force: true });
+      // Keep the original inode allocated so replacement is deterministic
+      // even on filesystems that immediately reuse an unlinked inode.
+      renameSync(filepath, `${filepath}.replaced`);
       writeFileSync(filepath, "new content");
 
       const liveness = await checkTrustedDriverLiveness(logsRead.driver);

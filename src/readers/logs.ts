@@ -104,7 +104,13 @@ function isNewer(candidate: SelectedLog, current?: SelectedLog): boolean {
 }
 
 function addWarning(warnings: ReaderWarning[], next: ReaderWarning): void {
-  if (warnings.length < MAX_WARNINGS) warnings.push(next);
+  if (warnings.length < MAX_WARNINGS - 1) {
+    warnings.push(next);
+  } else if (!warnings.some((item) => item.code === "WARNINGS_TRUNCATED")) {
+    warnings.push(
+      warning("WARNINGS_TRUNCATED", "additional log warnings were omitted"),
+    );
+  }
 }
 
 function timing(startedAt: Date, modifiedAt: Date): LogTiming {

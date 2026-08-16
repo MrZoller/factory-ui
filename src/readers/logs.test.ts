@@ -1356,7 +1356,7 @@ describe("logs reader", () => {
     test("truncates warnings at MAX_WARNINGS (16)", async () => {
       // Create many malformed log names to trigger warning truncation
       for (let i = 0; i < 20; i++) {
-        writeFileSync(join(logsDir, `unknown-${i}.log`), "content");
+        writeFileSync(join(logsDir, `driver-invalid-${i}.log`), "content");
       }
 
       const result = await readFactoryLogsWithSelection(tempDir);
@@ -1366,7 +1366,7 @@ describe("logs reader", () => {
       expect(result.result.warnings.length).toBeLessThanOrEqual(16);
       expect(
         result.result.warnings.some((w) => w.code === "WARNINGS_TRUNCATED"),
-      ).toBe(false);
+      ).toBe(true);
     });
   });
 });

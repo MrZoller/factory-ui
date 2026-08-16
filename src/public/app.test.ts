@@ -11,17 +11,75 @@ import {
 const NOW = new Date("2026-08-16T12:00:00.000Z");
 
 function dashboardDocument(): Document {
-  const window = new Window();
+  const window = new Window({ url: "https://dashboard.test/" });
   const document = window.document as unknown as Document;
   document.body.innerHTML = [
     '<h1 id="machine"></h1>',
     '<p id="generated"></p>',
     '<p id="error"></p>',
+    '<button id="refresh" type="button">Refresh</button>',
     '<table id="fleet-summary"><tbody></tbody></table>',
     '<div id="machine-tabs" role="tablist"></div>',
     '<div id="repositories"></div>',
   ].join("");
   return document;
+}
+
+type TimerCallback = () => void;
+type BrowserFetcher = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
+function fakeTimers() {
+  const timers = new Map<
+    number,
+    { callback: TimerCallback; milliseconds: number }
+  >();
+  let nextId = 1;
+  const schedule = (callback: TimerCallback, milliseconds = 0) => {
+    const id = nextId++;
+    timers.set(id, { callback, milliseconds });
+    return id;
+  };
+  return {
+    setTimeout: schedule,
+    setInterval: schedule,
+    clearTimeout: (id: number) => timers.delete(id),
+    clearInterval: (id: number) => timers.delete(id),
+    callbacksAt(milliseconds: number) {
+      return Array.from(timers.entries())
+        .filter(([, timer]) => timer.milliseconds === milliseconds)
+        .map(([id, timer]) => ({ id, callback: timer.callback }));
+    },
+  };
+}
+
+async function bootDashboard(
+  document: Document,
+  fetcher: BrowserFetcher,
+  timers: ReturnType<typeof fakeTimers>,
+) {
+  const globals = globalThis as Record<string, unknown>;
+  const original = {
+    window: globals.window,
+    document: globals.document,
+    fetch: globals.fetch,
+    setTimeout: globals.setTimeout,
+    clearTimeout: globals.clearTimeout,
+    setInterval: globals.setInterval,
+    clearInterval: globals.clearInterval,
+  };
+  globals.window = document.defaultView;
+  globals.document = document;
+  globals.fetch = fetcher;
+  globals.setTimeout = timers.setTimeout;
+  globals.clearTimeout = timers.clearTimeout;
+  globals.setInterval = timers.setInterval;
+  globals.clearInterval = timers.clearInterval;
+  await import(`./app.js?auto-refresh-test=${crypto.randomUUID()}`);
+  await flushPromises();
+  return () => Object.assign(globals, original);
 }
 
 function richRepository(overrides: Record<string, unknown> = {}) {
@@ -1668,5 +1726,228 @@ describe("browser peer fan-out", () => {
     ).toContain("recovered");
     expect(document.body.textContent).toContain("recovered");
     expect(document.body.textContent).not.toContain("UNREACHABLE");
+  });
+});
+
+describe("dashboard auto-refresh", () => {
+  test("uses the bounded refresh query, pauses hidden polling, refreshes on visibility, and ticks snapshot age", async () => {
+    vi.useFakeTimers();
+    const document = dashboardDocument();
+    const window = document.defaultView!;
+    window.history.replaceState(null, "", "?refresh=5");
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: false,
+    });
+    const timers = fakeTimers();
+    const generatedAt = new Date().toISOString();
+    const fetcher = vi.fn(async () =>
+      jsonResponse({ ...fleet("mini"), generatedAt }),
+    );
+    const restore = await bootDashboard(document, fetcher, timers);
+    try {
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(timers.callbacksAt(5_000)).not.toHaveLength(0);
+      expect(window.location.search).toBe("?refresh=5");
+
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: true,
+      });
+      timers.callbacksAt(5_000).forEach(({ callback }) => callback());
+      await flushPromises();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: false,
+      });
+      document.dispatchEvent(new window.Event("visibilitychange"));
+      await flushPromises();
+      expect(fetcher).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(1_000);
+      timers.callbacksAt(1_000).forEach(({ callback }) => callback());
+      expect(document.querySelector("#generated")?.textContent).toContain(
+        "1s ago",
+      );
+    } finally {
+      restore();
+      vi.useRealTimers();
+    }
+  });
+
+  test("defaults invalid refresh values to 30 seconds and refreshes from the button only once while pending", async () => {
+    const document = dashboardDocument();
+    const window = document.defaultView!;
+    window.history.replaceState(null, "", "?refresh=3601");
+    const timers = fakeTimers();
+    let resolveRefresh: ((response: Response) => void) | undefined;
+    let requests = 0;
+    const fetcher = vi.fn((): Promise<Response> => {
+      requests += 1;
+      if (requests === 1) return Promise.resolve(jsonResponse(fleet("mini")));
+      return new Promise((resolve) => {
+        resolveRefresh = resolve;
+      });
+    });
+    const restore = await bootDashboard(document, fetcher, timers);
+    try {
+      expect(timers.callbacksAt(30_000)).not.toHaveLength(0);
+      const refresh = document.querySelector<HTMLButtonElement>("#refresh");
+      expect(refresh).not.toBeNull();
+      refresh?.click();
+      refresh?.click();
+      await flushPromises();
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      resolveRefresh?.(jsonResponse(fleet("mini-refreshed")));
+    } finally {
+      restore();
+    }
+  });
+
+  test("rejects a below-minimum refresh value and accepts the 3600-second maximum", async () => {
+    for (const [refresh, expectedMilliseconds] of [
+      ["4", 30_000],
+      ["3600", 3_600_000],
+    ] as const) {
+      const document = dashboardDocument();
+      document.defaultView!.history.replaceState(
+        null,
+        "",
+        `?refresh=${refresh}`,
+      );
+      const timers = fakeTimers();
+      const restore = await bootDashboard(
+        document,
+        async () => jsonResponse(fleet("mini")),
+        timers,
+      );
+      try {
+        expect(timers.callbacksAt(expectedMilliseconds)).not.toHaveLength(0);
+      } finally {
+        restore();
+      }
+    }
+  });
+
+  test("keeps the selected machine, repository, scroll position, and current content until a refresh succeeds", async () => {
+    const document = dashboardDocument();
+    const window = document.defaultView!;
+    const peer = { name: "macbook", origin: "https://macbook.example" };
+    let resolveRefresh: ((response: Response) => void) | undefined;
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) !== "/api/fleet") {
+        return Promise.resolve(
+          jsonResponse(fleet("macbook", [], [richRepository()])),
+        );
+      }
+      if (fetcher.mock.calls.length === 1) {
+        return Promise.resolve(
+          jsonResponse(
+            fleet(
+              "mini",
+              [peer],
+              [
+                richRepository({ name: "alpha" }),
+                richRepository({ name: "beta" }),
+              ],
+            ),
+          ),
+        );
+      }
+      return new Promise((resolve) => {
+        resolveRefresh = resolve;
+      });
+    });
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+    window.location.hash = "#machine=mini&repo=beta";
+    window.dispatchEvent(new window.Event("hashchange"));
+    const repositoryPanel =
+      document.querySelector<HTMLElement>("#repositories")!;
+    repositoryPanel.scrollTop = 73;
+
+    const refreshing = loadFleet(document, fetcher, { now: () => NOW });
+    expect(document.querySelector("#machine")?.textContent).toBe("mini");
+    expect(document.body.textContent).toContain("alpha");
+    expect(repositoryPanel.scrollTop).toBe(73);
+    expect(window.location.hash).toBe("#machine=mini&repo=beta");
+
+    resolveRefresh?.(
+      jsonResponse(
+        fleet(
+          "mini-new",
+          [peer],
+          [richRepository({ name: "alpha" }), richRepository({ name: "beta" })],
+        ),
+      ),
+    );
+    await refreshing;
+    expect(window.location.hash).toBe("#machine=mini-new&repo=beta");
+    expect(repositoryPanel.scrollTop).toBe(73);
+  });
+
+  test("retains the last good snapshot on failure, reports its age, and backs off retries", async () => {
+    vi.useFakeTimers();
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    let requests = 0;
+    const fetcher = vi.fn(async () => {
+      requests += 1;
+      return requests === 1
+        ? jsonResponse({
+            ...fleet("mini", [], [richRepository()]),
+            generatedAt: new Date().toISOString(),
+          })
+        : new Response("unavailable", { status: 503 });
+    });
+    const restore = await bootDashboard(document, fetcher, timers);
+    try {
+      timers.callbacksAt(30_000).forEach(({ callback }) => callback());
+      await flushPromises();
+      expect(document.querySelector("#machine")?.textContent).toBe("mini");
+      expect(document.body.textContent).toContain("factory-ui");
+      expect(document.querySelector("#error")?.textContent).toMatch(
+        /last good.*0s ago/i,
+      );
+      expect(timers.callbacksAt(60_000)).not.toHaveLength(0);
+
+      timers.callbacksAt(60_000).forEach(({ callback }) => callback());
+      await flushPromises();
+      expect(timers.callbacksAt(120_000)).not.toHaveLength(0);
+      timers.callbacksAt(120_000).forEach(({ callback }) => callback());
+      await flushPromises();
+      expect(timers.callbacksAt(240_000)).not.toHaveLength(0);
+      timers.callbacksAt(240_000).forEach(({ callback }) => callback());
+      await flushPromises();
+      expect(timers.callbacksAt(300_000)).not.toHaveLength(0);
+      timers.callbacksAt(300_000).forEach(({ callback }) => callback());
+      await flushPromises();
+      expect(timers.callbacksAt(300_000)).not.toHaveLength(0);
+    } finally {
+      restore();
+      vi.useRealTimers();
+    }
+  });
+
+  test("drops an older load response after a newer generation has rendered", async () => {
+    const document = dashboardDocument();
+    let resolveOlder: ((response: Response) => void) | undefined;
+    const fetcher = vi.fn((_: RequestInfo | URL): Promise<Response> => {
+      if (resolveOlder === undefined) {
+        return new Promise((resolve) => {
+          resolveOlder = resolve;
+        });
+      }
+      return Promise.resolve(jsonResponse(fleet("newer")));
+    });
+
+    const older = loadFleet(document, fetcher);
+    await loadFleet(document, fetcher);
+    resolveOlder?.(jsonResponse(fleet("older")));
+    await older;
+
+    expect(document.querySelector("#machine")?.textContent).toBe("newer");
   });
 });

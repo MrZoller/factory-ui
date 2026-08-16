@@ -12,6 +12,8 @@ const MAX_ROUTING_STEPS = 1_000_000;
 const loadGenerations = new WeakMap();
 const tabControllers = new WeakMap();
 const machineViews = new WeakMap();
+const loadStates = new WeakMap();
+const dashboardControllers = new WeakMap();
 
 function textElement(documentRoot, tag, text, className) {
   const element = documentRoot.createElement(tag);
@@ -55,6 +57,22 @@ function displayAge(value, now) {
   const hours = Math.floor(minutes / 60);
   if (hours < 48) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function updateSnapshotStatus(documentRoot, state, now) {
+  const generated = documentRoot.querySelector("#generated");
+  if (generated && state.lastGoodGeneratedAt) {
+    generated.textContent = `Snapshot ${displayAge(state.lastGoodGeneratedAt, now)} · ${displayTime(state.lastGoodGeneratedAt)}`;
+  }
+  if (state.lastError) {
+    const error = documentRoot.querySelector("#error");
+    if (error) {
+      const suffix = state.lastGoodGeneratedAt
+        ? ` · Last good snapshot ${displayAge(state.lastGoodGeneratedAt, now)}`
+        : "";
+      error.textContent = `${state.lastError}${suffix}`;
+    }
+  }
 }
 
 function displayDuration(milliseconds) {
@@ -1033,7 +1051,10 @@ function installTabs(documentRoot, views) {
       windowRoot.history.replaceState(
         null,
         "",
-        dashboardHash(view.identity, selectedRepository(view)?.identity),
+        `${windowRoot.location.pathname}${windowRoot.location.search}${dashboardHash(
+          view.identity,
+          selectedRepository(view)?.identity,
+        )}`,
       );
     }
   }
@@ -1253,24 +1274,51 @@ export async function loadFleet(
     clearTimeout: dependencyOverrides.clearTimeout ?? globalThis.clearTimeout,
     now: dependencyOverrides.now ?? (() => new Date()),
   };
+  const state = loadStates.get(documentRoot) ?? {
+    lastGoodGeneratedAt: undefined,
+    lastError: undefined,
+  };
+  loadStates.set(documentRoot, state);
+  const refreshing = machineViews.has(documentRoot);
+  const scroll = {
+    repositoriesTop: repositories?.scrollTop ?? 0,
+    repositoriesLeft: repositories?.scrollLeft ?? 0,
+    windowX: documentRoot.defaultView?.scrollX ?? 0,
+    windowY: documentRoot.defaultView?.scrollY ?? 0,
+  };
   const generation = (loadGenerations.get(documentRoot) ?? 0) + 1;
   loadGenerations.set(documentRoot, generation);
-  tabControllers.get(documentRoot)?.cleanup();
-  tabControllers.delete(documentRoot);
-  machineViews.delete(documentRoot);
-  if (machine) machine.textContent = "Loading local machine…";
-  if (generated) generated.textContent = "Waiting for snapshot…";
-  if (error) error.textContent = "";
-  documentRoot.querySelector("#fleet-summary tbody")?.replaceChildren();
-  documentRoot.querySelector("#machine-tabs")?.replaceChildren();
-  repositories?.replaceChildren();
+  if (!refreshing) {
+    tabControllers.get(documentRoot)?.cleanup();
+    tabControllers.delete(documentRoot);
+    machineViews.delete(documentRoot);
+    if (machine) machine.textContent = "Loading local machine…";
+    if (generated) generated.textContent = "Waiting for snapshot…";
+    if (error) error.textContent = "";
+    documentRoot.querySelector("#fleet-summary tbody")?.replaceChildren();
+    documentRoot.querySelector("#machine-tabs")?.replaceChildren();
+    repositories?.replaceChildren();
+  }
   try {
     const response = await fetcher("/api/fleet");
     const fleet = await readFleetResponse(response);
-    if (loadGenerations.get(documentRoot) !== generation) return;
+    if (loadGenerations.get(documentRoot) !== generation) return false;
     renderFleet(fleet, documentRoot, dependencies.now());
+    state.lastGoodGeneratedAt = fleet.generatedAt;
+    state.lastError = undefined;
+    if (repositories) {
+      repositories.scrollTop = scroll.repositoriesTop;
+      repositories.scrollLeft = scroll.repositoriesLeft;
+    }
+    const windowRoot = documentRoot.defaultView;
+    if (
+      (scroll.windowX !== 0 || scroll.windowY !== 0) &&
+      typeof windowRoot?.scrollTo === "function"
+    ) {
+      windowRoot.scrollTo(scroll.windowX, scroll.windowY);
+    }
     const views = machineViews.get(documentRoot);
-    if (!views) return;
+    if (!views) return true;
     await fanOutToPeers(
       fleet.peers,
       views,
@@ -1279,15 +1327,105 @@ export async function loadFleet(
       dependencies,
       generation,
     );
+    return true;
   } catch (cause) {
-    if (loadGenerations.get(documentRoot) !== generation) return;
-    if (machine) machine.textContent = "Local machine unavailable";
-    repositories?.replaceChildren();
-    if (error) {
-      error.textContent =
-        cause instanceof Error ? cause.message : "Request failed";
+    if (loadGenerations.get(documentRoot) !== generation) return false;
+    state.lastError = cause instanceof Error ? cause.message : "Request failed";
+    if (refreshing) {
+      updateSnapshotStatus(documentRoot, state, dependencies.now());
+    } else {
+      if (machine) machine.textContent = "Local machine unavailable";
+      repositories?.replaceChildren();
+      if (error) error.textContent = state.lastError;
     }
+    return false;
   }
+}
+
+function refreshSeconds(windowRoot) {
+  const value = new URLSearchParams(windowRoot?.location?.search ?? "").get(
+    "refresh",
+  );
+  if (!value || !/^[0-9]+$/.test(value)) return 30;
+  const seconds = Number(value);
+  return Number.isSafeInteger(seconds) && seconds >= 5 && seconds <= 3600
+    ? seconds
+    : 30;
+}
+
+export function startDashboard(
+  documentRoot = document,
+  fetcher = fetch,
+  dependencyOverrides = {},
+) {
+  dashboardControllers.get(documentRoot)?.cleanup();
+  const dependencies = {
+    setTimeout: dependencyOverrides.setTimeout ?? globalThis.setTimeout,
+    clearTimeout: dependencyOverrides.clearTimeout ?? globalThis.clearTimeout,
+    setInterval: dependencyOverrides.setInterval ?? globalThis.setInterval,
+    clearInterval:
+      dependencyOverrides.clearInterval ?? globalThis.clearInterval,
+    now: dependencyOverrides.now ?? (() => new Date()),
+  };
+  const intervalMilliseconds = refreshSeconds(documentRoot.defaultView) * 1_000;
+  let refreshTimer;
+  let ageTimer;
+  let inFlight = false;
+  let failures = 0;
+
+  const clearRefreshTimer = () => {
+    if (refreshTimer !== undefined) dependencies.clearTimeout(refreshTimer);
+    refreshTimer = undefined;
+  };
+  const schedule = (milliseconds) => {
+    clearRefreshTimer();
+    if (!documentRoot.hidden) {
+      refreshTimer = dependencies.setTimeout(
+        () => void refresh(),
+        milliseconds,
+      );
+    }
+  };
+  const refresh = async () => {
+    if (inFlight || documentRoot.hidden) return;
+    inFlight = true;
+    clearRefreshTimer();
+    const success = await loadFleet(documentRoot, fetcher, dependencies);
+    inFlight = false;
+    if (success) {
+      failures = 0;
+      schedule(intervalMilliseconds);
+    } else {
+      failures += 1;
+      schedule(Math.min(300, 30 * 2 ** failures) * 1_000);
+    }
+  };
+  const onVisibilityChange = () => {
+    if (documentRoot.hidden) clearRefreshTimer();
+    else void refresh();
+  };
+  const onRefreshClick = () => void refresh();
+  documentRoot.addEventListener("visibilitychange", onVisibilityChange);
+  documentRoot
+    .querySelector("#refresh")
+    ?.addEventListener("click", onRefreshClick);
+  ageTimer = dependencies.setInterval(() => {
+    const state = loadStates.get(documentRoot);
+    if (state) updateSnapshotStatus(documentRoot, state, dependencies.now());
+  }, 1_000);
+  const controller = {
+    cleanup() {
+      clearRefreshTimer();
+      if (ageTimer !== undefined) dependencies.clearInterval(ageTimer);
+      documentRoot.removeEventListener("visibilitychange", onVisibilityChange);
+      documentRoot
+        .querySelector("#refresh")
+        ?.removeEventListener("click", onRefreshClick);
+    },
+  };
+  dashboardControllers.set(documentRoot, controller);
+  void refresh();
+  return controller;
 }
 
 // Auto-load when running in a real browser with a dashboard
@@ -1295,5 +1433,5 @@ if (
   typeof window !== "undefined" &&
   window.document?.querySelector("#repositories")
 ) {
-  void loadFleet();
+  startDashboard();
 }

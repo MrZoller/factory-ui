@@ -118,6 +118,6 @@ task.
   - deps: T14
   - pr: 18
 
-- [ ] T19 (standard) — Auto-refresh the dashboard without losing place
+- [~] T19 (standard) — Auto-refresh the dashboard without losing place
   - acceptance: In `src/public/app.js`, `src/public/index.html`, and colocated tests: after the first load the client re-fetches `/api/fleet` (and re-fans-out to peers) every 30 s while the document is visible, pauses while `document.hidden` is true and refreshes immediately on the next `visibilitychange` to visible; a refresh keeps the current content on screen until the new snapshot has been read and validated (no "Loading…" flash, no cleared panels), preserves the selected machine tab, the selected repository sub-tab, and the panel scroll position, and updates the existing `Snapshot <age> · <time>` line, whose age text also ticks locally between fetches; a failed refresh leaves the last good snapshot rendered, shows the error in `#error` with the age of the last good snapshot, and backs off (60 s, 120 s, cap 300 s) until a fetch succeeds; a Refresh button and `?refresh=<seconds>` (bounded 5–3600; invalid → default 30) exist for manual/paced use; only one in-flight refresh at a time (the existing `loadGenerations` guard drops stale responses); no new server surface, no CSP change, no inline script; tests cover the visible/hidden pause, machine+repository selection and scroll preservation across a refresh, error back-off, and the stale-response guard.
   - deps: T18

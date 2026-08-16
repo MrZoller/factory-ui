@@ -1,13 +1,12 @@
-import { join } from "node:path";
-
 import {
   FACTORY_PHASES,
-  type AppConfig,
+  type AppConfigSource,
   type FactoryPhase,
   type FleetSnapshot,
-  type RepositoryConfig,
+  type RepositorySource,
   type RepositorySnapshot,
 } from "./contracts";
+import { resolveFactoryPath } from "./paths";
 
 export const MAX_STATE_BYTES = 64 * 1024;
 export const MAX_PROJECT_LENGTH = 200;
@@ -23,7 +22,7 @@ function isPhase(value: unknown): value is FactoryPhase {
 }
 
 export async function readRepositorySnapshot(
-  repository: RepositoryConfig,
+  repository: RepositorySource,
 ): Promise<RepositorySnapshot> {
   const unavailable = (warning: string): RepositorySnapshot => ({
     name: repository.name,
@@ -32,10 +31,11 @@ export async function readRepositorySnapshot(
   });
 
   try {
-    const file = Bun.file(join(repository.path, ".factory", "state.json"));
-    if (!(await file.exists())) {
+    const path = await resolveFactoryPath(repository.path, "state");
+    if (path === null) {
       return unavailable("state.json is missing");
     }
+    const file = Bun.file(path);
     const bytes = await file.slice(0, MAX_STATE_BYTES + 1).arrayBuffer();
     if (bytes.byteLength > MAX_STATE_BYTES) {
       return unavailable("state.json is too large");
@@ -66,7 +66,7 @@ export async function readRepositorySnapshot(
 }
 
 export async function createFleetSnapshot(
-  config: AppConfig,
+  config: AppConfigSource,
 ): Promise<FleetSnapshot> {
   return {
     hostname: config.machine,

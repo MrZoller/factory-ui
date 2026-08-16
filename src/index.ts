@@ -11,7 +11,5 @@ if (import.meta.main) {
 
   const config = await loadConfig(configPath);
   const server = startServer(config);
-  console.log(
-    `${serviceName} listening on http://${server.hostname}:${server.port}`,
-  );
+  console.log(`${serviceName} listening on ${server.url.origin}`);
 }

@@ -11,8 +11,8 @@ import {
   MAX_PLAN_WARNINGS,
   parseFactoryPlan,
   readFactoryPlan,
-  readRepositoryFactoryData,
 } from "./plan";
+import { readRepositoryFactoryData } from "../snapshot";
 import { type PlanData, type PlanTask } from "../contracts";
 
 describe("plan", () => {
@@ -814,6 +814,8 @@ describe("plan", () => {
       expect(result.name).toBe("configured-name");
       expect(result.state.status).toBe("unavailable");
       expect(result.plan.status).toBe("unavailable");
+      expect(result.questions.status).toBe("unavailable");
+      expect(result.worklog.status).toBe("unavailable");
     });
   });
 });

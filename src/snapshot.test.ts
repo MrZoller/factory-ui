@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import {
   createFleetSnapshot,
+  readRepositoryFactoryData,
   readRepositorySnapshot,
   MAX_PROJECT_LENGTH,
 } from "./snapshot";
@@ -13,6 +14,52 @@ describe("snapshot", () => {
     test("is 200", () => {
       expect(MAX_PROJECT_LENGTH).toBe(200);
     });
+  });
+
+  test("aggregates factory readers without coupling source availability", async () => {
+    const root = mkdtempSync(join(process.cwd(), "tmp-factory-data-"));
+    const factoryPath = join(root, ".factory");
+    mkdirSync(factoryPath);
+    try {
+      await Promise.all([
+        Bun.write(
+          join(factoryPath, "state.json"),
+          JSON.stringify({
+            project: "internal-name",
+            phase: "build",
+            spec_approved: true,
+            plan_approved: true,
+            current_task: null,
+            branch: null,
+            pr: null,
+            hold: false,
+            updated: "2026-08-16T00:00:00Z",
+          }),
+        ),
+        Bun.write(
+          join(factoryPath, "plan.md"),
+          "- [ ] T1 (standard) — Task\n  - deps: none",
+        ),
+        Bun.write(join(factoryPath, "questions.md"), "## Q1 malformed"),
+        Bun.write(
+          join(factoryPath, "worklog.md"),
+          "- 2026-08-16 UTC - completed verification",
+        ),
+      ]);
+
+      const result = await readRepositoryFactoryData({
+        name: "configured-name",
+        path: root,
+      });
+
+      expect(result.name).toBe("configured-name");
+      expect(result.state.status).toBe("available");
+      expect(result.plan.status).toBe("available");
+      expect(result.questions.status).toBe("partial");
+      expect(result.worklog.status).toBe("available");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   describe("readRepositorySnapshot", () => {

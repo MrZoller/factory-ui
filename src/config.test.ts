@@ -358,6 +358,15 @@ describe("config", () => {
       expect(result.bind).toBe("::1");
     });
 
+    test("accepts uppercase and expanded loopback IPv6", () => {
+      for (const bind of [
+        "0000:0000:0000:0000:0000:0000:0000:0001",
+        "FD7A:115C:A1E0::1",
+      ]) {
+        expect(parseConfig({ ...baseInput, bind }).bind).toBe(bind);
+      }
+    });
+
     test("accepts bind field with 100.64.0.0/10 range", () => {
       const input = { ...baseInput, bind: "100.64.0.1" };
       const result = parseConfig(input);
@@ -409,6 +418,24 @@ describe("config", () => {
       expect(() => parseConfig(input)).toThrow(
         "bind must be an allowed literal IP address",
       );
+    });
+
+    test("rejects wildcard, public, ambiguous, and mapped bind addresses", () => {
+      for (const bind of [
+        "0.0.0.0",
+        "::",
+        "[::1]",
+        "localhost",
+        "127.1",
+        "::ffff:127.0.0.1",
+        "::ffff:100.64.0.1",
+        "1.1.1.1",
+        "10.0.0.1",
+      ]) {
+        expect(() => parseConfig({ ...baseInput, bind })).toThrow(
+          "bind must be an allowed literal IP address",
+        );
+      }
     });
 
     test("accepts developmentOrigins with localhost", () => {

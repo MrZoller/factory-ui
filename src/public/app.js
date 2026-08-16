@@ -125,6 +125,9 @@ function safeGithubUrl(value, kind) {
     pull: /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/pull\/[1-9][0-9]*$/,
     issue:
       /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/issues\/[1-9][0-9]*$/,
+    commit:
+      /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/commit\/[0-9a-fA-F]{40}$/,
+    plan: /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/blob\/HEAD\/\.factory\/plan\.md$/,
   };
   const match = typeof value === "string" ? patterns[kind]?.exec(value) : null;
   if (
@@ -164,6 +167,116 @@ function appendExternalOrText(parent, text, value, kind) {
   link.rel = "noopener noreferrer";
   parent.append(link);
   return link;
+}
+
+const WORKLOG_EVENT_PATTERNS = [
+  [
+    "opened PR",
+    /\b(?:opened|created) (?:PR|pull request)\b|\bPR #\d+ opened\b/i,
+  ],
+  ["merged", /\bmerged\b|\bmerge completed\b/i],
+  [
+    "review wait",
+    /\breview wait\b|\b(?:awaiting|awaited|waiting for) (?:review|CI|checks?|bots?)\b|\bin review\b/i,
+  ],
+  ["parked minors", /\bparked? (?:review )?minors?\b/i],
+  ["reclassified", /\breclassif(?:ied|y|ication)\b/i],
+  ["escalated", /\bescalat(?:ed|ion|ing)\b/i],
+  [
+    "question filed",
+    /\b(?:filed|opened|recorded|asked) (?:a )?question\b|\bquestion (?:filed|opened)\b/i,
+  ],
+];
+
+function worklogEvent(sentence) {
+  return (
+    WORKLOG_EVENT_PATTERNS.find(([, pattern]) => pattern.test(sentence))?.[0] ??
+    "other"
+  );
+}
+
+function worklogContent(entry) {
+  const raw =
+    typeof entry?.text === "string" ? entry.text : String(entry?.text ?? "");
+  const date = typeof entry?.date === "string" ? entry.date : "";
+  const time = typeof entry?.time === "string" ? entry.time : undefined;
+  const validDate = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/.test(
+    date,
+  );
+  const validTime =
+    time === undefined || /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time);
+  if (!validDate || !validTime) return { raw, content: raw, malformed: true };
+  const prefix = `- ${date}${time ? ` ${time}` : ""} UTC - `;
+  if (!raw.startsWith(prefix)) return { raw, content: raw, malformed: true };
+  return {
+    raw,
+    content: raw.slice(prefix.length),
+    malformed: false,
+  };
+}
+
+function splitFirstSentence(text) {
+  const match = /^([\s\S]*?[.!?])(?:\s+|$)([\s\S]*)$/.exec(text);
+  return match
+    ? { headline: match[1], remainder: match[2] }
+    : { headline: text, remainder: "" };
+}
+
+function repositoryGithubBase(repositoryUrl) {
+  const safe = safeGithubUrl(repositoryUrl, "repository");
+  return safe?.replace(/\/$/, "");
+}
+
+function worklogReferenceUrl(repositoryUrl, kind, value) {
+  const base = repositoryGithubBase(repositoryUrl);
+  if (!base) return undefined;
+  if (kind === "task") return `${base}/blob/HEAD/.factory/plan.md`;
+  if (kind === "pull") return `${base}/pull/${value}`;
+  if (kind === "issue") return `${base}/issues/${value}`;
+  if (kind === "commit") return `${base}/commit/${value}`;
+  return undefined;
+}
+
+function appendWorklogHighlight(parent, text, repositoryUrl) {
+  const pattern =
+    /(`[^`\n]+`|\bT[1-9][0-9]*\b|\bPR #[1-9][0-9]*\b|(?<![A-Za-z0-9])#[1-9][0-9]*\b|\b[0-9a-fA-F]{40}\b)/g;
+  let offset = 0;
+  for (const match of text.matchAll(pattern)) {
+    if (match.index > offset)
+      parent.append(
+        parent.ownerDocument.createTextNode(text.slice(offset, match.index)),
+      );
+    const token = match[0];
+    if (token.startsWith("`")) {
+      appendText(parent, "code", token.slice(1, -1));
+    } else {
+      const kind = token.startsWith("T")
+        ? "task"
+        : token.startsWith("PR #")
+          ? "pull"
+          : token.startsWith("#")
+            ? "issue"
+            : "commit";
+      const value =
+        kind === "pull"
+          ? token.slice(4)
+          : kind === "issue"
+            ? token.slice(1)
+            : token;
+      const label = kind === "commit" ? token.slice(0, 7) : token;
+      const url = worklogReferenceUrl(repositoryUrl, kind, value);
+      const reference = appendExternalOrText(
+        parent,
+        label,
+        url,
+        kind === "task" ? "plan" : kind,
+      );
+      reference.classList.add("worklog-reference");
+    }
+    offset = match.index + token.length;
+  }
+  if (offset < text.length)
+    parent.append(parent.ownerDocument.createTextNode(text.slice(offset)));
 }
 
 function renderCurrent(card, repository) {
@@ -369,14 +482,101 @@ function renderWorklog(card, repository) {
     appendText(panel, "p", "None", "empty");
     return;
   }
-  for (const entry of entries) {
-    const item = panel.ownerDocument.createElement("article");
-    item.className = "text-entry";
-    const date = entry?.date ?? "Unknown date";
-    const heading = entry?.time ? `${date} ${entry.time} UTC` : date;
-    appendText(item, "h5", heading);
-    appendText(item, "pre", entry?.text ?? "", "verbatim");
-    panel.append(item);
+  const newestFirst = entries.slice().reverse();
+  const visibleCount = 6;
+  let expanded = false;
+  const list = panel.ownerDocument.createElement("div");
+  list.className = "worklog-list";
+  panel.append(list);
+
+  const renderEntries = () => {
+    list.replaceChildren();
+    let previousDate;
+    for (const entry of expanded
+      ? newestFirst
+      : newestFirst.slice(0, visibleCount)) {
+      const date =
+        typeof entry?.date === "string" ? entry.date : "Unknown date";
+      if (date !== previousDate) {
+        appendText(list, "h5", date, "worklog-date");
+        previousDate = date;
+      }
+      const parsed = worklogContent(entry);
+      const sentence = parsed.malformed
+        ? { headline: parsed.raw, remainder: "" }
+        : splitFirstSentence(parsed.content);
+      const item = panel.ownerDocument.createElement("article");
+      item.className = "worklog-entry";
+      const headline = item.ownerDocument.createElement("div");
+      headline.className = "worklog-headline";
+      appendText(
+        headline,
+        "time",
+        entry?.time ?? "Time unavailable",
+        "worklog-time",
+      );
+      const task = /\bT[1-9][0-9]*\b/.exec(parsed.content)?.[0];
+      if (task) {
+        const taskChip = appendExternalOrText(
+          headline,
+          task,
+          worklogReferenceUrl(repository.repositoryUrl, "task", task),
+          "plan",
+        );
+        taskChip.classList.add("worklog-chip", "worklog-task-chip");
+      }
+      appendText(
+        headline,
+        "span",
+        parsed.malformed ? "other" : worklogEvent(sentence.headline),
+        "worklog-chip worklog-event-chip",
+      );
+      const headlineText = item.ownerDocument.createElement("span");
+      headlineText.className = "worklog-summary";
+      appendWorklogHighlight(
+        headlineText,
+        sentence.headline,
+        repository.repositoryUrl,
+      );
+      headline.append(headlineText);
+      item.append(headline);
+      if (sentence.remainder) {
+        const body = item.ownerDocument.createElement("p");
+        body.className = "worklog-body";
+        appendWorklogHighlight(
+          body,
+          sentence.remainder,
+          repository.repositoryUrl,
+        );
+        item.append(body);
+      }
+      const details = item.ownerDocument.createElement("details");
+      details.className = "worklog-raw";
+      appendText(details, "summary", "Raw entry");
+      appendText(details, "pre", parsed.raw, "verbatim");
+      item.append(details);
+      list.append(item);
+    }
+  };
+  renderEntries();
+
+  if (newestFirst.length > visibleCount) {
+    const toggle = appendText(
+      panel,
+      "button",
+      `Show all ${newestFirst.length}`,
+      "worklog-toggle",
+    );
+    toggle.type = "button";
+    toggle.addEventListener("click", () => {
+      expanded = !expanded;
+      toggle.textContent = expanded
+        ? `Show newest ${visibleCount}`
+        : `Show all ${newestFirst.length}`;
+      toggle.setAttribute("aria-expanded", String(expanded));
+      renderEntries();
+    });
+    toggle.setAttribute("aria-expanded", "false");
   }
 }
 

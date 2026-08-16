@@ -257,6 +257,44 @@ describe("local dashboard rendering", () => {
     );
   });
 
+  test("renders omitted state fields as unknown rather than negative values", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      {
+        hostname: "mini",
+        generatedAt: "2026-08-16T12:00:00.000Z",
+        repositories: [
+          richRepository({
+            state: {
+              status: "unavailable",
+              warnings: [
+                { code: "STATE_MISSING", message: "state unavailable" },
+              ],
+            },
+          }),
+        ],
+      },
+      document,
+      NOW,
+    );
+
+    expect(document.querySelector(".current-panel")?.textContent).toContain(
+      "TaskUnknown",
+    );
+    expect(document.querySelector(".current-panel")?.textContent).toContain(
+      "BranchUnknown",
+    );
+    expect(document.querySelector(".current-panel")?.textContent).toContain(
+      "Pull requestUnknown",
+    );
+    expect(document.querySelector(".current-panel")?.textContent).toContain(
+      "HoldUnknown",
+    );
+    expect(document.querySelector(".current-panel")?.textContent).toContain(
+      "Gatesspec Unknown; plan Unknown",
+    );
+  });
+
   test("reports fetch failures without rendering stale cards", async () => {
     const document = dashboardDocument();
     document

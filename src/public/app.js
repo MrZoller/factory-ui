@@ -15,6 +15,14 @@ function readerData(result) {
   return result && result.status !== "unavailable" ? result.data : undefined;
 }
 
+function displayOptional(value) {
+  return value === undefined ? "Unknown" : value === null ? "None" : value;
+}
+
+function displayBoolean(value, trueText, falseText) {
+  return value === undefined ? "Unknown" : value ? trueText : falseText;
+}
+
 function displayTime(value) {
   if (typeof value !== "string") return "Unknown";
   const date = new Date(value);
@@ -92,11 +100,16 @@ function renderCurrent(card, repository) {
   list.className = "facts";
   addDefinition(list, "Project", repository.project ?? "Unknown");
   addDefinition(list, "Phase", repository.phase ?? "Unknown");
-  addDefinition(list, "Task", state?.currentTask ?? "None");
-  addDefinition(list, "Branch", state?.branch ?? "None");
+  addDefinition(list, "Task", displayOptional(state?.currentTask));
+  addDefinition(list, "Branch", displayOptional(state?.branch));
 
   appendText(list, "dt", "Pull request");
-  const prValue = state?.pr == null ? "None" : `PR #${state.pr}`;
+  const prValue =
+    state?.pr === undefined
+      ? "Unknown"
+      : state.pr === null
+        ? "None"
+        : `PR #${state.pr}`;
   const prUrl = safePullRequestUrl(repository.prUrl);
   const prDefinition = list.ownerDocument.createElement("dd");
   if (prUrl && state?.pr != null) {
@@ -110,11 +123,11 @@ function renderCurrent(card, repository) {
   }
   list.append(prDefinition);
 
-  addDefinition(list, "Hold", state?.hold === true ? "HELD" : "No");
+  addDefinition(list, "Hold", displayBoolean(state?.hold, "HELD", "No"));
   addDefinition(
     list,
     "Gates",
-    `spec ${state?.specApproved === true ? "approved" : "not approved"}; plan ${state?.planApproved === true ? "approved" : "not approved"}`,
+    `spec ${displayBoolean(state?.specApproved, "approved", "not approved")}; plan ${displayBoolean(state?.planApproved, "approved", "not approved")}`,
   );
   addDefinition(list, "State updated", displayTime(state?.updated));
   panel.append(list);

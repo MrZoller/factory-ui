@@ -15,9 +15,29 @@
         <p id="generated" class="age">Waiting for snapshot…</p>
       </header>
       <p id="error" role="alert"></p>
+      <section class="fleet-summary-section" aria-labelledby="fleet-heading">
+        <h2 id="fleet-heading">Fleet summary</h2>
+        <div class="table-scroll">
+          <table id="fleet-summary">
+            <thead>
+              <tr>
+                <th scope="col">Machine</th>
+                <th scope="col">Liveness</th>
+                <th scope="col">Current task</th>
+                <th scope="col">PR</th>
+                <th scope="col">Hold</th>
+                <th scope="col">Questions</th>
+                <th scope="col">Data age</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
       <section aria-labelledby="repositories-heading">
         <h2 id="repositories-heading">Repositories</h2>
-        <div id="repositories" class="machine-list"></div>
+        <div id="machine-tabs" role="tablist" aria-label="Machines"></div>
+        <div id="repositories"></div>
       </section>
     </main>
   </body>

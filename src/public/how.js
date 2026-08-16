@@ -67,24 +67,31 @@ function roleRoute(routing, role) {
   return routing.agents?.[role.id];
 }
 
-function modelCost(fleet, modelId) {
+function modelUsage(fleet, modelId) {
   if (!modelId || !Array.isArray(fleet?.repositories)) return undefined;
   let total = 0;
+  let tokens = 0;
   let found = false;
   for (const repository of fleet.repositories) {
     const costs = availableData(repository.costs);
     if (!costs || costs.currency !== "USD") return undefined;
     for (const task of Object.values(costs.tasks ?? {})) {
-      const usd = task?.byModel?.[modelId]?.usd;
+      const counters = task?.byModel?.[modelId];
+      const usd = counters?.usd;
       if (usd !== undefined) {
         if (!Number.isFinite(usd) || usd < 0) return undefined;
         found = true;
         total += usd;
         if (!Number.isFinite(total)) return undefined;
+        for (const value of Object.values(counters.tokens ?? {})) {
+          if (!Number.isFinite(value) || value < 0) return undefined;
+          tokens += value;
+          if (!Number.isFinite(tokens)) return undefined;
+        }
       }
     }
   }
-  return found ? total : undefined;
+  return found ? { usd: total, tokens } : undefined;
 }
 
 function renderRole(documentRoot, role, routing, fleet) {
@@ -112,10 +119,17 @@ function renderRole(documentRoot, role, routing, fleet) {
       element(documentRoot, "p", `steps ≤ ${route.steps}`, "routing-steps"),
     );
   }
-  const cost = modelCost(fleet, `${route.provider}/${route.model}`);
-  if (cost !== undefined) {
+  const usage = modelUsage(fleet, `${route.provider}/${route.model}`);
+  if (usage !== undefined) {
     item.append(
-      element(documentRoot, "p", `$${cost.toFixed(2)} metered`, "agent-cost"),
+      element(
+        documentRoot,
+        "p",
+        usage.usd === 0 && usage.tokens > 0
+          ? "sub"
+          : `$${usage.usd.toFixed(2)} metered`,
+        "agent-cost",
+      ),
     );
   }
   return item;
@@ -182,6 +196,12 @@ export function renderHow(machines, documentRoot = document) {
   const tabsRoot = documentRoot.querySelector("#how-machine-tabs");
   const panelsRoot = documentRoot.querySelector("#how-machines");
   if (!tabsRoot || !panelsRoot || machines.length === 0) return;
+  const selectedIndex = selectedMachine(documentRoot.defaultView, machines);
+  const selectedDiagram = panelsRoot.querySelector(
+    ".how-machine-panel:not([hidden]) .pipeline-diagram",
+  );
+  const diagramScrollLeft = selectedDiagram?.scrollLeft ?? 0;
+  const restoreTabFocus = tabsRoot.contains(documentRoot.activeElement);
   const views = machines.map((machine, index) => {
     const tab = element(
       documentRoot,
@@ -243,7 +263,11 @@ export function renderHow(machines, documentRoot = document) {
   });
   tabsRoot.replaceChildren(...views.map((view) => view.tab));
   panelsRoot.replaceChildren(...views.map((view) => view.panel));
-  select(selectedMachine(documentRoot.defaultView, views));
+  select(selectedIndex);
+  const nextDiagram =
+    views[selectedIndex]?.panel.querySelector(".pipeline-diagram");
+  if (nextDiagram) nextDiagram.scrollLeft = diagramScrollLeft;
+  if (restoreTabFocus) views[selectedIndex]?.tab.focus();
   const windowRoot = documentRoot.defaultView;
   const previousHandler = hashHandlers.get(documentRoot);
   if (previousHandler)

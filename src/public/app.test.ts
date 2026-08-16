@@ -441,6 +441,42 @@ describe("local dashboard rendering", () => {
     ).toBe(true);
   });
 
+  test("does not render overflowing aggregate USD totals as Infinity", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      costs: costs({
+        T1: validCostTask(Number.MAX_VALUE),
+        T2: validCostTask(Number.MAX_VALUE),
+      }),
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    expect(
+      document.querySelector(".repository-summary .cost-total")?.textContent,
+    ).toBe("Unavailable");
+    expect(
+      summaryRow(document, "mini")?.querySelector(".cost-total")?.textContent,
+    ).toBe("Unavailable");
+    expect(document.body.textContent).not.toContain("Infinity");
+  });
+
+  test("rejects non-USD fleet costs instead of formatting them as dollars", async () => {
+    const document = dashboardDocument();
+    const nonUsd = costs({ T8: validCostTask() });
+    nonUsd.data.currency = "EUR";
+
+    expect(
+      await loadFleet(document, async () =>
+        jsonResponse(fleet("mini", [], [richRepository({ costs: nonUsd })])),
+      ),
+    ).toBe(false);
+    expect(document.querySelector("#error")?.textContent).toBe(
+      "Invalid fleet response",
+    );
+    expect(document.body.textContent).not.toContain("$1.23");
+  });
+
   test("keeps hostile costs from a peer response inert", () => {
     const document = dashboardDocument();
     const hostile = '<img src=x onerror="globalThis.pwned=1">';
@@ -477,6 +513,16 @@ describe("local dashboard rendering", () => {
       /^Stale · last good snapshot 31s ago/,
     );
     expect(document.querySelector("#generated")?.classList).toContain("stale");
+    expect(document.querySelector("#generated")?.textContent).toContain(
+      "— snapshot too old",
+    );
+  });
+
+  test("allows long machine headings to wrap anywhere", async () => {
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+    expect(css).toMatch(
+      /\.machine-subtitle\s*\{[^}]*overflow-wrap: anywhere;/s,
+    );
   });
 
   test("renders validated GitHub links", () => {
@@ -2021,6 +2067,48 @@ describe("browser peer fan-out", () => {
     ).toContain("recovered");
     expect(document.body.textContent).toContain("recovered");
     expect(document.body.textContent).not.toContain("UNREACHABLE");
+  });
+
+  test("an older peer timeout cannot stale a newer successful load", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "macbook", origin: "http://100.64.0.40:7777" };
+    const timeouts: Array<() => void> = [];
+    let localRequests = 0;
+    let peerRequests = 0;
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === "/api/fleet") {
+        localRequests += 1;
+        return Promise.resolve(
+          jsonResponse(fleet(`mini-${localRequests}`, [peer])),
+        );
+      }
+      peerRequests += 1;
+      return peerRequests === 1
+        ? new Promise(() => undefined)
+        : Promise.resolve(jsonResponse(fleet("macbook")));
+    });
+    const dependencies = {
+      setTimeout: ((callback: () => void) => {
+        timeouts.push(callback);
+        return timeouts.length;
+      }) as typeof setTimeout,
+      clearTimeout: vi.fn() as unknown as typeof clearTimeout,
+      now: () => NOW,
+    };
+
+    const older = loadFleet(document, fetcher, dependencies);
+    await flushPromises();
+    expect(await loadFleet(document, fetcher, dependencies)).toBe(true);
+    timeouts[0]?.();
+    expect(await older).toBe(false);
+
+    expect(document.querySelector("#machine")?.textContent).toBe("mini-2");
+    expect(document.querySelector("#generated")?.textContent).not.toContain(
+      "peer timed out",
+    );
+    expect(document.querySelector("#generated")?.classList).not.toContain(
+      "stale",
+    );
   });
 });
 

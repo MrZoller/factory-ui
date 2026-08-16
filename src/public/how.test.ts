@@ -168,6 +168,10 @@ describe("how factory works page", () => {
       document.querySelector('[data-role="small_model"] .provider-opencode'),
     ).not.toBeNull();
     expect(
+      document.querySelector('[data-role="small_model"] .agent-cost')
+        ?.textContent,
+    ).toBe("sub");
+    expect(
       document.querySelector('[data-role="driver"] .agent-cost')?.textContent,
     ).toBe("$1.25 metered");
   });
@@ -251,5 +255,42 @@ describe("how factory works page", () => {
     expect(
       document.querySelector('[data-role="verifier"] .agent-cost'),
     ).toBeNull();
+  });
+
+  test("labels zero-dollar model usage with tokens as subscription", () => {
+    const document = howDocument();
+
+    renderHow([{ identity: "mini", fleet: fleet() }], document);
+
+    expect(
+      document.querySelector('[data-role="small_model"] .agent-cost')
+        ?.textContent,
+    ).toBe("sub");
+  });
+
+  test("preserves selected diagram scroll and tab focus across rerenders", () => {
+    const document = howDocument("#machine=remote");
+    const machines = [
+      { identity: "mini", fleet: fleet() },
+      { identity: "remote", fleet: fleet({ hostname: "remote" }) },
+    ];
+    renderHow(machines, document);
+    const selectedTab = document.querySelector<HTMLButtonElement>(
+      '[aria-selected="true"]',
+    )!;
+    const diagram = document.querySelector<HTMLElement>(
+      ".how-machine-panel:not([hidden]) .pipeline-diagram",
+    )!;
+    selectedTab.focus();
+    diagram.scrollLeft = 187;
+
+    renderHow(machines, document);
+
+    expect(document.activeElement?.textContent).toBe("remote");
+    expect(
+      document.querySelector<HTMLElement>(
+        ".how-machine-panel:not([hidden]) .pipeline-diagram",
+      )?.scrollLeft,
+    ).toBe(187);
   });
 });

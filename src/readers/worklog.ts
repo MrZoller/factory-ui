@@ -12,7 +12,8 @@ export const MAX_WORKLOG_LINE_LENGTH = 8192;
 export const MAX_WORKLOG_ENTRIES = 20;
 export const MAX_WORKLOG_WARNINGS = 32;
 
-const WORKLOG_ENTRY = /^- (\d{4}-\d{2}-\d{2}) UTC - (.+)$/;
+const WORKLOG_ENTRY =
+  /^- (\d{4}-\d{2}-\d{2})(?: ((?:[01]\d|2[0-3]):[0-5]\d))? UTC - (.+)$/;
 
 interface SourceLine {
   value: string;
@@ -106,10 +107,12 @@ export function parseFactoryWorklog(text: string): ReaderResult<WorklogData> {
       continue;
     }
     const nextStart = boundaries[boundary + 1]?.line.start ?? text.length;
-    entries.push({
+    const entry: WorklogEntry = {
       date: match[1]!,
       text: text.slice(current.line.start, nextStart),
-    });
+    };
+    if (match[2] !== undefined) entry.time = match[2];
+    entries.push(entry);
   }
 
   const data = { entries: entries.slice(-MAX_WORKLOG_ENTRIES) };

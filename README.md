@@ -64,6 +64,8 @@ network.
   and 8,192 characters per line. Plans expose at most 256 tasks and 32
   dependencies per task; questions expose at most 128 entries; worklogs expose
   the newest 20 entries.
+- Worklog entries may start with either `- YYYY-MM-DD UTC - ` or
+  `- YYYY-MM-DD HH:MM UTC - `. Clock times use zero-padded 24-hour UTC time.
 - Logs: at most 256 directory entries are considered; narration is capped at
   64 KiB, 100 lines, and 2,000 bytes per line.
 - Liveness: the fixed, shell-free `lsof` probe has a two-second timeout and

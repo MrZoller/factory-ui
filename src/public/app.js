@@ -235,7 +235,9 @@ function renderWorklog(card, repository) {
   for (const entry of entries) {
     const item = panel.ownerDocument.createElement("article");
     item.className = "text-entry";
-    appendText(item, "h5", entry?.date ?? "Unknown date");
+    const date = entry?.date ?? "Unknown date";
+    const heading = entry?.time ? `${date} ${entry.time} UTC` : date;
+    appendText(item, "h5", heading);
     appendText(item, "pre", entry?.text ?? "", "verbatim");
     panel.append(item);
   }

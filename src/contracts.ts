@@ -135,10 +135,33 @@ export interface WorklogData {
   entries: WorklogEntry[];
 }
 
+export interface LogTiming {
+  startedAt: string;
+  lastActivityAt: string;
+  durationMs?: number;
+}
+
+export interface LogSourceAges {
+  driver?: string;
+  cycle?: string;
+  shepherd?: string;
+  overall?: string;
+}
+
+export interface LogsData {
+  narration: string;
+  driver?: LogTiming;
+  cycle?: LogTiming;
+  shepherd?: LogTiming;
+  asOf: LogSourceAges;
+}
+
 export interface RepositoryFactoryData {
   name: string;
   state: ReaderResult<FactoryStateData>;
   plan: ReaderResult<PlanData>;
   questions: ReaderResult<QuestionsData>;
   worklog: ReaderResult<WorklogData>;
+  logs: ReaderResult<LogsData>;
+  liveness: LivenessSnapshot;
 }

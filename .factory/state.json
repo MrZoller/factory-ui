@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T6",
-  "branch": "factory/t6-narration-timing",
-  "pr": 6,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-16T09:43:41Z"
+  "updated": "2026-08-16T10:31:29Z"
 }

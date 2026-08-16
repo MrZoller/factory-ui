@@ -5,6 +5,7 @@ export type FactoryPhase = (typeof FACTORY_PHASES)[number];
 export interface RepositorySource {
   name: string;
   path: string;
+  githubUrl?: string;
 }
 
 export interface RepositoryConfig extends RepositorySource {
@@ -172,6 +173,7 @@ export interface RepositoryFactorySnapshot extends RepositoryFactoryData {
   status: "available" | "unavailable";
   project?: string;
   phase?: FactoryPhase;
+  prUrl?: string;
   warning?: string;
 }
 

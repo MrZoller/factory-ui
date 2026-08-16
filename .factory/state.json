@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T18",
-  "branch": "factory/t18-repository-sub-tabs",
-  "pr": 18,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-16T18:37:18Z"
+  "updated": "2026-08-16T18:44:12Z"
 }

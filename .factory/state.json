@@ -5,7 +5,7 @@
   "plan_approved": true,
   "current_task": "T16",
   "branch": "factory/t16-lsof-file-set-lines",
-  "pr": null,
+  "pr": 16,
   "hold": false,
-  "updated": "2026-08-16T17:22:03Z"
+  "updated": "2026-08-16T17:32:11Z"
 }

@@ -62,7 +62,23 @@ function displayAge(value, now) {
 function updateSnapshotStatus(documentRoot, state, now) {
   const generated = documentRoot.querySelector("#generated");
   if (generated && state.lastGoodGeneratedAt) {
-    generated.textContent = `Snapshot ${displayAge(state.lastGoodGeneratedAt, now)} · ${displayTime(state.lastGoodGeneratedAt)}`;
+    const stale =
+      now.valueOf() - new Date(state.lastGoodGeneratedAt).valueOf() >
+        state.refreshIntervalMilliseconds ||
+      state.lastError ||
+      state.paused ||
+      state.peerTimedOut;
+    const reason = state.lastError
+      ? "refresh failed"
+      : state.paused
+        ? "paused"
+        : state.peerTimedOut
+          ? "peer timed out"
+          : "refresh failed";
+    generated.classList.toggle("stale", Boolean(stale));
+    generated.textContent = stale
+      ? `Stale · last good snapshot ${displayAge(state.lastGoodGeneratedAt, now)} (${displayTime(state.lastGoodGeneratedAt)}) — ${reason}`
+      : `Updated ${displayTime(state.lastGoodGeneratedAt)}`;
   }
   if (state.lastError) {
     const error = documentRoot.querySelector("#error");
@@ -686,7 +702,7 @@ function aggregateCurrent(repositories, key, format) {
   return everyNull ? "None" : "Unknown";
 }
 
-function summarizeMachine(name, fleet, now) {
+function summarizeMachine(name, fleet, now, intervalMilliseconds = 30_000) {
   if (!fleet) return unavailableSummary(name);
   const repositories = fleet.repositories;
   const states = repositories.map((repository) => readerData(repository.state));
@@ -718,7 +734,11 @@ function summarizeMachine(name, fleet, now) {
     ),
     hold: states.some((state) => state?.hold === true),
     questions,
-    age: displayAge(fleet.generatedAt, now),
+    age:
+      now.valueOf() - new Date(fleet.generatedAt).valueOf() >
+      intervalMilliseconds
+        ? displayAge(fleet.generatedAt, now)
+        : "",
   };
 }
 
@@ -747,7 +767,12 @@ function renderSummaryRow(row, summary) {
     textElement(documentRoot, "td", summary.pullRequest),
     holdCell,
     textElement(documentRoot, "td", summary.questions),
-    textElement(documentRoot, "td", summary.age, "age"),
+    textElement(
+      documentRoot,
+      "td",
+      summary.age,
+      `age${summary.age && summary.age !== "Unavailable" ? " stale" : ""}`,
+    ),
   );
   row.firstElementChild.scope = "row";
 }
@@ -1159,9 +1184,18 @@ export function renderFleet(fleet, documentRoot = document, now = new Date()) {
   const error = documentRoot.querySelector("#error");
   if (!machine || !repositories || !generated || !error) return;
   const { summaryBody, tabs } = ensureFleetShell(documentRoot, repositories);
+  const intervalMilliseconds =
+    loadStates.get(documentRoot)?.refreshIntervalMilliseconds ?? 30_000;
 
   machine.textContent = fleet?.hostname ?? "Local machine";
-  generated.textContent = `Snapshot ${displayAge(fleet?.generatedAt, now)} · ${displayTime(fleet?.generatedAt)}`;
+  updateSnapshotStatus(
+    documentRoot,
+    {
+      lastGoodGeneratedAt: fleet?.generatedAt,
+      refreshIntervalMilliseconds: intervalMilliseconds,
+    },
+    now,
+  );
   error.textContent = "";
   const machines = [
     { identity: fleet.hostname, fleet, isPeer: false },
@@ -1178,7 +1212,12 @@ export function renderFleet(fleet, documentRoot = document, now = new Date()) {
     updateMachineView(
       view,
       machines[index].fleet
-        ? summarizeMachine(view.identity, machines[index].fleet, now)
+        ? summarizeMachine(
+            view.identity,
+            machines[index].fleet,
+            now,
+            intervalMilliseconds,
+          )
         : unavailableSummary(view.identity),
       machines[index].fleet,
       now,
@@ -1222,6 +1261,7 @@ async function fanOutToPeers(
   generation,
 ) {
   let nextIndex = 0;
+  let peerTimedOut = false;
   async function worker() {
     while (nextIndex < peers.length) {
       const index = nextIndex++;
@@ -1232,13 +1272,25 @@ async function fanOutToPeers(
           const now = dependencies.now();
           updateMachineView(
             views[index + 1],
-            summarizeMachine(peer.name, fleet, now),
+            summarizeMachine(
+              peer.name,
+              fleet,
+              now,
+              loadStates.get(documentRoot)?.refreshIntervalMilliseconds ??
+                30_000,
+            ),
             fleet,
             now,
           );
           installTabs(documentRoot, views);
         }
-      } catch {
+      } catch (cause) {
+        if (
+          cause instanceof Error &&
+          cause.message === "Peer request timed out"
+        ) {
+          peerTimedOut = true;
+        }
         if (loadGenerations.get(documentRoot) === generation) {
           updateMachineView(
             views[index + 1],
@@ -1258,6 +1310,7 @@ async function fanOutToPeers(
       () => worker(),
     ),
   );
+  return peerTimedOut;
 }
 
 export async function loadFleet(
@@ -1277,6 +1330,9 @@ export async function loadFleet(
   const state = loadStates.get(documentRoot) ?? {
     lastGoodGeneratedAt: undefined,
     lastError: undefined,
+    refreshIntervalMilliseconds: 30_000,
+    paused: false,
+    peerTimedOut: false,
   };
   loadStates.set(documentRoot, state);
   const refreshing = machineViews.has(documentRoot);
@@ -1306,6 +1362,7 @@ export async function loadFleet(
     renderFleet(fleet, documentRoot, dependencies.now());
     state.lastGoodGeneratedAt = fleet.generatedAt;
     state.lastError = undefined;
+    state.peerTimedOut = false;
     if (repositories) {
       repositories.scrollTop = scroll.repositoriesTop;
       repositories.scrollLeft = scroll.repositoriesLeft;
@@ -1319,7 +1376,7 @@ export async function loadFleet(
     }
     const views = machineViews.get(documentRoot);
     if (!views) return true;
-    await fanOutToPeers(
+    state.peerTimedOut = await fanOutToPeers(
       fleet.peers,
       views,
       documentRoot,
@@ -1327,6 +1384,7 @@ export async function loadFleet(
       dependencies,
       generation,
     );
+    updateSnapshotStatus(documentRoot, state, dependencies.now());
     return true;
   } catch (cause) {
     if (loadGenerations.get(documentRoot) !== generation) return false;
@@ -1368,6 +1426,10 @@ export function startDashboard(
     now: dependencyOverrides.now ?? (() => new Date()),
   };
   const intervalMilliseconds = refreshSeconds(documentRoot.defaultView) * 1_000;
+  const state = loadStates.get(documentRoot) ?? {};
+  state.refreshIntervalMilliseconds = intervalMilliseconds;
+  state.paused = documentRoot.hidden;
+  loadStates.set(documentRoot, state);
   let refreshTimer;
   let ageTimer;
   let inFlight = false;
@@ -1401,6 +1463,8 @@ export function startDashboard(
     }
   };
   const onVisibilityChange = () => {
+    state.paused = documentRoot.hidden;
+    updateSnapshotStatus(documentRoot, state, dependencies.now());
     if (documentRoot.hidden) clearRefreshTimer();
     else void refresh();
   };

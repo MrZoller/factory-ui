@@ -78,7 +78,7 @@ task.
 
 <!-- user-requested tasks get appended here by the driver -->
 
-- [R] T11 (standard) — parked review minors (batch)
+- [x] T11 (standard) — parked review minors (batch)
   - Add `O_NONBLOCK` when opening validated `state.json` so a locally planted FIFO cannot block the fleet snapshot before the existing regular-file check rejects it (PR #2 review).
   - Preserve `.factory/logs` directory and selected-file identity across driver-log selection and the `lsof` probe to harden against concurrent local directory swaps (PR #3 review).
   - Ignore task-shaped lines inside fenced Markdown blocks so documentation examples cannot appear as runnable plan tasks (PR #4 review).
@@ -91,6 +91,8 @@ task.
   - Prevent finite per-task USD counters from overflowing aggregate repository, machine, or fleet totals to `$Infinity` (PR #23 review).
   - Preserve focus and the selected diagram's horizontal scroll position while peer fan-out completions update the `/how` page (PR #24 review).
   - Render subscription-lane model usage as `sub`, rather than `$0.00 metered`, on the `/how` page (PR #24 review).
+  - Close the opened `.factory/logs` directory handle if its initial stat or identity verification fails, avoiding repeated descriptor leaks during adversarial directory swaps (PR #25 review).
+  - Bind the `lsof` probe to the trusted logs-directory instance so a temporary swap-and-restore cannot produce a trusted liveness result for a replacement file (PR #25 review).
   - deps: none
   - pr: 25
 

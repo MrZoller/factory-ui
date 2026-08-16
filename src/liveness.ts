@@ -10,7 +10,7 @@ export const MAX_LSOF_OUTPUT_BYTES = 64 * 1024;
 export const MAX_LOG_ENTRIES = 256;
 
 const DRIVER_LOG_PATTERN =
-  /^driver-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-(\d+)\.log$/;
+  /^driver-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-(0|[1-9]\d*)\.log$/;
 
 export interface ProbeResult {
   exitCode: number | null;

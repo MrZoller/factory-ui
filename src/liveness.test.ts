@@ -240,6 +240,34 @@ describe("liveness", () => {
         );
       });
 
+      test("ignores noncanonical zero-padded log sequences", async () => {
+        writeFileSync(join(logsDir, "driver-20240102-120000-01.log"), "old");
+        writeFileSync(join(logsDir, "driver-20240102-120000-1.log"), "new");
+
+        const mockRunner: LivenessDependencies["runner"] = vi.fn(
+          async (): Promise<ProbeResult> => ({
+            exitCode: 1,
+            stdout: "",
+            stderr: "",
+          }),
+        );
+
+        await checkRepositoryLiveness(tempDir, { runner: mockRunner });
+
+        expect(mockRunner).toHaveBeenCalledWith(
+          "lsof",
+          [
+            "-Fpc",
+            "--",
+            expect.stringContaining("driver-20240102-120000-1.log"),
+          ],
+          {
+            timeoutMs: LSOF_TIMEOUT_MS,
+            maxOutputBytes: MAX_LSOF_OUTPUT_BYTES,
+          },
+        );
+      });
+
       test("returns CANNOT_VERIFY when logs exceed MAX_LOG_ENTRIES", async () => {
         for (let i = 0; i < 257; i++) {
           writeFileSync(

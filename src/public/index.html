@@ -9,14 +9,17 @@
   </head>
   <body>
     <main>
-      <header>
+      <header class="dashboard-header">
         <p class="eyebrow">Software factory fleet</p>
         <h1 id="machine">Loading local machine…</h1>
         <p id="generated" class="age">Waiting for snapshot…</p>
         <button id="refresh" type="button">Refresh</button>
       </header>
       <p id="error" role="alert"></p>
-      <section class="fleet-summary-section" aria-labelledby="fleet-heading">
+      <section
+        class="fleet-summary-section content-section"
+        aria-labelledby="fleet-heading"
+      >
         <h2 id="fleet-heading">Fleet summary</h2>
         <div class="table-scroll">
           <table id="fleet-summary">
@@ -35,7 +38,7 @@
           </table>
         </div>
       </section>
-      <section aria-labelledby="repositories-heading">
+      <section class="content-section" aria-labelledby="repositories-heading">
         <h2 id="repositories-heading">Repositories</h2>
         <div id="machine-tabs" role="tablist" aria-label="Machines"></div>
         <div id="repositories"></div>

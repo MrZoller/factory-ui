@@ -101,9 +101,9 @@ function displayDuration(milliseconds) {
   return `${hours}h ${minutes % 60}m`;
 }
 
-function addPanel(card, title, className) {
+function addPanel(card, title, className, spanClass) {
   const section = card.ownerDocument.createElement("section");
-  section.className = `panel ${className}`;
+  section.className = `panel ${className} ${spanClass}`;
   appendText(section, "h4", title);
   card.append(section);
   return section;
@@ -165,7 +165,7 @@ function appendExternalOrText(parent, text, value, kind) {
 }
 
 function renderCurrent(card, repository) {
-  const panel = addPanel(card, "Current", "current-panel");
+  const panel = addPanel(card, "Current", "current-panel", "panel-span-8");
   const state = readerData(repository.state);
   const list = panel.ownerDocument.createElement("dl");
   list.className = "facts";
@@ -221,11 +221,11 @@ function renderCurrent(card, repository) {
 }
 
 const TASK_GROUPS = [
-  ["Active", "active", "active-work"],
-  ["In review", "review", "review-work"],
-  ["Next runnable", "nextRunnable", "runnable-work"],
-  ["Blocked", "blocked", "blocked-work"],
-  ["Completed", "completed", "completed-work"],
+  ["Active", "active", "active-work", "panel-span-4"],
+  ["In review", "review", "review-work", "panel-span-4"],
+  ["Next runnable", "nextRunnable", "runnable-work", "panel-span-4"],
+  ["Blocked", "blocked", "blocked-work", "panel-span-4"],
+  ["Completed", "completed", "completed-work", "panel-span-6"],
 ];
 
 function renderTask(panel, task) {
@@ -242,33 +242,36 @@ function renderTask(panel, task) {
       "task-deps",
     );
   }
-  if (Number.isSafeInteger(task?.pr) && task.pr > 0) {
-    appendExternalOrText(item, `PR #${task.pr}`, task.prUrl, "pull");
-  }
+  const references = item.ownerDocument.createElement("span");
+  references.className = "task-references";
+  if (Number.isSafeInteger(task?.pr) && task.pr > 0)
+    appendExternalOrText(references, `PR #${task.pr}`, task.prUrl, "pull");
   if (Array.isArray(task?.issueNumbers)) {
     task.issueNumbers.forEach((issue, index) => {
       if (Number.isSafeInteger(issue) && issue > 0)
         appendExternalOrText(
-          item,
+          references,
           `Fixes #${issue}`,
           Array.isArray(task.issueUrls) ? task.issueUrls[index] : undefined,
           "issue",
         );
     });
   }
+  if (references.childNodes.length > 0) item.append(references);
   panel.append(item);
 }
 
 function renderTasks(card, repository) {
   const plan = readerData(repository.plan);
-  for (const [title, key, className] of TASK_GROUPS) {
-    const panel = addPanel(card, title, className);
+  for (const [title, key, className, spanClass] of TASK_GROUPS) {
+    const panel = addPanel(card, title, className, spanClass);
     if (!plan) {
       appendText(panel, "p", "Unavailable", "unavailable");
       continue;
     }
     const tasks = Array.isArray(plan?.[key]) ? plan[key] : [];
     if (tasks.length === 0) {
+      panel.classList.add("panel-empty");
       appendText(panel, "p", "None", "empty");
       continue;
     }
@@ -280,13 +283,19 @@ function renderTasks(card, repository) {
 }
 
 function renderQuestions(card, repository) {
-  const panel = addPanel(card, "Open questions", "questions-panel");
+  const panel = addPanel(
+    card,
+    "Open questions",
+    "questions-panel",
+    "panel-span-6",
+  );
   const open = readerData(repository.questions)?.open;
   if (!open) {
     appendText(panel, "p", "Unavailable", "unavailable");
     return;
   }
   if (!Array.isArray(open) || open.length === 0) {
+    panel.classList.add("panel-empty");
     appendText(panel, "p", "None", "empty");
     return;
   }
@@ -310,13 +319,19 @@ function renderQuestions(card, repository) {
 }
 
 function renderWorklog(card, repository) {
-  const panel = addPanel(card, "Recent worklog", "worklog-panel");
+  const panel = addPanel(
+    card,
+    "Recent worklog",
+    "worklog-panel",
+    "panel-span-4",
+  );
   const entries = readerData(repository.worklog)?.entries;
   if (entries === undefined) {
     appendText(panel, "p", "Unavailable", "unavailable");
     return;
   }
   if (!Array.isArray(entries) || entries.length === 0) {
+    panel.classList.add("panel-empty");
     appendText(panel, "p", "None", "empty");
     return;
   }
@@ -332,7 +347,7 @@ function renderWorklog(card, repository) {
 }
 
 function renderLogs(card, repository, now) {
-  const panel = addPanel(card, "Driver activity", "logs-panel");
+  const panel = addPanel(card, "Driver activity", "logs-panel", "panel-span-4");
   const logs = readerData(repository.logs);
   const status = appendText(
     panel,
@@ -400,7 +415,7 @@ function renderWarnings(card, repository) {
     }
   }
   if (warnings.length === 0) return;
-  const panel = addPanel(card, "Warnings", "warnings-panel");
+  const panel = addPanel(card, "Warnings", "warnings-panel", "panel-span-4");
   const list = panel.ownerDocument.createElement("ul");
   warnings.forEach((warning) => appendText(list, "li", warning));
   panel.append(list);

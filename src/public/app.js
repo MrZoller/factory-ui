@@ -1085,12 +1085,10 @@ function installTabs(documentRoot, views) {
         }
         event.preventDefault();
         selectRepository(view, targetIndex, true);
-        if (event.key === "Enter" || event.key === " ") {
-          windowRoot.location.hash = dashboardHash(
-            view.identity,
-            view.repositories[targetIndex].identity,
-          );
-        }
+        windowRoot.location.hash = dashboardHash(
+          view.identity,
+          view.repositories[targetIndex].identity,
+        );
       };
       repository.tab.addEventListener("click", onRepositoryClick);
       repository.tab.addEventListener("keydown", onRepositoryKeyDown);

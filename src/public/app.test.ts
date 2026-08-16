@@ -1220,6 +1220,7 @@ describe("repository strips and sub-tabs", () => {
     );
     expect(document.activeElement).toBe(tabs[1]!);
     expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, 0]);
+    expect(window.location.hash).toBe("#machine=mini&repo=beta");
     tabs[1]?.dispatchEvent(
       new window.KeyboardEvent("keydown", { key: " ", bubbles: true }),
     );
@@ -1229,6 +1230,60 @@ describe("repository strips and sub-tabs", () => {
       new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
     );
     expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  test("preserves ArrowRight repository selection during peer fan-out", async () => {
+    const document = dashboardDocument();
+    const window = document.defaultView!;
+    const peer = { name: "macbook", origin: "https://macbook.example" };
+    let resolvePeer: ((response: Response) => void) | undefined;
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === "/api/fleet") {
+        return Promise.resolve(
+          jsonResponse(
+            fleet(
+              "mini",
+              [peer],
+              [
+                richRepository({ name: "alpha" }),
+                richRepository({ name: "beta" }),
+              ],
+            ),
+          ),
+        );
+      }
+      return new Promise((resolve) => {
+        resolvePeer = resolve;
+      });
+    });
+
+    const loading = loadFleet(document, fetcher, { now: () => NOW });
+    await flushPromises();
+    const initialTabs = Array.from(
+      repositoryTablist(
+        localMachinePanel(document),
+      ).querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+    );
+    initialTabs[0]?.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+    );
+    expect(window.location.hash).toBe("#machine=mini&repo=beta");
+    expect(initialTabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual(
+      ["false", "true"],
+    );
+
+    resolvePeer?.(jsonResponse(fleet("macbook", [], [richRepository()])));
+    await loading;
+
+    const refreshedTabs = Array.from(
+      repositoryTablist(
+        localMachinePanel(document),
+      ).querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+    );
+    expect(window.location.hash).toBe("#machine=mini&repo=beta");
+    expect(
+      refreshedTabs.map((tab) => tab.getAttribute("aria-selected")),
+    ).toEqual(["false", "true"]);
   });
 
   test("falls back for missing, unknown, and hostile repository hashes", () => {
@@ -1293,17 +1348,20 @@ describe("repository strips and sub-tabs", () => {
     );
 
     const local = localMachinePanel(document);
+    expect(local.querySelectorAll(".routing-strip")).toHaveLength(1);
     expect(
       local
         .querySelector(".routing-strip")
         ?.compareDocumentPosition(local.querySelector(".repository-summary")!),
     ).toBe(document.defaultView!.Node.DOCUMENT_POSITION_FOLLOWING);
-    const unavailable = document.querySelectorAll<HTMLElement>(
-      '#repositories > [role="tabpanel"]',
-    )[1]!;
-    expect(unavailable.textContent).toContain("Unavailable");
-    expect(unavailable.querySelector('[role="tablist"]')).toBeNull();
-    expect(unavailable.querySelector(".repository-summary")).toBeNull();
+    const unavailableGrid = document.querySelector<HTMLElement>(
+      "#repositories > .peer-machine .peer-repositories",
+    )!;
+    expect(
+      unavailableGrid.querySelector(":scope > .unavailable")?.textContent,
+    ).toBe("Unavailable");
+    expect(unavailableGrid.querySelector('[role="tablist"]')).toBeNull();
+    expect(unavailableGrid.querySelector(".repository-summary")).toBeNull();
   });
 });
 

@@ -55,6 +55,80 @@ p {
   gap: 1.5rem;
 }
 
+.routing-strip {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem 1.25rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #385047;
+  border-radius: 0.75rem;
+  background: #17231f;
+}
+
+.routing-strip h3,
+.routing-strip p {
+  margin: 0;
+}
+
+.routing-strip h3 {
+  color: #9aaba4;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.routing-defaults {
+  color: #9aaba4;
+  overflow-wrap: anywhere;
+}
+
+.routing-agents {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 0.45rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.routing-agents li {
+  overflow-wrap: anywhere;
+}
+
+.routing-agent {
+  color: #e7eee9;
+  font-weight: 700;
+}
+
+.routing-arrow,
+.routing-steps {
+  margin-inline: 0.35rem;
+  color: #9aaba4;
+  font-size: 0.78rem;
+}
+
+.routing-provider {
+  font-weight: 700;
+}
+
+.provider-openai {
+  color: #78d9a6;
+}
+
+.provider-opencode {
+  color: #8fb9ff;
+}
+
+.provider-amazon-bedrock {
+  color: #dfb8ff;
+}
+
+.provider-other {
+  color: #f2b17f;
+}
+
 .machine {
   padding-top: 1rem;
 }
@@ -346,6 +420,11 @@ a:focus-visible {
   .repository {
     display: block;
     padding: 0.75rem;
+  }
+
+  .routing-strip {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   #fleet-summary th,

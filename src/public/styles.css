@@ -545,7 +545,7 @@ a:focus-visible {
 
 .task {
   display: grid;
-  grid-template-columns: minmax(3.5rem, auto) minmax(0, 1fr) minmax(5rem, auto);
+  grid-template-columns: 4.5rem minmax(0, 1fr) 5.5rem;
   gap: var(--space-1) var(--space-3);
   align-items: baseline;
 }

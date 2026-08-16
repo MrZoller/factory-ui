@@ -136,11 +136,12 @@ task.
   - deps: T20
   - pr: 21
 
-- [~] T22 (standard) — Give the dashboard a proper wordmark
+- [x] T22 (standard) — Give the dashboard a proper wordmark
   - acceptance: In `src/public/index.html`, `src/public/styles.css`, and colocated tests: replace the plain `<h1>` with a wordmark treatment — a display-weight system-font stack with tight tracking, two-tone or gradient text via `background-clip: text` with a solid-colour fallback, and a small inline SVG mark (no external fonts, images, or scripts; CSP unchanged) — that reads well in both light and dark themes and at narrow widths; the machine name / subtitle stays text-only and secondary; the document `<title>` and the `<h1>` text remain literal ("Factory"/product name) so screen readers and tabs are unchanged; tests assert the heading text and that no inline event handlers or external asset URLs were introduced (spec 3, 7, 8). Direction, not spec: modern, restrained, "control room" rather than "startup landing page"; Chris will redirect after seeing it.
   - deps: T21
+  - pr: 22
 
-- [ ] T23 (standard) — Show what each task cost
+- [~] T23 (standard) — Show what each task cost
   - acceptance: The factory engine now writes `.factory/logs/costs.json` (schemaVersion 1: `recordedAt`, `currency`, `tasks.<T-id|unattributed>.{usd,messages,sessions,tokens{input,output,reasoning,cacheRead,cacheWrite},byModel{"<provider>/<model>": same counters},firstAt,lastAt}`; metered lanes carry real USD, subscription lanes report 0 and count as tokens). In `src/paths.ts`, `src/readers/`, `src/contracts.ts`, `src/snapshot.ts`, `src/public/app.js`, `src/public/styles.css`, README, and colocated tests: add `logs/costs.json` as a fixed documented `.factory` read target (same containment/symlink/size/type checks; bounded ≤ 64 KiB), parse it into a bounded, validated `costs` reader result on the repository snapshot (unknown keys ignored; missing/oversized/unparseable/wrong schemaVersion → `unavailable` with a warning; task-id keys validated `^T[1-9][0-9]*$` or `unattributed`; numbers finite and non-negative; at most 256 tasks and 64 models per task); render on each task line a compact metered cost (`$1.23`) with tokens on a title/secondary line, and `sub` (tokens only) when usd is 0 but tokens are non-zero; show `unattributed` and a per-repository metered total in the repository strip row and a per-machine total in the fleet strip; a task with no entry shows nothing (not `$0`); hostile keys/values remain literal and inert; document the target and schema in the README's read-surface section (spec 3, 7, 8). External dependency: opencode-factory writes the file (PR pending at task start); until it lands the reader reports `Unavailable`.
   - deps: T21
 

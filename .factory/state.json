@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T7",
-  "branch": "factory/t7-versioned-read-only-api",
-  "pr": 7,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-16T10:47:36Z"
+  "updated": "2026-08-16T10:55:52Z"
 }

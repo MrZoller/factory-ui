@@ -1,64 +1,13 @@
-import { constants } from "node:fs";
-import { open, stat } from "node:fs/promises";
-
 import {
-  FACTORY_PHASES,
   type AppConfigSource,
-  type FactoryPhase,
   type FleetSnapshot,
   type RepositorySource,
   type RepositorySnapshot,
 } from "./contracts";
 import { checkRepositoryLiveness } from "./liveness";
-import { resolveFactoryPath } from "./paths";
+import { readFactoryState } from "./readers/state";
 
-export const MAX_STATE_BYTES = 64 * 1024;
-export const MAX_PROJECT_LENGTH = 200;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isPhase(value: unknown): value is FactoryPhase {
-  return (
-    typeof value === "string" && FACTORY_PHASES.includes(value as FactoryPhase)
-  );
-}
-
-async function readValidatedStateFile(
-  repositoryPath: string,
-  validatedPath: string,
-): Promise<ArrayBuffer> {
-  const handle = await open(
-    validatedPath,
-    constants.O_RDONLY | constants.O_NOFOLLOW,
-  );
-  try {
-    // A pathname can be replaced after resolveFactoryPath validates it. Re-run
-    // that validation after opening, then require the descriptor to be the
-    // same file before reading from the descriptor rather than the pathname.
-    const currentPath = await resolveFactoryPath(repositoryPath, "state");
-    if (currentPath === null) throw new Error("state.json is missing");
-
-    const [opened, current] = await Promise.all([
-      handle.stat(),
-      stat(currentPath),
-    ]);
-    if (
-      !opened.isFile() ||
-      opened.dev !== current.dev ||
-      opened.ino !== current.ino
-    ) {
-      throw new Error("state.json changed while being opened");
-    }
-
-    return await Bun.file(handle.fd)
-      .slice(0, MAX_STATE_BYTES + 1)
-      .arrayBuffer();
-  } finally {
-    await handle.close();
-  }
-}
+export { MAX_PROJECT_LENGTH, MAX_STATE_BYTES } from "./readers/state";
 
 export async function readRepositorySnapshot(
   repository: RepositorySource,
@@ -75,34 +24,29 @@ export async function readRepositorySnapshot(
   const awaitLiveness = await livenessPromise;
 
   try {
-    const path = await resolveFactoryPath(repository.path, "state");
-    if (path === null) {
-      return unavailable("state.json is missing");
-    }
-    const bytes = await readValidatedStateFile(repository.path, path);
-    if (bytes.byteLength > MAX_STATE_BYTES) {
-      return unavailable("state.json is too large");
-    }
-
-    const value: unknown = JSON.parse(
-      new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-    );
+    const result = await readFactoryState(repository.path);
     if (
-      !isRecord(value) ||
-      typeof value.project !== "string" ||
-      value.project.length === 0 ||
-      value.project.length > MAX_PROJECT_LENGTH ||
-      !isPhase(value.phase)
+      result.status === "unavailable" ||
+      result.data.project === undefined ||
+      result.data.phase === undefined
     ) {
-      return unavailable("state.json has invalid project or phase data");
+      const code = result.warnings[0]?.code;
+      if (code === "STATE_MISSING") return unavailable("state.json is missing");
+      if (code === "STATE_TOO_LARGE")
+        return unavailable("state.json is too large");
+      if (code === "STATE_INVALID_ROOT")
+        return unavailable("state.json has invalid project or phase data");
+      if (result.status !== "unavailable")
+        return unavailable("state.json has invalid project or phase data");
+      return unavailable("state.json could not be read");
     }
 
     return {
       name: repository.name,
       liveness: awaitLiveness,
       status: "available",
-      project: value.project,
-      phase: value.phase,
+      project: result.data.project,
+      phase: result.data.phase,
     };
   } catch {
     return unavailable("state.json could not be read");

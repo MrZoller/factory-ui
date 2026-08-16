@@ -60,3 +60,63 @@ export interface FleetSnapshot {
   repositories: RepositorySnapshot[];
   peers: PeerConfig[];
 }
+
+export const TASK_SIZES = ["trivial", "standard", "major"] as const;
+export const TASK_STATUSES = [
+  "todo",
+  "active",
+  "review",
+  "completed",
+  "blocked",
+] as const;
+
+export type TaskSize = (typeof TASK_SIZES)[number];
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+export interface ReaderWarning {
+  code: string;
+  message: string;
+  line?: number;
+}
+
+export type ReaderResult<T> =
+  | { status: "available"; data: T; warnings: [] }
+  | { status: "partial"; data: T; warnings: ReaderWarning[] }
+  | { status: "unavailable"; warnings: ReaderWarning[] };
+
+export interface FactoryStateData {
+  project?: string;
+  phase?: FactoryPhase;
+  specApproved?: boolean;
+  planApproved?: boolean;
+  currentTask?: string | null;
+  branch?: string | null;
+  pr?: number | null;
+  hold?: boolean;
+  updated?: string;
+}
+
+export interface PlanData {
+  tasks: PlanTask[];
+  completed: PlanTask[];
+  active: PlanTask[];
+  review: PlanTask[];
+  blocked: PlanTask[];
+  remaining: PlanTask[];
+  nextRunnable: PlanTask[];
+}
+
+export interface PlanTask {
+  id: string;
+  status: TaskStatus;
+  size: TaskSize;
+  title: string;
+  dependencies: string[] | null;
+  runnable: boolean;
+}
+
+export interface RepositoryFactoryData {
+  name: string;
+  state: ReaderResult<FactoryStateData>;
+  plan: ReaderResult<PlanData>;
+}

@@ -71,6 +71,8 @@ network.
 - Agent routing: `.factory/logs/routing.json` is capped at 16 KiB, 64 agents,
   128 characters per agent name, and 1,024 characters per model/provider
   string; an agent's optional step cap is an integer from 0 through 1,000,000.
+- Task costs: `.factory/logs/costs.json` is capped at 64 KiB, 256 tasks, and 64
+  models per task. Cost strings are capped at 1,024 characters.
 - Liveness: the fixed, shell-free `lsof` probe has a two-second timeout and
   bounded output. Missing `lsof`, timeout, failure, malformed output, or an
   ambiguous result is `CANNOT_VERIFY`, never evidence that the driver stopped.
@@ -84,10 +86,11 @@ does not silently expand its read surface.
 
 The service reads only the fixed targets `.factory/state.json`,
 `.factory/plan.md`, `.factory/questions.md`, `.factory/worklog.md`, the bounded
-driver/cycle/shepherd files selected from `.factory/logs/`, and
-`.factory/logs/routing.json`. Canonical containment, target type, symlink, and
-opened-descriptor identity checks apply before bounded reads. Routing absence
-or invalidity is independent and does not make repository state unavailable.
+driver/cycle/shepherd files selected from `.factory/logs/`,
+`.factory/logs/routing.json`, and `.factory/logs/costs.json`. Canonical
+containment, target type, symlink, and opened-descriptor identity checks apply
+before bounded reads. Routing or cost absence and invalidity are independent
+and do not make repository state unavailable.
 
 Routing uses schema version 1:
 
@@ -108,6 +111,53 @@ Routing uses schema version 1:
 `model` strings and an integer or null `steps`; unknown keys are ignored. A
 missing, oversized, malformed, unsupported-version, or otherwise invalid file
 is reported as routing `Unavailable` with a warning.
+
+Costs use schema version 1:
+
+```json
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-16T12:00:00Z",
+  "currency": "USD",
+  "tasks": {
+    "T23": {
+      "usd": 1.23,
+      "messages": 4,
+      "sessions": 1,
+      "tokens": {
+        "input": 1000,
+        "output": 500,
+        "reasoning": 200,
+        "cacheRead": 800,
+        "cacheWrite": 100
+      },
+      "byModel": {
+        "openai/gpt-5.6": {
+          "usd": 1.23,
+          "messages": 4,
+          "sessions": 1,
+          "tokens": {
+            "input": 1000,
+            "output": 500,
+            "reasoning": 200,
+            "cacheRead": 800,
+            "cacheWrite": 100
+          }
+        }
+      },
+      "firstAt": "2026-08-16T11:00:00Z",
+      "lastAt": "2026-08-16T12:00:00Z"
+    }
+  }
+}
+```
+
+`recordedAt`, `firstAt`, and `lastAt` must be ISO-8601 UTC timestamps. Task
+keys must be `T1` or greater without leading zeroes, or `unattributed`; model
+keys are `provider/model` identifiers. Every counter is a finite,
+non-negative number. Unknown keys are ignored. A missing, oversized,
+malformed, unsupported-version, or otherwise invalid file is reported as
+costs `Unavailable` with a warning.
 
 ## Three-machine runbook
 

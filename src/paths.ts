@@ -2,7 +2,7 @@ import { lstat, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 export type FactoryPathKey =
-  "state" | "plan" | "questions" | "worklog" | "logs" | "routing";
+  "state" | "plan" | "questions" | "worklog" | "logs" | "routing" | "costs";
 
 const TARGETS: Record<FactoryPathKey, { path: string; directory: boolean }> = {
   state: { path: "state.json", directory: false },
@@ -11,6 +11,7 @@ const TARGETS: Record<FactoryPathKey, { path: string; directory: boolean }> = {
   worklog: { path: "worklog.md", directory: false },
   logs: { path: "logs", directory: true },
   routing: { path: "logs/routing.json", directory: false },
+  costs: { path: "logs/costs.json", directory: false },
 };
 
 function contains(root: string, target: string): boolean {

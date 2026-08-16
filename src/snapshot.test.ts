@@ -46,6 +46,15 @@ describe("snapshot", () => {
           join(factoryPath, "worklog.md"),
           "- 2026-08-16 UTC - completed verification",
         ),
+        Bun.write(
+          join(factoryPath, "logs", "costs.json"),
+          JSON.stringify({
+            schemaVersion: 1,
+            recordedAt: "2026-08-16T00:00:00Z",
+            currency: "USD",
+            tasks: {},
+          }),
+        ),
       ]);
 
       const result = await readRepositoryFactoryData({
@@ -59,6 +68,16 @@ describe("snapshot", () => {
       expect(result.questions.status).toBe("partial");
       expect(result.worklog.status).toBe("available");
       expect(result.routing.status).toBe("unavailable");
+      expect(result.costs).toEqual({
+        status: "available",
+        data: {
+          schemaVersion: 1,
+          recordedAt: "2026-08-16T00:00:00Z",
+          currency: "USD",
+          tasks: {},
+        },
+        warnings: [],
+      });
       expect(result.state.status).toBe("available");
     } finally {
       rmSync(root, { recursive: true, force: true });

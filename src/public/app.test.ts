@@ -183,6 +183,34 @@ function richRepository(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function costs(tasks: Record<string, Record<string, unknown>>) {
+  return {
+    status: "available",
+    data: {
+      schemaVersion: 1,
+      recordedAt: "2026-08-16T11:59:00.000Z",
+      currency: "USD",
+      tasks,
+    },
+    warnings: [],
+  };
+}
+
+function costCounters(usd: unknown, tokenCount = 0) {
+  return {
+    usd,
+    messages: 1,
+    sessions: 1,
+    tokens: {
+      input: tokenCount,
+      output: 0,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+  };
+}
+
 function fleet(
   hostname: string,
   peers: Array<{ name: string; origin: string }> = [],
@@ -317,6 +345,78 @@ describe("local dashboard rendering", () => {
     );
     expect(link?.getAttribute("target")).toBe("_blank");
     expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  test("renders metered and subscription task costs, while omitting tasks without an entry", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      costs: costs({
+        T8: costCounters(1.23, 123),
+        T7: costCounters(0, 456),
+        unattributed: costCounters(0, 789),
+      }),
+    });
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const active = document.querySelector(".active-work .task")!;
+    expect(active.querySelector(".task-cost")?.textContent).toBe("$1.23");
+    expect(active.querySelector<HTMLElement>(".task-cost")?.title).toBe(
+      "123 tokens",
+    );
+    expect(active.querySelector(".task-cost-detail")?.textContent).toBe(
+      "123 tokens",
+    );
+    const review = document.querySelector(".review-work .task")!;
+    expect(review.querySelector(".task-cost")?.textContent).toBe("sub");
+    expect(review.querySelector<HTMLElement>(".task-cost")?.title).toBe(
+      "456 tokens",
+    );
+    expect(document.querySelector(".runnable-work .task-cost")).toBeNull();
+
+    const row = document.querySelector(".repository-summary tbody tr")!;
+    expect(row.querySelector(".cost-total")?.textContent).toBe("$1.23");
+    expect(row.querySelector(".cost-unattributed")?.textContent).toBe("sub");
+    expect(row.querySelector<HTMLElement>(".cost-unattributed")?.title).toBe(
+      "789 tokens",
+    );
+    expect(
+      summaryRow(document, "mini")?.querySelector(".cost-total")?.textContent,
+    ).toBe("$1.23");
+  });
+
+  test("renders unavailable costs in repository and fleet summaries", () => {
+    const document = dashboardDocument();
+    renderFleet(fleet("mini", [], [richRepository()]), document, NOW);
+
+    expect(
+      document.querySelector(".repository-summary .cost-total")?.textContent,
+    ).toBe("Unavailable");
+    expect(
+      document.querySelector(".repository-summary .cost-unattributed")
+        ?.textContent,
+    ).toBe("Unavailable");
+    expect(
+      summaryRow(document, "mini")?.querySelector(".cost-total")?.textContent,
+    ).toBe("Unavailable");
+  });
+
+  test("keeps hostile costs from a peer response inert", () => {
+    const document = dashboardDocument();
+    const hostile = '<img src=x onerror="globalThis.pwned=1">';
+    const repository = richRepository({
+      costs: costs({
+        T8: costCounters(hostile, 1),
+        [hostile]: costCounters(0, 1),
+      }),
+    });
+
+    expect(() =>
+      renderFleet(fleet("mini", [], [repository]), document, NOW),
+    ).not.toThrow();
+    expect(
+      document.querySelectorAll("img, script, [onerror], [onclick]"),
+    ).toHaveLength(0);
+    expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
   });
 
   test("renders an already-old snapshot as stale immediately", () => {
@@ -946,6 +1046,7 @@ describe("fleet summary and machine tabs", () => {
       "HELD",
       "1",
       "",
+      "Unavailable",
     ]);
     expect(
       document.querySelectorAll(".panel-empty .empty").length,
@@ -957,6 +1058,7 @@ describe("fleet summary and machine tabs", () => {
       "Unavailable",
       "Unavailable",
       "",
+      "Unavailable",
       "Unavailable",
       "Unavailable",
     ]);
@@ -1014,6 +1116,7 @@ describe("fleet summary and machine tabs", () => {
       "",
       "0",
       "",
+      "Unavailable",
     ]);
 
     renderFleet(
@@ -1580,6 +1683,7 @@ describe("browser peer fan-out", () => {
       "HELD",
       "1",
       "",
+      "Unavailable",
     ]);
     expect(summaryRow(document, "legion")?.textContent).toContain(
       "Unavailable",

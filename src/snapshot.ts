@@ -14,6 +14,7 @@ import {
   checkRepositoryLiveness,
   checkTrustedDriverLiveness,
 } from "./liveness";
+import { readFactoryCosts } from "./readers/costs";
 import { readFactoryLogsWithSelection } from "./readers/logs";
 import { readFactoryPlan } from "./readers/plan";
 import { readFactoryQuestions } from "./readers/questions";
@@ -27,7 +28,7 @@ export async function readRepositoryFactoryData(
   repository: RepositorySource,
   readLiveness: typeof checkTrustedDriverLiveness = checkTrustedDriverLiveness,
 ): Promise<RepositoryFactoryData> {
-  const [state, plan, questions, worklog, logsRead, routing] =
+  const [state, plan, questions, worklog, logsRead, routing, costs] =
     await Promise.all([
       readFactoryState(repository.path),
       readFactoryPlan(repository.path),
@@ -35,6 +36,7 @@ export async function readRepositoryFactoryData(
       readFactoryWorklog(repository.path),
       readFactoryLogsWithSelection(repository.path),
       readFactoryRouting(repository.path),
+      readFactoryCosts(repository.path),
     ]);
   const liveness = await readLiveness(logsRead.driver);
   return {
@@ -45,6 +47,7 @@ export async function readRepositoryFactoryData(
     worklog,
     logs: logsRead.result,
     routing,
+    costs,
     liveness,
   };
 }
@@ -76,6 +79,7 @@ export function unavailableRepositoryFactorySnapshot(
       "ROUTING_UNAVAILABLE",
       "routing could not be read",
     ),
+    costs: unavailableResult("COSTS_UNAVAILABLE", "costs could not be read"),
     liveness: { state: "CANNOT_VERIFY", checkedAt },
   };
 }

@@ -9,6 +9,8 @@ const MAX_ROUTING_AGENTS = 64;
 const MAX_AGENT_NAME_LENGTH = 128;
 const MAX_ROUTING_STRING_LENGTH = 1024;
 const MAX_ROUTING_STEPS = 1_000_000;
+const MAX_COST_TASKS = 256;
+const MAX_COST_MODELS_PER_TASK = 64;
 const loadGenerations = new WeakMap();
 const tabControllers = new WeakMap();
 const machineViews = new WeakMap();
@@ -228,12 +230,43 @@ const TASK_GROUPS = [
   ["Completed", "completed", "completed-work", "panel-span-6"],
 ];
 
-function renderTask(panel, task) {
+function tokenTotal(counters) {
+  const tokens = counters?.tokens;
+  if (!tokens) return 0;
+  return [
+    tokens.input,
+    tokens.output,
+    tokens.reasoning,
+    tokens.cacheRead,
+    tokens.cacheWrite,
+  ].reduce((total, value) => total + value, 0);
+}
+
+function formatUsd(usd) {
+  return `$${usd.toFixed(2)}`;
+}
+
+function costLabel(counters) {
+  if (!isCostCounters(counters)) return null;
+  const tokens = tokenTotal(counters);
+  return {
+    text: counters.usd === 0 && tokens > 0 ? "sub" : formatUsd(counters.usd),
+    title: `${tokens.toLocaleString()} tokens`,
+  };
+}
+
+function renderTask(panel, task, cost) {
   const item = panel.ownerDocument.createElement("li");
   item.className = "task";
   appendText(item, "span", task?.id ?? "?", "task-id");
   appendText(item, "span", task?.title ?? "Untitled task", "task-title");
   appendText(item, "span", task?.size ?? "unknown", "task-size");
+  const label = costLabel(cost);
+  if (label) {
+    const costNode = appendText(item, "span", label.text, "task-cost");
+    costNode.title = label.title;
+    appendText(item, "span", label.title, "task-cost-detail");
+  }
   if (Array.isArray(task?.dependencies) && task.dependencies.length > 0) {
     appendText(
       item,
@@ -263,6 +296,7 @@ function renderTask(panel, task) {
 
 function renderTasks(card, repository) {
   const plan = readerData(repository.plan);
+  const costs = readerData(repository.costs)?.tasks;
   for (const [title, key, className, spanClass] of TASK_GROUPS) {
     const panel = addPanel(card, title, className, spanClass);
     if (!plan) {
@@ -277,7 +311,7 @@ function renderTasks(card, repository) {
     }
     const list = panel.ownerDocument.createElement("ul");
     list.className = "task-list";
-    tasks.forEach((task) => renderTask(list, task));
+    tasks.forEach((task) => renderTask(list, task, costs?.[task?.id]));
     panel.append(list);
   }
 }
@@ -577,6 +611,72 @@ function isRoutingResult(value) {
   );
 }
 
+function isCostTokens(value) {
+  return (
+    isRecord(value) &&
+    ["input", "output", "reasoning", "cacheRead", "cacheWrite"].every(
+      (key) =>
+        typeof value[key] === "number" &&
+        Number.isFinite(value[key]) &&
+        value[key] >= 0,
+    )
+  );
+}
+
+function isCostCounters(value) {
+  return (
+    isRecord(value) &&
+    ["usd", "messages", "sessions"].every(
+      (key) =>
+        typeof value[key] === "number" &&
+        Number.isFinite(value[key]) &&
+        value[key] >= 0,
+    ) &&
+    isCostTokens(value.tokens)
+  );
+}
+
+function isCostsData(value) {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    !isTimestamp(value.recordedAt) ||
+    typeof value.currency !== "string" ||
+    value.currency.length === 0 ||
+    value.currency.length > 1024 ||
+    !isRecord(value.tasks) ||
+    Object.keys(value.tasks).length > MAX_COST_TASKS
+  ) {
+    return false;
+  }
+  return Object.entries(value.tasks).every(([taskId, task]) => {
+    if (
+      (taskId !== "unattributed" && !/^T[1-9][0-9]*$/.test(taskId)) ||
+      !isCostCounters(task) ||
+      !isTimestamp(task.firstAt) ||
+      !isTimestamp(task.lastAt) ||
+      !isRecord(task.byModel) ||
+      Object.keys(task.byModel).length > MAX_COST_MODELS_PER_TASK
+    ) {
+      return false;
+    }
+    return Object.entries(task.byModel).every(
+      ([model, counters]) =>
+        model.length > 0 &&
+        model.length <= 1024 &&
+        model.includes("/") &&
+        isCostCounters(counters),
+    );
+  });
+}
+
+function isCostsResult(value) {
+  return (
+    isReaderResult(value) &&
+    (value.status === "unavailable" || isCostsData(value.data))
+  );
+}
+
 function isPeer(value) {
   if (
     !isRecord(value) ||
@@ -613,6 +713,7 @@ function isRepository(value) {
     isReaderResult(value.worklog) &&
     isReaderResult(value.logs) &&
     (value.routing === undefined || isRoutingResult(value.routing)) &&
+    (value.costs === undefined || isCostsResult(value.costs)) &&
     isRecord(value.liveness) &&
     ["RUNNING", "STOPPED", "CANNOT_VERIFY"].includes(value.liveness.state) &&
     isTimestamp(value.liveness.checkedAt)
@@ -695,7 +796,26 @@ function unavailableSummary(name) {
     hold: false,
     questions: "Unavailable",
     age: "Unavailable",
+    cost: "Unavailable",
   };
+}
+
+function repositoryCostData(repository) {
+  return readerData(repository.costs)?.tasks;
+}
+
+function meteredTotal(repositories) {
+  let total = 0;
+  let available = false;
+  for (const repository of repositories) {
+    const tasks = repositoryCostData(repository);
+    if (!tasks) continue;
+    available = true;
+    for (const counters of Object.values(tasks)) {
+      if (isCostCounters(counters)) total += counters.usd;
+    }
+  }
+  return available ? formatUsd(total) : "Unavailable";
 }
 
 function aggregateCurrent(repositories, key, format) {
@@ -754,6 +874,7 @@ function summarizeMachine(name, fleet, now, intervalMilliseconds = 30_000) {
       intervalMilliseconds
         ? displayAge(fleet.generatedAt, now)
         : "",
+    cost: meteredTotal(repositories),
   };
 }
 
@@ -788,6 +909,7 @@ function renderSummaryRow(row, summary) {
       summary.age,
       `age${summary.age && summary.age !== "Unavailable" ? " stale" : ""}`,
     ),
+    textElement(documentRoot, "td", summary.cost, "cost-total"),
   );
   row.firstElementChild.scope = "row";
 }
@@ -826,6 +948,8 @@ function worklogAge(repository, now) {
 function summarizeRepository(repository, now) {
   const state = readerData(repository.state);
   const questions = readerData(repository.questions)?.open;
+  const costTasks = repositoryCostData(repository);
+  const unattributed = costLabel(costTasks?.unattributed);
   return {
     name: repository.name ?? "Unknown repository",
     availability:
@@ -841,6 +965,9 @@ function summarizeRepository(repository, now) {
     hold: state?.hold === true,
     questions: Array.isArray(questions) ? String(questions.length) : "Unknown",
     age: worklogAge(repository, now),
+    cost: meteredTotal([repository]),
+    unattributed: unattributed?.text ?? (costTasks ? "None" : "Unavailable"),
+    unattributedTitle: unattributed?.title,
   };
 }
 
@@ -862,6 +989,14 @@ function renderRepositorySummaryRow(row, summary) {
   );
   const holdCell = documentRoot.createElement("td");
   if (summary.hold) appendText(holdCell, "span", "HELD", "badge held-badge");
+  const unattributedCell = textElement(
+    documentRoot,
+    "td",
+    summary.unattributed,
+    "cost-unattributed",
+  );
+  if (summary.unattributedTitle)
+    unattributedCell.title = summary.unattributedTitle;
   row.replaceChildren(
     textElement(documentRoot, "th", summary.name),
     availabilityCell,
@@ -871,6 +1006,8 @@ function renderRepositorySummaryRow(row, summary) {
     holdCell,
     textElement(documentRoot, "td", summary.questions),
     textElement(documentRoot, "td", summary.age, "age"),
+    textElement(documentRoot, "td", summary.cost, "cost-total"),
+    unattributedCell,
   );
   row.firstElementChild.scope = "row";
 }
@@ -892,6 +1029,8 @@ function createRepositorySummary(documentRoot) {
     "Hold",
     "Questions",
     "Worklog age",
+    "Total cost",
+    "Unattributed",
   ]) {
     const cell = textElement(documentRoot, "th", heading);
     cell.scope = "col";

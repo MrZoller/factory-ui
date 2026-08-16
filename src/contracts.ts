@@ -176,6 +176,34 @@ export interface RoutingData {
   agents: Record<string, RoutingAgent>;
 }
 
+export interface CostTokens {
+  input: number;
+  output: number;
+  reasoning: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+export interface CostCounters {
+  usd: number;
+  messages: number;
+  sessions: number;
+  tokens: CostTokens;
+}
+
+export interface CostTask extends CostCounters {
+  byModel: Record<string, CostCounters>;
+  firstAt: string;
+  lastAt: string;
+}
+
+export interface CostsData {
+  schemaVersion: 1;
+  recordedAt: string;
+  currency: string;
+  tasks: Record<string, CostTask>;
+}
+
 export interface RepositoryFactoryData {
   name: string;
   state: ReaderResult<FactoryStateData>;
@@ -184,6 +212,7 @@ export interface RepositoryFactoryData {
   worklog: ReaderResult<WorklogData>;
   logs: ReaderResult<LogsData>;
   routing: ReaderResult<RoutingData>;
+  costs: ReaderResult<CostsData>;
   liveness: LivenessSnapshot;
 }
 

@@ -6,6 +6,8 @@ const MAX_FLEET_RESPONSE_BYTES = 32 * 1024 * 1024;
 const MAX_REPOSITORIES = 32;
 const MAX_PEERS = 32;
 const loadGenerations = new WeakMap();
+const tabControllers = new WeakMap();
+const machineViews = new WeakMap();
 
 function textElement(documentRoot, tag, text, className) {
   const element = documentRoot.createElement(tag);
@@ -464,44 +466,261 @@ async function readFleetResponse(response) {
   return validateFleet(JSON.parse(body));
 }
 
-function createPeerSlot(peer, documentRoot) {
-  const slot = documentRoot.createElement("section");
-  slot.className = "machine peer-machine";
-  const header = documentRoot.createElement("header");
-  appendText(header, "h2", peer.name);
-  appendText(header, "p", "LOADING", "peer-status loading");
-  slot.append(header);
-  const repositories = documentRoot.createElement("div");
-  repositories.className = "repository-grid peer-repositories";
-  slot.append(repositories);
-  return slot;
+function unavailableSummary(name) {
+  return {
+    name,
+    liveness: "Unavailable",
+    currentTask: "Unavailable",
+    pullRequest: "Unavailable",
+    hold: false,
+    questions: "Unavailable",
+    age: "Unavailable",
+  };
 }
 
-function renderPeerFleet(slot, peer, fleet, now) {
-  const header = slot.ownerDocument.createElement("header");
-  appendText(header, "h2", peer.name);
-  appendText(header, "p", "AVAILABLE", "peer-status available");
-  appendText(
-    header,
-    "p",
-    `Remote ${fleet.hostname} · Snapshot ${displayAge(fleet.generatedAt, now)}`,
-    "age",
+function aggregateCurrent(repositories, key, format) {
+  if (repositories.length === 0) return "Unknown";
+  const concrete = [];
+  let everyNull = true;
+  for (const repository of repositories) {
+    const state = readerData(repository.state);
+    const value = state?.[key];
+    if (value !== null) everyNull = false;
+    if (value !== undefined && value !== null) {
+      concrete.push({ name: repository.name, value: format(value) });
+    }
+  }
+  if (concrete.length === 1) return concrete[0].value;
+  if (concrete.length > 1) {
+    return concrete.map(({ name, value }) => `${name}: ${value}`).join(", ");
+  }
+  return everyNull ? "None" : "Unknown";
+}
+
+function summarizeMachine(name, fleet, now) {
+  if (!fleet) return unavailableSummary(name);
+  const repositories = fleet.repositories;
+  const states = repositories.map((repository) => readerData(repository.state));
+  const liveness = repositories.some(
+    (repository) => repository.liveness.state === "RUNNING",
+  )
+    ? "RUNNING"
+    : repositories.length === 0 ||
+        repositories.some(
+          (repository) => repository.liveness.state === "CANNOT_VERIFY",
+        )
+      ? "CANNOT_VERIFY"
+      : "STOPPED";
+  const questionLists = repositories.map(
+    (repository) => readerData(repository.questions)?.open,
   );
-  const repositories = slot.ownerDocument.createElement("div");
-  repositories.className = "repository-grid peer-repositories";
-  repositories.append(
-    ...fleet.repositories.map((repository) =>
-      renderRepository(repository, slot.ownerDocument, now),
+  const questions =
+    repositories.length > 0 && questionLists.every(Array.isArray)
+      ? String(questionLists.reduce((total, open) => total + open.length, 0))
+      : "Unknown";
+  return {
+    name,
+    liveness,
+    currentTask: aggregateCurrent(repositories, "currentTask", String),
+    pullRequest: aggregateCurrent(
+      repositories,
+      "pr",
+      (value) => `PR #${value}`,
+    ),
+    hold: states.some((state) => state?.hold === true),
+    questions,
+    age: displayAge(fleet.generatedAt, now),
+  };
+}
+
+function livenessClass(liveness) {
+  if (liveness === "RUNNING") return "running";
+  if (liveness === "STOPPED") return "stopped";
+  if (liveness === "Unavailable") return "unavailable";
+  return "unknown";
+}
+
+function renderSummaryRow(row, summary) {
+  const documentRoot = row.ownerDocument;
+  const livenessCell = documentRoot.createElement("td");
+  appendText(
+    livenessCell,
+    "span",
+    summary.liveness,
+    `liveness ${livenessClass(summary.liveness)}`,
+  );
+  const holdCell = documentRoot.createElement("td");
+  if (summary.hold) appendText(holdCell, "span", "HELD", "badge held-badge");
+  row.replaceChildren(
+    textElement(documentRoot, "th", summary.name),
+    livenessCell,
+    textElement(documentRoot, "td", summary.currentTask),
+    textElement(documentRoot, "td", summary.pullRequest),
+    holdCell,
+    textElement(documentRoot, "td", summary.questions),
+    textElement(documentRoot, "td", summary.age, "age"),
+  );
+  row.firstElementChild.scope = "row";
+}
+
+function renderTabLabel(tab, summary) {
+  const documentRoot = tab.ownerDocument;
+  const children = [
+    textElement(documentRoot, "span", summary.name, "tab-name"),
+  ];
+  if (summary.hold) {
+    children.push(
+      textElement(documentRoot, "span", "HELD", "badge held-badge"),
+    );
+  }
+  children.push(
+    textElement(
+      documentRoot,
+      "span",
+      `Questions ${summary.questions}`,
+      "badge question-badge",
     ),
   );
-  slot.replaceChildren(header, repositories);
+  tab.replaceChildren(...children);
 }
 
-function renderPeerUnavailable(slot, peer) {
-  const header = slot.ownerDocument.createElement("header");
-  appendText(header, "h2", peer.name);
-  appendText(header, "p", "UNREACHABLE", "peer-status unreachable");
-  slot.replaceChildren(header);
+function createMachineView(identity, index, documentRoot, isPeer) {
+  const row = documentRoot.createElement("tr");
+  const tab = documentRoot.createElement("button");
+  const panel = documentRoot.createElement("section");
+  const grid = documentRoot.createElement("div");
+  const tabId = `machine-tab-${index}`;
+  const panelId = `machine-panel-${index}`;
+  tab.type = "button";
+  tab.id = tabId;
+  tab.className = "machine-tab";
+  tab.setAttribute("role", "tab");
+  tab.setAttribute("aria-controls", panelId);
+  tab.setAttribute("aria-selected", "false");
+  tab.tabIndex = -1;
+  panel.id = panelId;
+  panel.className = `machine${isPeer ? " peer-machine" : " local-machine"}`;
+  panel.setAttribute("role", "tabpanel");
+  panel.setAttribute("aria-labelledby", tabId);
+  panel.hidden = true;
+  grid.className = `repository-grid${isPeer ? " peer-repositories" : ""}`;
+  panel.append(grid);
+  return { identity, row, tab, panel, grid };
+}
+
+function updateMachineView(view, summary, fleet, now, unreachable = false) {
+  renderSummaryRow(view.row, summary);
+  renderTabLabel(view.tab, summary);
+  if (unreachable) {
+    view.grid.replaceChildren(
+      textElement(view.grid.ownerDocument, "p", "UNREACHABLE", "unreachable"),
+    );
+    return;
+  }
+  if (!fleet) {
+    view.grid.replaceChildren(
+      textElement(view.grid.ownerDocument, "p", "Unavailable", "unavailable"),
+    );
+    return;
+  }
+  view.grid.replaceChildren(
+    ...fleet.repositories.map((repository) =>
+      renderRepository(repository, view.grid.ownerDocument, now),
+    ),
+  );
+}
+
+function machineHash(identity) {
+  return `#${new URLSearchParams({ machine: identity }).toString()}`;
+}
+
+function hashMachine(windowRoot) {
+  return new URLSearchParams(windowRoot?.location?.hash?.slice(1) ?? "").get(
+    "machine",
+  );
+}
+
+function installTabs(documentRoot, views) {
+  tabControllers.get(documentRoot)?.cleanup();
+  const windowRoot = documentRoot.defaultView;
+  const listeners = [];
+
+  function select(index, updateHash = false, focus = false) {
+    views.forEach((view, viewIndex) => {
+      const selected = viewIndex === index;
+      view.tab.setAttribute("aria-selected", String(selected));
+      view.tab.tabIndex = selected ? 0 : -1;
+      view.panel.hidden = !selected;
+    });
+    if (focus) views[index].tab.focus();
+    if (updateHash && windowRoot?.location) {
+      windowRoot.location.hash = machineHash(views[index].identity);
+    }
+  }
+
+  function selectFromHash(canonicalize) {
+    const identity = hashMachine(windowRoot);
+    const index = views.findIndex((view) => view.identity === identity);
+    select(index >= 0 ? index : 0);
+    if (canonicalize && index < 0 && windowRoot?.history) {
+      windowRoot.history.replaceState(null, "", machineHash(views[0].identity));
+    }
+  }
+
+  views.forEach((view, index) => {
+    const onClick = () => select(index, true);
+    const onKeyDown = (event) => {
+      let targetIndex;
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        targetIndex = (index + 1) % views.length;
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        targetIndex = (index - 1 + views.length) % views.length;
+      } else if (event.key === "Enter" || event.key === " ") {
+        targetIndex = index;
+      } else {
+        return;
+      }
+      event.preventDefault();
+      select(targetIndex, true, true);
+    };
+    view.tab.addEventListener("click", onClick);
+    view.tab.addEventListener("keydown", onKeyDown);
+    listeners.push(
+      [view.tab, "click", onClick],
+      [view.tab, "keydown", onKeyDown],
+    );
+  });
+  const onHashChange = () => selectFromHash(true);
+  windowRoot?.addEventListener("hashchange", onHashChange);
+  selectFromHash(true);
+
+  tabControllers.set(documentRoot, {
+    cleanup() {
+      for (const [target, type, listener] of listeners) {
+        target.removeEventListener(type, listener);
+      }
+      windowRoot?.removeEventListener("hashchange", onHashChange);
+    },
+  });
+}
+
+function ensureFleetShell(documentRoot, repositories) {
+  let summaryBody = documentRoot.querySelector("#fleet-summary tbody");
+  if (!summaryBody) {
+    const table = documentRoot.createElement("table");
+    table.id = "fleet-summary";
+    summaryBody = documentRoot.createElement("tbody");
+    table.append(summaryBody);
+    repositories.parentNode?.insertBefore(table, repositories);
+  }
+  let tabs = documentRoot.querySelector("#machine-tabs");
+  if (!tabs) {
+    tabs = documentRoot.createElement("div");
+    tabs.id = "machine-tabs";
+    tabs.setAttribute("role", "tablist");
+    repositories.parentNode?.insertBefore(tabs, repositories);
+  }
+  return { summaryBody, tabs };
 }
 
 export function renderFleet(fleet, documentRoot = document, now = new Date()) {
@@ -510,19 +729,37 @@ export function renderFleet(fleet, documentRoot = document, now = new Date()) {
   const generated = documentRoot.querySelector("#generated");
   const error = documentRoot.querySelector("#error");
   if (!machine || !repositories || !generated || !error) return;
+  const { summaryBody, tabs } = ensureFleetShell(documentRoot, repositories);
 
   machine.textContent = fleet?.hostname ?? "Local machine";
   generated.textContent = `Snapshot ${displayAge(fleet?.generatedAt, now)} · ${displayTime(fleet?.generatedAt)}`;
   error.textContent = "";
-  const cards = Array.isArray(fleet?.repositories)
-    ? fleet.repositories.map((repository) =>
-        renderRepository(repository, documentRoot, now),
-      )
-    : [];
-  const peerSlots = Array.isArray(fleet?.peers)
-    ? fleet.peers.map((peer) => createPeerSlot(peer, documentRoot))
-    : [];
-  repositories.replaceChildren(...cards, ...peerSlots);
+  const machines = [
+    { identity: fleet.hostname, fleet, isPeer: false },
+    ...(Array.isArray(fleet.peers) ? fleet.peers : []).map((peer) => ({
+      identity: peer.name,
+      fleet: null,
+      isPeer: true,
+    })),
+  ];
+  const views = machines.map((item, index) =>
+    createMachineView(item.identity, index, documentRoot, item.isPeer),
+  );
+  views.forEach((view, index) => {
+    updateMachineView(
+      view,
+      machines[index].fleet
+        ? summarizeMachine(view.identity, machines[index].fleet, now)
+        : unavailableSummary(view.identity),
+      machines[index].fleet,
+      now,
+    );
+  });
+  summaryBody.replaceChildren(...views.map((view) => view.row));
+  tabs.replaceChildren(...views.map((view) => view.tab));
+  repositories.replaceChildren(...views.map((view) => view.panel));
+  installTabs(documentRoot, views);
+  machineViews.set(documentRoot, views);
 }
 
 async function fetchPeerFleet(peer, fetcher, dependencies) {
@@ -549,7 +786,7 @@ async function fetchPeerFleet(peer, fetcher, dependencies) {
 
 async function fanOutToPeers(
   peers,
-  slots,
+  views,
   documentRoot,
   fetcher,
   dependencies,
@@ -563,11 +800,23 @@ async function fanOutToPeers(
       try {
         const fleet = await fetchPeerFleet(peer, fetcher, dependencies);
         if (loadGenerations.get(documentRoot) === generation) {
-          renderPeerFleet(slots[index], peer, fleet, dependencies.now());
+          const now = dependencies.now();
+          updateMachineView(
+            views[index + 1],
+            summarizeMachine(peer.name, fleet, now),
+            fleet,
+            now,
+          );
         }
       } catch {
         if (loadGenerations.get(documentRoot) === generation) {
-          renderPeerUnavailable(slots[index], peer);
+          updateMachineView(
+            views[index + 1],
+            unavailableSummary(peer.name),
+            null,
+            dependencies.now(),
+            true,
+          );
         }
       }
     }
@@ -596,19 +845,25 @@ export async function loadFleet(
   };
   const generation = (loadGenerations.get(documentRoot) ?? 0) + 1;
   loadGenerations.set(documentRoot, generation);
+  tabControllers.get(documentRoot)?.cleanup();
+  tabControllers.delete(documentRoot);
+  machineViews.delete(documentRoot);
   if (machine) machine.textContent = "Loading local machine…";
   if (generated) generated.textContent = "Waiting for snapshot…";
   if (error) error.textContent = "";
+  documentRoot.querySelector("#fleet-summary tbody")?.replaceChildren();
+  documentRoot.querySelector("#machine-tabs")?.replaceChildren();
   repositories?.replaceChildren();
   try {
     const response = await fetcher("/api/fleet");
     const fleet = await readFleetResponse(response);
     if (loadGenerations.get(documentRoot) !== generation) return;
     renderFleet(fleet, documentRoot, dependencies.now());
-    const slots = Array.from(documentRoot.querySelectorAll(".peer-machine"));
+    const views = machineViews.get(documentRoot);
+    if (!views) return;
     await fanOutToPeers(
       fleet.peers,
-      slots,
+      views,
       documentRoot,
       fetcher,
       dependencies,

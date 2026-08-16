@@ -17,6 +17,8 @@ function dashboardDocument(): Document {
     '<h1 id="machine"></h1>',
     '<p id="generated"></p>',
     '<p id="error"></p>',
+    '<table id="fleet-summary"><tbody></tbody></table>',
+    '<div id="machine-tabs" role="tablist"></div>',
     '<div id="repositories"></div>',
   ].join("");
   return document;
@@ -133,6 +135,29 @@ function jsonResponse(value: unknown, status = 200): Response {
 
 async function flushPromises(): Promise<void> {
   for (let index = 0; index < 20; index += 1) await Promise.resolve();
+}
+
+function summaryMachineNames(document: Document): Array<string | null> {
+  return Array.from(
+    document.querySelectorAll("#fleet-summary tbody tr"),
+    (row) => row.querySelector("th")?.textContent ?? null,
+  );
+}
+
+function summaryRow(
+  document: Document,
+  name: string,
+): HTMLTableRowElement | undefined {
+  return Array.from(document.querySelectorAll("#fleet-summary tbody tr")).find(
+    (row) => row.querySelector("th")?.textContent === name,
+  ) as HTMLTableRowElement | undefined;
+}
+
+function summaryCells(document: Document, name: string): Array<string | null> {
+  return Array.from(
+    summaryRow(document, name)?.children ?? [],
+    (cell) => cell.textContent,
+  );
 }
 
 describe("local dashboard rendering", () => {
@@ -509,6 +534,318 @@ describe("local dashboard rendering", () => {
   });
 });
 
+describe("fleet summary and machine tabs", () => {
+  test("renders one local-first summary row and tab per configured machine with matching badges", () => {
+    const document = dashboardDocument();
+    const localEmpty = richRepository({
+      name: "empty-local",
+      state: {
+        status: "available",
+        data: { currentTask: null, pr: null, hold: false },
+        warnings: [],
+      },
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+      liveness: { state: "STOPPED", checkedAt: "2026-08-16T11:59:00.000Z" },
+    });
+
+    renderFleet(
+      fleet(
+        "mini",
+        [
+          { name: "macbook", origin: "https://macbook.example" },
+          { name: "legion", origin: "https://legion.example" },
+        ],
+        [richRepository(), localEmpty],
+      ),
+      document,
+      NOW,
+    );
+
+    expect(summaryMachineNames(document)).toEqual([
+      "mini",
+      "macbook",
+      "legion",
+    ]);
+    expect(
+      Array.from(
+        document.querySelectorAll('[role="tab"]'),
+        (tab) => tab.textContent,
+      ),
+    ).toEqual([
+      "miniHELDQuestions 1",
+      "macbookQuestions Unavailable",
+      "legionQuestions Unavailable",
+    ]);
+    expect(summaryCells(document, "mini")).toEqual([
+      "mini",
+      "RUNNING",
+      "T8",
+      "PR #42",
+      "HELD",
+      "1",
+      "0s ago",
+    ]);
+    expect(summaryCells(document, "macbook")).toEqual([
+      "macbook",
+      "Unavailable",
+      "Unavailable",
+      "Unavailable",
+      "",
+      "Unavailable",
+      "Unavailable",
+    ]);
+    expect(document.querySelectorAll("#fleet-summary tbody tr")).toHaveLength(
+      3,
+    );
+    expect(document.querySelectorAll('[role="tabpanel"]')).toHaveLength(3);
+    expect(
+      document.querySelector('[role="tab"]')?.getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(
+      new URLSearchParams(document.defaultView?.location.hash.slice(1)).get(
+        "machine",
+      ),
+    ).toBe("mini");
+  });
+
+  test("uses None only for explicit empty values and Unknown for unavailable state", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            state: {
+              status: "available",
+              data: { currentTask: null, pr: null, hold: false },
+              warnings: [],
+            },
+            questions: {
+              status: "available",
+              data: { open: [] },
+              warnings: [],
+            },
+            liveness: {
+              state: "CANNOT_VERIFY",
+              checkedAt: "2026-08-16T11:59:00.000Z",
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+    expect(summaryCells(document, "mini")).toEqual([
+      "mini",
+      "CANNOT_VERIFY",
+      "None",
+      "None",
+      "",
+      "0",
+      "0s ago",
+    ]);
+
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [richRepository({ state: { status: "unavailable", warnings: [] } })],
+      ),
+      document,
+      NOW,
+    );
+    expect(summaryCells(document, "mini").slice(2, 6)).toEqual([
+      "Unknown",
+      "Unknown",
+      "",
+      "1",
+    ]);
+  });
+
+  test("summarizes an all-stopped machine with stopped liveness styling", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            liveness: {
+              state: "STOPPED",
+              checkedAt: "2026-08-16T11:59:00.000Z",
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    expect(summaryCells(document, "mini")[1]).toBe("STOPPED");
+    expect(
+      summaryRow(document, "mini")?.querySelector(".liveness.stopped"),
+    ).not.toBeNull();
+  });
+
+  test("joins multiple repository tasks and pull requests in repository order", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            name: "api",
+            state: {
+              status: "available",
+              data: { currentTask: "T7", pr: 17, hold: false },
+              warnings: [],
+            },
+          }),
+          richRepository({
+            name: "web",
+            state: {
+              status: "available",
+              data: { currentTask: "T9", pr: 23, hold: false },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    expect(summaryCells(document, "mini").slice(2, 4)).toEqual([
+      "api: T7, web: T9",
+      "api: PR #17, web: PR #23",
+    ]);
+  });
+
+  test("switches tabs through click and hash changes, defaulting and falling back to local", () => {
+    const document = dashboardDocument();
+    const window = document.defaultView!;
+    window.location.hash = "#machine=legion";
+    renderFleet(
+      fleet("mini", [
+        { name: "macbook", origin: "https://macbook.example" },
+        { name: "legion", origin: "https://legion.example" },
+      ]),
+      document,
+      NOW,
+    );
+    const tabs = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+    );
+    const panels = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="tabpanel"]'),
+    );
+
+    expect(tabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual([
+      "false",
+      "false",
+      "true",
+    ]);
+    expect(panels.map((panel) => panel.hidden)).toEqual([true, true, false]);
+    tabs[1]?.click();
+    expect(window.location.hash).toBe("#machine=macbook");
+    expect(tabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual([
+      "false",
+      "true",
+      "false",
+    ]);
+
+    window.location.hash = "#machine=unknown";
+    window.dispatchEvent(new window.Event("hashchange"));
+    expect(tabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual([
+      "true",
+      "false",
+      "false",
+    ]);
+    expect(
+      new URLSearchParams(window.location.hash.slice(1)).get("machine"),
+    ).toBe("mini");
+  });
+
+  test("supports roving keyboard tab selection with ARIA relationships", () => {
+    const document = dashboardDocument();
+    const window = document.defaultView!;
+    renderFleet(
+      fleet("mini", [
+        { name: "macbook", origin: "https://macbook.example" },
+        { name: "legion", origin: "https://legion.example" },
+      ]),
+      document,
+      NOW,
+    );
+    const tabs = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+    );
+    const panels = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="tabpanel"]'),
+    );
+    expect(document.querySelector('[role="tablist"]')).not.toBeNull();
+    expect(tabs).toHaveLength(3);
+    expect(panels).toHaveLength(3);
+    tabs.forEach((tab, index) => {
+      expect(tab.getAttribute("aria-controls")).toBe(panels[index]!.id);
+      expect(panels[index]!.getAttribute("aria-labelledby")).toBe(tab.id);
+    });
+
+    tabs[0]?.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+    );
+    expect(document.activeElement).toBe(tabs[1]!);
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, 0, -1]);
+    tabs[1]?.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    );
+    expect(tabs[1]?.getAttribute("aria-selected")).toBe("true");
+    tabs[1]?.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+    );
+    tabs[2]?.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    expect(tabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual([
+      "false",
+      "false",
+      "true",
+    ]);
+    expect(panels.map((panel) => panel.hidden)).toEqual([true, true, false]);
+  });
+
+  test("keeps hostile machine, repository, and hash strings literal and inert", () => {
+    const document = dashboardDocument();
+    const window = document.defaultView!;
+    const hostile =
+      '<img src=x onerror="globalThis.pwned=1"><script>globalThis.pwned=2</script>';
+    window.location.hash = `#${new URLSearchParams({ machine: hostile })}`;
+    renderFleet(
+      fleet(
+        hostile,
+        [{ name: hostile, origin: "https://peer.example" }],
+        [richRepository({ name: hostile })],
+      ),
+      document,
+      NOW,
+    );
+
+    expect(summaryMachineNames(document)).toEqual([hostile, hostile]);
+    expect(
+      Array.from(
+        document.querySelectorAll('[role="tab"]'),
+        (tab) => tab.textContent,
+      ),
+    ).toEqual([`${hostile}HELDQuestions 1`, `${hostile}Questions Unavailable`]);
+    expect(
+      document.querySelectorAll("script, img, [onerror], [onclick]"),
+    ).toHaveLength(0);
+    expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
+  });
+});
+
 describe("browser peer fan-out", () => {
   test("uses fixed timeout and concurrency bounds", () => {
     expect(PEER_FETCH_TIMEOUT_MS).toBe(5_000);
@@ -540,15 +877,19 @@ describe("browser peer fan-out", () => {
       },
     );
 
-    const loading = loadFleet(document, fetcher);
+    const loading = loadFleet(document, fetcher, { now: () => NOW });
     await flushPromises();
 
     expect(document.querySelector("#machine")?.textContent).toBe("mini");
+    expect(summaryMachineNames(document)).toEqual([
+      "mini",
+      "macbook",
+      "legion",
+    ]);
+    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(3);
     expect(
-      Array.from(document.querySelectorAll(".peer-status"), (node) =>
-        node.textContent?.trim(),
-      ),
-    ).toEqual(["LOADING", "LOADING"]);
+      document.querySelectorAll(".peer-machine .unavailable"),
+    ).toHaveLength(2);
     expect(peerRequests.map(({ url }) => url)).toEqual([
       "http://100.64.0.2:7777/api/fleet",
       "https://legion.example:7777/api/fleet",
@@ -570,10 +911,22 @@ describe("browser peer fan-out", () => {
     await loading;
 
     const slots = document.querySelectorAll(".peer-machine");
-    expect(slots.item(0).textContent).toContain("AVAILABLE");
     expect(slots.item(0).textContent).toContain("peer-project");
     expect(slots.item(0).textContent).not.toContain("ignored");
     expect(slots.item(1).textContent).toContain("UNREACHABLE");
+    expect(summaryRow(document, "macbook")?.textContent).toContain("RUNNING");
+    expect(summaryCells(document, "macbook")).toEqual([
+      "macbook",
+      "RUNNING",
+      "T8",
+      "PR #42",
+      "HELD",
+      "1",
+      "0s ago",
+    ]);
+    expect(summaryRow(document, "legion")?.textContent).toContain(
+      "Unavailable",
+    );
     expect(document.querySelector("#error")?.textContent).toBe("");
   });
 
@@ -602,10 +955,11 @@ describe("browser peer fan-out", () => {
     await loadFleet(document, fetcher);
 
     expect(
-      Array.from(document.querySelectorAll(".peer-status"), (node) =>
-        node.textContent?.trim(),
-      ),
-    ).toEqual(["UNREACHABLE", "UNREACHABLE", "UNREACHABLE"]);
+      document.querySelectorAll(".peer-machine .unreachable"),
+    ).toHaveLength(3);
+    expect(document.querySelectorAll("#fleet-summary tbody tr")).toHaveLength(
+      4,
+    );
   });
 
   test("never starts more than four peer requests concurrently", async () => {
@@ -645,7 +999,14 @@ describe("browser peer fan-out", () => {
     await loading;
 
     expect(maximum).toBe(4);
-    expect(document.querySelectorAll(".peer-status.available")).toHaveLength(6);
+    expect(document.querySelectorAll("#fleet-summary tbody tr")).toHaveLength(
+      7,
+    );
+    expect(
+      Array.from(document.querySelectorAll("#fleet-summary tbody tr"))
+        .slice(1)
+        .every((row) => row.textContent?.includes("CANNOT_VERIFY")),
+    ).toBe(true);
   });
 
   test("aborts and replaces a timed-out peer in place", async () => {
@@ -677,9 +1038,9 @@ describe("browser peer fan-out", () => {
     await loading;
 
     expect(signal?.aborted).toBe(true);
-    expect(document.querySelector(".peer-status")?.textContent).toBe(
-      "UNREACHABLE",
-    );
+    expect(
+      document.querySelector(".peer-machine .unreachable")?.textContent,
+    ).toBe("UNREACHABLE");
   });
 
   test("refresh discards stale peer data and can recover", async () => {
@@ -711,12 +1072,14 @@ describe("browser peer fan-out", () => {
 
     const first = loadFleet(document, fetcher);
     await flushPromises();
-    expect(document.querySelector(".peer-status")?.textContent).toBe("LOADING");
+    expect(
+      document.querySelector(".peer-machine .unavailable")?.textContent,
+    ).toBe("Unavailable");
 
     await loadFleet(document, fetcher);
-    expect(document.querySelector(".peer-status")?.textContent).toBe(
-      "UNREACHABLE",
-    );
+    expect(
+      document.querySelector(".peer-machine .unreachable")?.textContent,
+    ).toBe("UNREACHABLE");
     resolveOldPeer?.(
       jsonResponse(fleet("old", [], [richRepository({ name: "stale" })])),
     );
@@ -724,9 +1087,9 @@ describe("browser peer fan-out", () => {
     expect(document.body.textContent).not.toContain("stale");
 
     await loadFleet(document, fetcher);
-    expect(document.querySelector(".peer-status")?.textContent).toBe(
-      "AVAILABLE",
-    );
+    expect(
+      document.querySelector(".peer-machine .repository")?.textContent,
+    ).toContain("recovered");
     expect(document.body.textContent).toContain("recovered");
     expect(document.body.textContent).not.toContain("UNREACHABLE");
   });

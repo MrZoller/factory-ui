@@ -101,7 +101,7 @@ task.
   - deps: T14
   - pr: 15
 
-- [R] T16 (trivial) — Fix liveness parser rejecting lsof file-set lines
+- [x] T16 (trivial) — Fix liveness parser rejecting lsof file-set lines
   - acceptance: `parseCommands` in `src/liveness.ts` accepts the real `lsof -Fpc` output shape, in which every process set is `p<pid>`, `c<command>`, followed by one or more file-set lines (`f<fd>` and any other single-letter-prefixed field lines lsof emits for the file, e.g. `a`, `l`, `t`, `n`, `k`, `i`, `s`) until the next `p` line — file-set lines are ignored, the `p`→`c` pairing and ordering rules stay strict (a `c` without a preceding `p`, a `p` without a `c`, an empty command, a line that is not `p`/`c`/a file-set field, or output not ending in `\n` still return `null`), and the probe returns `RUNNING` when any command is `tee`; the test fixtures in `src/liveness.test.ts` are replaced/extended with real captured `lsof -Fpc` output for a live run (`p22022\nctee\nf3\np22341\nctail\nf3\n` → `["tee","tail"]` → `RUNNING`), a stopped log (exit 1, empty output → `STOPPED`), and the strict-rejection cases; the change is confined to the parser and its tests (spec 4, spec "Honest tristate liveness").
   - deps: none
   - pr: 16

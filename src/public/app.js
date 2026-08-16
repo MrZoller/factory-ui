@@ -755,6 +755,127 @@ function renderTabLabel(tab, summary) {
   tab.replaceChildren(...children);
 }
 
+function worklogAge(repository, now) {
+  const entries = readerData(repository.worklog)?.entries;
+  if (!Array.isArray(entries)) return "Unknown";
+  if (entries.length === 0) return "None";
+  const entry = entries.at(-1);
+  if (typeof entry?.date !== "string") return "Unknown";
+  const time = typeof entry.time === "string" ? entry.time : "00:00";
+  return displayAge(`${entry.date}T${time}:00.000Z`, now);
+}
+
+function summarizeRepository(repository, now) {
+  const state = readerData(repository.state);
+  const questions = readerData(repository.questions)?.open;
+  return {
+    name: repository.name ?? "Unknown repository",
+    availability:
+      repository.status === "available" ? "AVAILABLE" : "UNAVAILABLE",
+    liveness: repository.liveness?.state ?? "CANNOT_VERIFY",
+    currentTask: displayOptional(state?.currentTask),
+    pullRequest:
+      state?.pr === undefined
+        ? "Unknown"
+        : state.pr === null
+          ? "None"
+          : `PR #${state.pr}`,
+    hold: state?.hold === true,
+    questions: Array.isArray(questions) ? String(questions.length) : "Unknown",
+    age: worklogAge(repository, now),
+  };
+}
+
+function renderRepositorySummaryRow(row, summary) {
+  const documentRoot = row.ownerDocument;
+  const availabilityCell = documentRoot.createElement("td");
+  appendText(
+    availabilityCell,
+    "span",
+    summary.availability,
+    `status ${summary.availability === "AVAILABLE" ? "available" : "unavailable"}`,
+  );
+  const livenessCell = documentRoot.createElement("td");
+  appendText(
+    livenessCell,
+    "span",
+    summary.liveness,
+    `liveness ${livenessClass(summary.liveness)}`,
+  );
+  const holdCell = documentRoot.createElement("td");
+  if (summary.hold) appendText(holdCell, "span", "HELD", "badge held-badge");
+  row.replaceChildren(
+    textElement(documentRoot, "th", summary.name),
+    availabilityCell,
+    livenessCell,
+    textElement(documentRoot, "td", summary.currentTask),
+    textElement(documentRoot, "td", summary.pullRequest),
+    holdCell,
+    textElement(documentRoot, "td", summary.questions),
+    textElement(documentRoot, "td", summary.age, "age"),
+  );
+  row.firstElementChild.scope = "row";
+}
+
+function createRepositorySummary(documentRoot) {
+  const scroll = documentRoot.createElement("div");
+  const table = documentRoot.createElement("table");
+  const head = documentRoot.createElement("thead");
+  const headingRow = documentRoot.createElement("tr");
+  const body = documentRoot.createElement("tbody");
+  scroll.className = "table-scroll repository-summary-scroll";
+  table.className = "repository-summary";
+  for (const heading of [
+    "Repository",
+    "Status",
+    "Liveness",
+    "Current task",
+    "PR",
+    "Hold",
+    "Questions",
+    "Worklog age",
+  ]) {
+    const cell = textElement(documentRoot, "th", heading);
+    cell.scope = "col";
+    headingRow.append(cell);
+  }
+  head.append(headingRow);
+  table.append(head, body);
+  scroll.append(table);
+  return { scroll, body };
+}
+
+function createRepositoryView(
+  repository,
+  machineIndex,
+  index,
+  documentRoot,
+  now,
+) {
+  const summary = summarizeRepository(repository, now);
+  const row = documentRoot.createElement("tr");
+  const tab = documentRoot.createElement("button");
+  const panel = documentRoot.createElement("section");
+  const tabId = `repository-tab-${machineIndex}-${index}`;
+  const panelId = `repository-panel-${machineIndex}-${index}`;
+  renderRepositorySummaryRow(row, summary);
+  tab.type = "button";
+  tab.id = tabId;
+  tab.className = "repository-tab";
+  tab.setAttribute("role", "tab");
+  tab.setAttribute("aria-controls", panelId);
+  tab.setAttribute("aria-selected", "false");
+  tab.tabIndex = -1;
+  renderTabLabel(tab, summary);
+  panel.id = panelId;
+  panel.className = "repository-panel";
+  panel.setAttribute("role", "tabpanel");
+  panel.setAttribute("aria-labelledby", tabId);
+  panel.hidden = true;
+  panel.append(renderRepository(repository, documentRoot, now));
+  return { identity: repository.name, row, tab, panel };
+}
+
 function createMachineView(identity, index, documentRoot, isPeer) {
   const row = documentRoot.createElement("tr");
   const tab = documentRoot.createElement("button");
@@ -777,7 +898,7 @@ function createMachineView(identity, index, documentRoot, isPeer) {
   grid.className = `repository-grid${isPeer ? " peer-repositories" : ""}`;
   const routing = renderRoutingStrip(null, documentRoot);
   panel.append(routing, grid);
-  return { identity, row, tab, panel, routing, grid };
+  return { identity, index, row, tab, panel, routing, grid, repositories: [] };
 }
 
 function updateMachineView(view, summary, fleet, now, unreachable = false) {
@@ -787,32 +908,57 @@ function updateMachineView(view, summary, fleet, now, unreachable = false) {
   view.routing.replaceWith(routing);
   view.routing = routing;
   if (unreachable) {
+    view.repositories = [];
     view.grid.replaceChildren(
       textElement(view.grid.ownerDocument, "p", "UNREACHABLE", "unreachable"),
     );
     return;
   }
   if (!fleet) {
+    view.repositories = [];
     view.grid.replaceChildren(
       textElement(view.grid.ownerDocument, "p", "Unavailable", "unavailable"),
     );
     return;
   }
+  const documentRoot = view.grid.ownerDocument;
+  const repositorySummary = createRepositorySummary(documentRoot);
+  const repositoryTabs = documentRoot.createElement("div");
+  const repositoryPanels = documentRoot.createElement("div");
+  repositoryTabs.className = "repository-tabs";
+  repositoryTabs.setAttribute("role", "tablist");
+  repositoryTabs.setAttribute("aria-label", "Repositories");
+  repositoryPanels.className = "repository-panels";
+  view.repositories = fleet.repositories.map((repository, index) =>
+    createRepositoryView(repository, view.index, index, documentRoot, now),
+  );
+  repositorySummary.body.replaceChildren(
+    ...view.repositories.map((repository) => repository.row),
+  );
+  repositoryTabs.replaceChildren(
+    ...view.repositories.map((repository) => repository.tab),
+  );
+  repositoryPanels.replaceChildren(
+    ...view.repositories.map((repository) => repository.panel),
+  );
   view.grid.replaceChildren(
-    ...fleet.repositories.map((repository) =>
-      renderRepository(repository, view.grid.ownerDocument, now),
-    ),
+    repositorySummary.scroll,
+    repositoryTabs,
+    repositoryPanels,
   );
 }
 
-function machineHash(identity) {
-  return `#${new URLSearchParams({ machine: identity }).toString()}`;
+function dashboardHash(machine, repository) {
+  const values = { machine };
+  if (repository !== undefined) values.repo = repository;
+  return `#${new URLSearchParams(values).toString()}`;
 }
 
-function hashMachine(windowRoot) {
-  return new URLSearchParams(windowRoot?.location?.hash?.slice(1) ?? "").get(
-    "machine",
+function hashSelection(windowRoot) {
+  const values = new URLSearchParams(
+    windowRoot?.location?.hash?.slice(1) ?? "",
   );
+  return { machine: values.get("machine"), repository: values.get("repo") };
 }
 
 function installTabs(documentRoot, views) {
@@ -820,7 +966,35 @@ function installTabs(documentRoot, views) {
   const windowRoot = documentRoot.defaultView;
   const listeners = [];
 
-  function select(index, updateHash = false, focus = false) {
+  function repositoryIndex(view, identity) {
+    const index = view.repositories.findIndex(
+      (repository) => repository.identity === identity,
+    );
+    return index >= 0 ? index : 0;
+  }
+
+  function selectRepository(view, index, focus = false) {
+    view.repositories.forEach((repository, repositoryIndex) => {
+      const selected = repositoryIndex === index;
+      repository.tab.setAttribute("aria-selected", String(selected));
+      repository.tab.tabIndex = selected ? 0 : -1;
+      repository.panel.hidden = !selected;
+    });
+    if (focus) view.repositories[index]?.tab.focus();
+  }
+
+  function selectedRepository(view) {
+    return view.repositories.find(
+      (repository) => repository.tab.getAttribute("aria-selected") === "true",
+    );
+  }
+
+  function select(
+    index,
+    repositoryIdentity,
+    updateHash = false,
+    focus = false,
+  ) {
     views.forEach((view, viewIndex) => {
       const selected = viewIndex === index;
       view.tab.setAttribute("aria-selected", String(selected));
@@ -828,22 +1002,44 @@ function installTabs(documentRoot, views) {
       view.panel.hidden = !selected;
     });
     if (focus) views[index].tab.focus();
+    const view = views[index];
+    if (view.repositories.length > 0) {
+      selectRepository(view, repositoryIndex(view, repositoryIdentity));
+    }
     if (updateHash && windowRoot?.location) {
-      windowRoot.location.hash = machineHash(views[index].identity);
+      windowRoot.location.hash = dashboardHash(
+        view.identity,
+        selectedRepository(view)?.identity,
+      );
     }
   }
 
   function selectFromHash(canonicalize) {
-    const identity = hashMachine(windowRoot);
-    const index = views.findIndex((view) => view.identity === identity);
-    select(index >= 0 ? index : 0);
-    if (canonicalize && index < 0 && windowRoot?.history) {
-      windowRoot.history.replaceState(null, "", machineHash(views[0].identity));
+    const selection = hashSelection(windowRoot);
+    const foundIndex = views.findIndex(
+      (view) => view.identity === selection.machine,
+    );
+    const index = foundIndex >= 0 ? foundIndex : 0;
+    const view = views[index];
+    const foundRepository = view.repositories.some(
+      (repository) => repository.identity === selection.repository,
+    );
+    select(index, foundRepository ? selection.repository : undefined);
+    if (
+      canonicalize &&
+      (foundIndex < 0 || (view.repositories.length > 0 && !foundRepository)) &&
+      windowRoot?.history
+    ) {
+      windowRoot.history.replaceState(
+        null,
+        "",
+        dashboardHash(view.identity, selectedRepository(view)?.identity),
+      );
     }
   }
 
   views.forEach((view, index) => {
-    const onClick = () => select(index, true);
+    const onClick = () => select(index, undefined, true);
     const onKeyDown = (event) => {
       let targetIndex;
       if (event.key === "ArrowRight" || event.key === "ArrowDown") {
@@ -856,7 +1052,7 @@ function installTabs(documentRoot, views) {
         return;
       }
       event.preventDefault();
-      select(targetIndex, true, true);
+      select(targetIndex, undefined, true, true);
     };
     view.tab.addEventListener("click", onClick);
     view.tab.addEventListener("keydown", onKeyDown);
@@ -864,6 +1060,45 @@ function installTabs(documentRoot, views) {
       [view.tab, "click", onClick],
       [view.tab, "keydown", onKeyDown],
     );
+    view.repositories.forEach((repository, repositoryPosition) => {
+      const onRepositoryClick = () => {
+        selectRepository(view, repositoryPosition);
+        if (windowRoot?.location) {
+          windowRoot.location.hash = dashboardHash(
+            view.identity,
+            repository.identity,
+          );
+        }
+      };
+      const onRepositoryKeyDown = (event) => {
+        let targetIndex;
+        if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+          targetIndex = (repositoryPosition + 1) % view.repositories.length;
+        } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+          targetIndex =
+            (repositoryPosition - 1 + view.repositories.length) %
+            view.repositories.length;
+        } else if (event.key === "Enter" || event.key === " ") {
+          targetIndex = repositoryPosition;
+        } else {
+          return;
+        }
+        event.preventDefault();
+        selectRepository(view, targetIndex, true);
+        if (event.key === "Enter" || event.key === " ") {
+          windowRoot.location.hash = dashboardHash(
+            view.identity,
+            view.repositories[targetIndex].identity,
+          );
+        }
+      };
+      repository.tab.addEventListener("click", onRepositoryClick);
+      repository.tab.addEventListener("keydown", onRepositoryKeyDown);
+      listeners.push(
+        [repository.tab, "click", onRepositoryClick],
+        [repository.tab, "keydown", onRepositoryKeyDown],
+      );
+    });
   });
   const onHashChange = () => selectFromHash(true);
   windowRoot?.addEventListener("hashchange", onHashChange);
@@ -982,6 +1217,7 @@ async function fanOutToPeers(
             fleet,
             now,
           );
+          installTabs(documentRoot, views);
         }
       } catch {
         if (loadGenerations.get(documentRoot) === generation) {
@@ -992,6 +1228,7 @@ async function fanOutToPeers(
             dependencies.now(),
             true,
           );
+          installTabs(documentRoot, views);
         }
       }
     }

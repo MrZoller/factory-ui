@@ -823,7 +823,7 @@ describe("fleet summary and machine tabs", () => {
     ]);
     expect(
       Array.from(
-        document.querySelectorAll('[role="tab"]'),
+        document.querySelectorAll('#machine-tabs [role="tab"]'),
         (tab) => tab.textContent,
       ),
     ).toEqual([
@@ -852,9 +852,13 @@ describe("fleet summary and machine tabs", () => {
     expect(document.querySelectorAll("#fleet-summary tbody tr")).toHaveLength(
       3,
     );
-    expect(document.querySelectorAll('[role="tabpanel"]')).toHaveLength(3);
     expect(
-      document.querySelector('[role="tab"]')?.getAttribute("aria-selected"),
+      document.querySelectorAll('#repositories > [role="tabpanel"]'),
+    ).toHaveLength(3);
+    expect(
+      document
+        .querySelector('#machine-tabs [role="tab"]')
+        ?.getAttribute("aria-selected"),
     ).toBe("true");
     expect(
       new URLSearchParams(document.defaultView?.location.hash.slice(1)).get(
@@ -991,10 +995,14 @@ describe("fleet summary and machine tabs", () => {
       NOW,
     );
     const tabs = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+      document.querySelectorAll<HTMLButtonElement>(
+        '#machine-tabs [role="tab"]',
+      ),
     );
     const panels = Array.from(
-      document.querySelectorAll<HTMLElement>('[role="tabpanel"]'),
+      document.querySelectorAll<HTMLElement>(
+        '#repositories > [role="tabpanel"]',
+      ),
     );
 
     expect(tabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual([
@@ -1035,12 +1043,18 @@ describe("fleet summary and machine tabs", () => {
       NOW,
     );
     const tabs = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+      document.querySelectorAll<HTMLButtonElement>(
+        '#machine-tabs [role="tab"]',
+      ),
     );
     const panels = Array.from(
-      document.querySelectorAll<HTMLElement>('[role="tabpanel"]'),
+      document.querySelectorAll<HTMLElement>(
+        '#repositories > [role="tabpanel"]',
+      ),
     );
-    expect(document.querySelector('[role="tablist"]')).not.toBeNull();
+    expect(
+      document.querySelector('#machine-tabs[role="tablist"]'),
+    ).not.toBeNull();
     expect(tabs).toHaveLength(3);
     expect(panels).toHaveLength(3);
     tabs.forEach((tab, index) => {
@@ -1090,7 +1104,7 @@ describe("fleet summary and machine tabs", () => {
     expect(summaryMachineNames(document)).toEqual([hostile, hostile]);
     expect(
       Array.from(
-        document.querySelectorAll('[role="tab"]'),
+        document.querySelectorAll('#machine-tabs [role="tab"]'),
         (tab) => tab.textContent,
       ),
     ).toEqual([`${hostile}HELDQuestions 1`, `${hostile}Questions Unavailable`]);
@@ -1098,6 +1112,198 @@ describe("fleet summary and machine tabs", () => {
       document.querySelectorAll("script, img, [onerror], [onclick]"),
     ).toHaveLength(0);
     expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
+  });
+});
+
+describe("repository strips and sub-tabs", () => {
+  function localMachinePanel(document: Document): HTMLElement {
+    return document.querySelector<HTMLElement>(
+      '#repositories > [role="tabpanel"]',
+    )!;
+  }
+
+  function repositoryTablist(panel: HTMLElement): HTMLElement {
+    return panel.querySelector<HTMLElement>(
+      '[role="tablist"][aria-label="Repositories"]',
+    )!;
+  }
+
+  test("renders repository summaries in order with matching aggregate labels", () => {
+    const document = dashboardDocument();
+    const alpha = richRepository({ name: "alpha" });
+    const beta = richRepository({
+      name: "beta",
+      state: {
+        status: "available",
+        data: { currentTask: null, pr: null, hold: false },
+        warnings: [],
+      },
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+      liveness: { state: "STOPPED", checkedAt: "2026-08-16T11:50:00.000Z" },
+    });
+
+    renderFleet(fleet("mini", [], [alpha, beta]), document, NOW);
+
+    const panel = localMachinePanel(document);
+    const rows = Array.from(
+      panel.querySelectorAll("table.repository-summary tbody tr"),
+    );
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining("alphaAVAILABLERUNNINGT8PR #42HELD1"),
+      expect.stringContaining("betaAVAILABLE"),
+    ]);
+    expect(rows[1]?.textContent).toContain("STOPPED");
+    expect(rows[1]?.textContent).toContain("None");
+    expect(rows[1]?.textContent).toContain("0");
+    expect(rows[0]?.querySelector(".age")?.textContent).toBe("12h ago");
+    expect(rows[1]?.querySelector(".age")?.textContent).toBe("12h ago");
+
+    const tabs = Array.from(
+      repositoryTablist(panel).querySelectorAll<HTMLButtonElement>(
+        '[role="tab"]',
+      ),
+    );
+    const subpanels = Array.from(
+      panel.querySelectorAll<HTMLElement>('[role="tabpanel"]'),
+    );
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      "alphaHELDQuestions 1",
+      "betaQuestions 0",
+    ]);
+    expect(tabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual([
+      "true",
+      "false",
+    ]);
+    tabs.forEach((tab, index) => {
+      expect(tab.getAttribute("aria-controls")).toBe(subpanels[index]!.id);
+      expect(subpanels[index]?.getAttribute("aria-labelledby")).toBe(tab.id);
+    });
+    expect(
+      document.querySelector('#machine-tabs [role="tab"]')?.textContent,
+    ).toBe("miniHELDQuestions 1");
+    expect(summaryCells(document, "mini").slice(4, 6)).toEqual(["HELD", "1"]);
+  });
+
+  test("switches sub-tabs by click and keyboard with a two-key hash", () => {
+    const document = dashboardDocument();
+    const window = document.defaultView!;
+    window.location.hash = "#machine=mini&repo=beta";
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [richRepository({ name: "alpha" }), richRepository({ name: "beta" })],
+      ),
+      document,
+      NOW,
+    );
+
+    const panel = localMachinePanel(document);
+    const tabs = Array.from(
+      repositoryTablist(panel).querySelectorAll<HTMLButtonElement>(
+        '[role="tab"]',
+      ),
+    );
+    const subpanels = Array.from(
+      panel.querySelectorAll<HTMLElement>('[role="tabpanel"]'),
+    );
+    expect(tabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual([
+      "false",
+      "true",
+    ]);
+    expect(subpanels.map((subpanel) => subpanel.hidden)).toEqual([true, false]);
+
+    tabs[0]?.click();
+    expect(window.location.hash).toBe("#machine=mini&repo=alpha");
+    tabs[0]?.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+    );
+    expect(document.activeElement).toBe(tabs[1]!);
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, 0]);
+    tabs[1]?.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    );
+    expect(tabs[1]?.getAttribute("aria-selected")).toBe("true");
+    expect(window.location.hash).toBe("#machine=mini&repo=beta");
+    tabs[0]?.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  test("falls back for missing, unknown, and hostile repository hashes", () => {
+    const document = dashboardDocument();
+    const window = document.defaultView!;
+    const hostile = '<img src=x onerror="globalThis.pwned=1">';
+    const snapshot = fleet(
+      "mini",
+      [],
+      [richRepository({ name: "alpha" }), richRepository({ name: "beta" })],
+    );
+    window.location.hash = "#machine=mini";
+    renderFleet(snapshot, document, NOW);
+    expect(window.location.hash).toBe("#machine=mini&repo=alpha");
+
+    window.location.hash = "#machine=mini&repo=unknown";
+    window.dispatchEvent(new window.Event("hashchange"));
+    expect(window.location.hash).toBe("#machine=mini&repo=alpha");
+
+    window.location.hash = `#${new URLSearchParams({
+      machine: hostile,
+      repo: hostile,
+    })}`;
+    window.dispatchEvent(new window.Event("hashchange"));
+    expect(window.location.hash).toBe("#machine=mini&repo=alpha");
+    expect(
+      document.querySelectorAll("img, script, [onerror], [onclick]"),
+    ).toHaveLength(0);
+    expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
+  });
+
+  test("renders one selected repository sub-tab for a single-repository machine", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet("mini", [], [richRepository({ name: "only-repository" })]),
+      document,
+      NOW,
+    );
+
+    const panel = localMachinePanel(document);
+    const tabs = repositoryTablist(panel).querySelectorAll('[role="tab"]');
+    const subpanels = panel.querySelectorAll<HTMLElement>('[role="tabpanel"]');
+    expect(tabs).toHaveLength(1);
+    expect(subpanels).toHaveLength(1);
+    expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(subpanels[0]?.hidden).toBe(false);
+    expect(document.defaultView?.location.hash).toBe(
+      "#machine=mini&repo=only-repository",
+    );
+  });
+
+  test("keeps routing above summaries and omits unavailable sub-tabs", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [{ name: "macbook", origin: "https://macbook.example" }],
+        [richRepository()],
+      ),
+      document,
+      NOW,
+    );
+
+    const local = localMachinePanel(document);
+    expect(
+      local
+        .querySelector(".routing-strip")
+        ?.compareDocumentPosition(local.querySelector(".repository-summary")!),
+    ).toBe(document.defaultView!.Node.DOCUMENT_POSITION_FOLLOWING);
+    const unavailable = document.querySelectorAll<HTMLElement>(
+      '#repositories > [role="tabpanel"]',
+    )[1]!;
+    expect(unavailable.textContent).toContain("Unavailable");
+    expect(unavailable.querySelector('[role="tablist"]')).toBeNull();
+    expect(unavailable.querySelector(".repository-summary")).toBeNull();
   });
 });
 
@@ -1141,7 +1347,9 @@ describe("browser peer fan-out", () => {
       "macbook",
       "legion",
     ]);
-    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(3);
+    expect(
+      document.querySelectorAll('#machine-tabs [role="tab"]'),
+    ).toHaveLength(3);
     expect(
       document.querySelectorAll(".peer-repositories > .unavailable"),
     ).toHaveLength(2);

@@ -55,11 +55,13 @@ describe("launch", () => {
       calls.push("load");
       return config;
     });
-    const server = { url: new URL("http://127.0.0.1:7777") };
+    const server = {
+      url: new URL("http://127.0.0.1:7777"),
+    } as ReturnType<typeof Bun.serve>;
     const startServerMock = mock((received: AppConfig) => {
       calls.push("listen");
       expect(received.port).toBe(7777);
-      return server as ReturnType<typeof Bun.serve>;
+      return server;
     });
 
     await expect(

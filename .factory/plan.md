@@ -31,7 +31,7 @@ task.
 - [x] T5 (standard) — Add open-question and recent-worklog readers
   - acceptance: In `src/readers/questions.ts`, `src/readers/worklog.ts`, `src/snapshot.ts`, `src/contracts.ts`, and tests, return only explicitly open questions and the newest bounded worklog entries supported by the factory protocol; preserve question, narration, and worklog text verbatim within byte, entry, line, and line-length limits; treat Markdown and HTML as uninterpreted text; and produce explicit warnings rather than crashes for empty, malformed, oversized, hostile, or partially written content (spec 2, 5, 7, 8).
   - deps: T4
-- [ ] T6 (standard) — Add bounded narration, timing, and source-age data
+- [~] T6 (standard) — Add bounded narration, timing, and source-age data
   - acceptance: In `src/readers/logs.ts`, `src/liveness.ts`, `src/snapshot.ts`, `src/contracts.ts`, and tests, enumerate only bounded recognized driver/cycle/shepherd log names, select logs deterministically, return a byte/line/line-length-bounded narration tail verbatim, and derive only defensible start/activity/duration values from names and filesystem timestamps; expose distinct per-source and overall “as of” timestamps, integrate the trusted driver log with liveness, and cover malformed names, equal timestamps, growing or multibyte oversized logs, missing logs, and stale stopped state without fabricating timing (spec 2, 4, 5, 7).
   - deps: T3, T4
 - [ ] T7 (standard) — Finalize the versioned read-only API

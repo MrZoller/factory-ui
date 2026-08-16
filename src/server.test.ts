@@ -357,10 +357,17 @@ describe("server", () => {
       const text = await response.text();
       expect(text).toContain("<!doctype html>");
       expect(text).toContain("Factory fleet");
+      expect(text).toMatch(
+        /<h1 class="wordmark">\s*<span>Factory<\/span>\s*<\/h1>/,
+      );
+      expect(text).toContain('<svg\n            class="factory-mark"');
+      expect(text).toContain('aria-hidden="true"');
       expect(text).toContain('<script src="/app.js" type="module">');
       expect(text).toContain('<link rel="stylesheet" href="/styles.css" />');
       expect(text).not.toContain("innerHTML");
       expect(text).not.toContain("onload=");
+      expect(text).not.toMatch(/\son[a-z]+\s*=/i);
+      expect(text).not.toMatch(/(?:src|href)="https?:\/\//i);
     });
 
     test("returns 404 for static files that don't exist", async () => {

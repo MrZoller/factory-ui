@@ -10,8 +10,22 @@
   <body>
     <main>
       <header class="dashboard-header">
-        <p class="eyebrow">Software factory fleet</p>
-        <h1 id="machine">Loading local machine…</h1>
+        <div class="wordmark-lockup">
+          <svg
+            class="factory-mark"
+            viewBox="0 0 40 40"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="M5 8h12v8H5zM23 8h12v8H23zM14 24h12v8H14z" />
+            <path class="factory-mark-path" d="M11 16v4h9m9-4v4h-9v4" />
+          </svg>
+          <div>
+            <p class="eyebrow">Software factory fleet</p>
+            <h1 class="wordmark"><span>Factory</span></h1>
+          </div>
+        </div>
+        <p id="machine" class="machine-subtitle">Loading local machine…</p>
         <p id="generated" class="age">Waiting for snapshot…</p>
         <button id="refresh" type="button">Refresh</button>
       </header>

@@ -363,6 +363,7 @@ describe("server", () => {
       expect(text).toContain('<svg\n            class="factory-mark"');
       expect(text).toContain('aria-hidden="true"');
       expect(text).toContain('<script src="/app.js" type="module">');
+      expect(text).toContain('<a href="/how">How it works</a>');
       expect(text).toContain('<link rel="stylesheet" href="/styles.css" />');
       expect(text).not.toContain("innerHTML");
       expect(text).not.toContain("onload=");

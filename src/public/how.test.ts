@@ -229,4 +229,27 @@ describe("how factory works page", () => {
     ).toHaveLength(0);
     expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
   });
+
+  test("renders a missing role as unavailable without inventing model cost", () => {
+    const document = howDocument();
+    const data = fleet();
+    const repository = data.repositories[0];
+    if (!repository) throw new Error("missing repository fixture");
+    delete repository.routing.data.agents.docsmith;
+    repository.routing.data.agents.verifier = {
+      provider: "openai",
+      model: "unused-model",
+      steps: 8,
+    };
+
+    renderHow([{ identity: "mini", fleet: data }], document);
+
+    expect(
+      document.querySelector('[data-role="docsmith"] .unavailable')
+        ?.textContent,
+    ).toBe("Unavailable");
+    expect(
+      document.querySelector('[data-role="verifier"] .agent-cost'),
+    ).toBeNull();
+  });
 });

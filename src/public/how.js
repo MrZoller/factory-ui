@@ -70,6 +70,7 @@ function roleRoute(routing, role) {
 function modelCost(fleet, modelId) {
   if (!modelId || !Array.isArray(fleet?.repositories)) return undefined;
   let total = 0;
+  let found = false;
   for (const repository of fleet.repositories) {
     const costs = availableData(repository.costs);
     if (!costs || costs.currency !== "USD") return undefined;
@@ -77,12 +78,13 @@ function modelCost(fleet, modelId) {
       const usd = task?.byModel?.[modelId]?.usd;
       if (usd !== undefined) {
         if (!Number.isFinite(usd) || usd < 0) return undefined;
+        found = true;
         total += usd;
         if (!Number.isFinite(total)) return undefined;
       }
     }
   }
-  return total;
+  return found ? total : undefined;
 }
 
 function renderRole(documentRoot, role, routing, fleet) {

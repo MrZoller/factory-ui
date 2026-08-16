@@ -37,7 +37,7 @@ task.
 - [x] T7 (standard) — Finalize the versioned read-only API
   - acceptance: In `src/contracts.ts`, `src/snapshot.ts`, `src/server.ts`, and integration tests, finalize schema-versioned `GET /api/fleet` and `GET /api/repo/<encoded-name>` responses containing every spec-2 field; accept exactly one decoded configured repository name and reject malformed encodings, separators, and unknown names before filesystem or process work; isolate per-repository failures; include bounded warnings and generation/source timestamps; enforce security headers, CORS, 404/405 behavior, and safe errors; and prove representative page/API requests leave source contents and metadata unchanged and expose no absolute paths, environment values, or unrelated files (spec 2, 3, 5, 9).
   - deps: T5, T6
-- [ ] T8 (major) — Render the complete local repository dashboard safely
+- [~] T8 (major) — Render the complete local repository dashboard safely
   - acceptance: In `src/public/index.html`, `src/public/app.js`, `src/public/styles.css`, browser-focused tests, and server tests, make current task/branch/PR/hold, active and review work, next runnable work, done and blocked work, open questions, worklog, narration, timing, liveness, warnings, and data age visually distinct and responsive; construct all source-derived content with text nodes or `textContent`, use only API-validated PR URLs with safe external-link behavior, and enforce a restrictive no-inline-script CSP plus `nosniff` and referrer policy; hostile fixtures containing tags, scripts, entities, event handlers, URL schemes, and closing-script text must remain literal and inert (spec 7, 8).
   - deps: T7
 - [ ] T9 (standard) — Fan out to peers in the browser with failure isolation

@@ -19,7 +19,7 @@ task.
 - [x] T1 (standard) — Ship a loopback local-dashboard walking skeleton
   - acceptance: In `src/config.ts`, `src/contracts.ts`, `src/snapshot.ts`, `src/server.ts`, `src/index.ts`, and `src/public/`, load a minimal JSON config containing a machine name, multiple named clone paths, peers, and an optional port defaulting to 7777; serve loopback only; make `GET /api/fleet` return hostname plus bounded project/phase data from each clone's `state.json`; make `GET /` fetch and render that local data with text-only DOM APIs; isolate a missing or malformed clone, return 404/405 for unsupported requests, and cover the handler/config/temp-tree behavior with Bun tests; format `BRIEF.md` so the existing full lint command is green (spec 1, 2, 5, 6, 8, 9).
   - deps: none
-- [R] T2 (major) — Establish configuration, filesystem, bind, and CORS boundaries
+- [x] T2 (major) — Establish configuration, filesystem, bind, and CORS boundaries
   - acceptance: In `src/config.ts`, `src/paths.ts`, `src/server.ts`, and colocated tests, validate unique path-safe repository names, canonical clone roots, bounded repository/peer counts, literal loopback or tailnet bind addresses, peer origins, GitHub repository URLs, and explicit localhost development origins; reject wildcard/public/hostname-ambiguous binds, traversal and symlink escapes, and unsafe origins before listening; read only fixed documented `.factory` paths; grant browser CORS only to the local dashboard, configured peers, and explicit development origins with `Vary: Origin`; prove errors do not leak clone paths and no request value controls a filesystem path or command argument (spec 1, 3, 8, 9, 10).
   - deps: T1
 - [ ] T3 (standard) — Add conservative cross-platform driver liveness
@@ -77,3 +77,6 @@ task.
 ## Ad-hoc
 
 <!-- user-requested tasks get appended here by the driver -->
+
+- [!] T11 (trivial) — parked review minors (batch)
+  - Add `O_NONBLOCK` when opening validated `state.json` so a locally planted FIFO cannot block the fleet snapshot before the existing regular-file check rejects it (PR #2 review).

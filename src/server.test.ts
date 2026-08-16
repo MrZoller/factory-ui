@@ -357,6 +357,10 @@ describe("server", () => {
       const text = await response.text();
       expect(text).toContain("<!doctype html>");
       expect(text).toContain("Factory fleet");
+      expect(text).toContain('<script src="/app.js" type="module">');
+      expect(text).toContain('<link rel="stylesheet" href="/styles.css" />');
+      expect(text).not.toContain("innerHTML");
+      expect(text).not.toContain("onload=");
     });
 
     test("returns 404 for static files that don't exist", async () => {
@@ -613,7 +617,7 @@ describe("server", () => {
     ).text();
 
     expect(source).toContain("textContent");
-    expect(source).toContain("document.createElement");
+    expect(source).toContain("documentRoot.createElement");
     expect(source).not.toContain("innerHTML");
     expect(source).not.toContain("insertAdjacentHTML");
   });

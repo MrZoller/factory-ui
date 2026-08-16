@@ -265,12 +265,14 @@ function appendWorklogHighlight(parent, text, repositoryUrl) {
             : token;
       const label = kind === "commit" ? token.slice(0, 7) : token;
       const url = worklogReferenceUrl(repositoryUrl, kind, value);
-      const reference = appendExternalOrText(
-        parent,
-        label,
-        url,
-        kind === "task" ? "plan" : kind,
-      );
+      const reference = url
+        ? appendExternalOrText(
+            parent,
+            label,
+            url,
+            kind === "task" ? "plan" : kind,
+          )
+        : appendText(parent, "code", label);
       reference.classList.add("worklog-reference");
     }
     offset = match.index + token.length;

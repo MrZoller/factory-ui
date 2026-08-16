@@ -901,6 +901,21 @@ describe("local dashboard rendering", () => {
         "a, script, img, [href^='javascript:'], [onerror]",
       ),
     ).toHaveLength(0);
+    const references = Array.from(
+      panel.querySelectorAll<HTMLElement>(".worklog-reference"),
+    );
+    expect(references.map((reference) => reference.tagName)).toEqual([
+      "CODE",
+      "CODE",
+      "CODE",
+      "CODE",
+    ]);
+    expect(references.map((reference) => reference.textContent)).toEqual([
+      "T27",
+      "PR #12",
+      "#34",
+      "0123456",
+    ]);
     expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
   });
 

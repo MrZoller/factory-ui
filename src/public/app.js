@@ -515,7 +515,7 @@ function isRepository(value) {
     isReaderResult(value.questions) &&
     isReaderResult(value.worklog) &&
     isReaderResult(value.logs) &&
-    isRoutingResult(value.routing) &&
+    (value.routing === undefined || isRoutingResult(value.routing)) &&
     isRecord(value.liveness) &&
     ["RUNNING", "STOPPED", "CANNOT_VERIFY"].includes(value.liveness.state) &&
     isTimestamp(value.liveness.checkedAt)

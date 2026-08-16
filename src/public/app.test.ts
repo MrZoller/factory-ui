@@ -1111,7 +1111,7 @@ describe("browser peer fan-out", () => {
     );
   });
 
-  test("rejects invalid peer routing", async () => {
+  test("accepts peers without routing and rejects invalid peer routing", async () => {
     const document = dashboardDocument();
     const peers = [
       { name: "missing-routing-field", origin: "http://100.64.0.6:7777" },
@@ -1126,15 +1126,14 @@ describe("browser peer fan-out", () => {
         return Promise.resolve(jsonResponse(fleet("mini", peers)));
       }
       request += 1;
-      const repository = richRepository({
-        routing:
-          request === 1
-            ? {
-                status: "available",
-                data: { schemaVersion: 1, agents: {} },
-                warnings: [],
-              }
-            : {
+      const repository =
+        request === 1
+          ? (() => {
+              const { routing: _routing, ...withoutRouting } = richRepository();
+              return withoutRouting;
+            })()
+          : richRepository({
+              routing: {
                 status: "available",
                 data: {
                   schemaVersion: 1,
@@ -1150,7 +1149,7 @@ describe("browser peer fan-out", () => {
                 },
                 warnings: [],
               },
-      });
+            });
       return Promise.resolve(jsonResponse(fleet("peer", [], [repository])));
     });
 
@@ -1158,7 +1157,13 @@ describe("browser peer fan-out", () => {
 
     expect(
       document.querySelectorAll(".peer-machine .unreachable"),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
+    expect(
+      document.querySelectorAll(".peer-machine").item(0).textContent,
+    ).toContain("factory-ui");
+    expect(
+      document.querySelectorAll(".peer-machine").item(0).textContent,
+    ).toContain("Unavailable");
   });
 
   test("never starts more than four peer requests concurrently", async () => {

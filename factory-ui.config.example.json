@@ -1,0 +1,21 @@
+{
+  "machine": "mini",
+  "bind": "100.64.0.10",
+  "repositories": [
+    {
+      "name": "factory-ui",
+      "path": "/Users/factory/code/factory-ui",
+      "githubUrl": "https://github.com/example/factory-ui"
+    },
+    {
+      "name": "product-api",
+      "path": "/Users/factory/code/product-api",
+      "githubUrl": "https://github.com/example/product-api"
+    }
+  ],
+  "peers": [
+    { "name": "macbook", "origin": "http://macbook:7777" },
+    { "name": "legion", "origin": "http://legion:7777" }
+  ],
+  "developmentOrigins": ["http://localhost:7777"]
+}

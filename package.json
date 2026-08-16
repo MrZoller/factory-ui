@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "bun src/index.ts",
+    "serve": "bun src/index.ts serve",
+    "start": "bun run serve",
     "test": "bun test",
     "lint": "prettier --check . && tsc --noEmit",
     "format": "prettier --write ."

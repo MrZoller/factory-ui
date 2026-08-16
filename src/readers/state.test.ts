@@ -200,4 +200,15 @@ describe("state reader", () => {
     mkdirSync(join(item.factoryPath, "state.json"));
     expect((await readFactoryState(item.root)).status).toBe("unavailable");
   });
+
+  test("rejects a state.json FIFO without blocking", async () => {
+    const item = fixture();
+    const path = join(item.factoryPath, "state.json");
+    expect(Bun.spawnSync(["mkfifo", path]).exitCode).toBe(0);
+
+    const result = await readFactoryState(item.root);
+
+    expect(result.status).toBe("unavailable");
+    expect(result.warnings[0]?.code).toBe("STATE_UNAVAILABLE");
+  });
 });

@@ -78,7 +78,7 @@ task.
 
 <!-- user-requested tasks get appended here by the driver -->
 
-- [ ] T11 (standard) — parked review minors (batch)
+- [~] T11 (standard) — parked review minors (batch)
   - Add `O_NONBLOCK` when opening validated `state.json` so a locally planted FIFO cannot block the fleet snapshot before the existing regular-file check rejects it (PR #2 review).
   - Preserve `.factory/logs` directory and selected-file identity across driver-log selection and the `lsof` probe to harden against concurrent local directory swaps (PR #3 review).
   - Ignore task-shaped lines inside fenced Markdown blocks so documentation examples cannot appear as runnable plan tasks (PR #4 review).

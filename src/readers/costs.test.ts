@@ -100,6 +100,20 @@ describe("costs reader", () => {
     ).toBe("unavailable");
   });
 
+  test("rejects non-USD costs instead of exposing them as dollars", () => {
+    expect(
+      parseFactoryCosts(encode({ ...validCosts, currency: "EUR" })),
+    ).toEqual({
+      status: "unavailable",
+      warnings: [
+        {
+          code: "COSTS_UNSUPPORTED_CURRENCY",
+          message: "costs.json currency must be USD",
+        },
+      ],
+    });
+  });
+
   test.each(["T0", "T01", "t23", "23", "../T23", "__proto__"])(
     "rejects invalid or hostile task key %s",
     (taskId) => {

@@ -19,7 +19,7 @@ export const MAX_PLAN_WARNINGS = 32;
 const TASK_LINE =
   /^- \[([ ~Rx!])\] (T[1-9][0-9]*) \((trivial|standard|major)\) — (.+)$/;
 const DEPENDENCIES_LINE = /^  - deps: (none|T[1-9][0-9]*(?:, T[1-9][0-9]*)*)$/;
-const PR_LINE = /^  - pr: (.+)$/;
+const PR_LINE = /^  - pr:(?: (.*))?$/;
 const ACCEPTANCE_LINE = /^  - acceptance: (.*)$/;
 const STATUS: Record<string, TaskStatus> = {
   " ": "todo",
@@ -91,7 +91,24 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
 
   const warnings: ReaderWarning[] = [];
   const parsed: ParsedTask[] = [];
+  const fencedLines = new Set<number>();
+  let fence: { marker: string; length: number } | null = null;
   for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.replace(/\r$/, "") ?? "";
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence === null && match?.[1]) {
+      fence = { marker: match[1][0] ?? "", length: match[1].length };
+      fencedLines.add(index);
+    } else if (fence !== null) {
+      fencedLines.add(index);
+      const closing = new RegExp(
+        `^ {0,3}${fence.marker === "`" ? "`" : "~"}{${fence.length},}\\s*$`,
+      );
+      if (closing.test(line)) fence = null;
+    }
+  }
+  for (let index = 0; index < lines.length; index += 1) {
+    if (fencedLines.has(index)) continue;
     const line = lines[index]?.replace(/\r$/, "") ?? "";
     const match = TASK_LINE.exec(line);
     if (!match) {
@@ -140,12 +157,13 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
     const issueNumbers: number[] = [];
     const seenIssues = new Set<number>();
     for (let child = index + 1; child < lines.length; child += 1) {
+      if (fencedLines.has(child)) continue;
       const childLine = lines[child]?.replace(/\r$/, "") ?? "";
       if (TASK_LINE.test(childLine) || childLine.startsWith("- [")) break;
       const prMatch = PR_LINE.exec(childLine);
       if (prMatch) {
         prLines += 1;
-        const value = prMatch[1];
+        const value = prMatch[1] ?? "";
         const parsedPr =
           value && /^[1-9][0-9]*$/.test(value) ? Number(value) : NaN;
         if (prLines > 1 || !Number.isSafeInteger(parsedPr)) {
@@ -166,7 +184,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
       if (acceptanceMatch) {
         acceptanceLines += 1;
         for (const match of acceptanceMatch[1]?.matchAll(
-          /Fixes #([^\s,.;)]+)/g,
+          /Fixes #([^\s,.;):!?]+)/g,
         ) ?? []) {
           const value = match[1] ?? "";
           const issue = /^[1-9][0-9]*$/.test(value) ? Number(value) : NaN;

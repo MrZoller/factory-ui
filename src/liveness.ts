@@ -157,11 +157,17 @@ export async function checkTrustedDriverLiveness(
   });
   try {
     if (driverLog === null) return cannotVerify();
-    const current = await lstat(driverLog.path, { bigint: true });
+    const [current, currentDirectory] = await Promise.all([
+      lstat(driverLog.path, { bigint: true }),
+      lstat(driverLog.directoryPath, { bigint: true }),
+    ]);
     if (
       !current.isFile() ||
       current.dev !== driverLog.device ||
-      current.ino !== driverLog.inode
+      current.ino !== driverLog.inode ||
+      !currentDirectory.isDirectory() ||
+      currentDirectory.dev !== driverLog.directoryDevice ||
+      currentDirectory.ino !== driverLog.directoryInode
     ) {
       return cannotVerify();
     }
@@ -173,6 +179,20 @@ export async function checkTrustedDriverLiveness(
         maxOutputBytes: MAX_LSOF_OUTPUT_BYTES,
       },
     );
+    const [after, directoryAfter] = await Promise.all([
+      lstat(driverLog.path, { bigint: true }),
+      lstat(driverLog.directoryPath, { bigint: true }),
+    ]);
+    if (
+      !after.isFile() ||
+      after.dev !== driverLog.device ||
+      after.ino !== driverLog.inode ||
+      !directoryAfter.isDirectory() ||
+      directoryAfter.dev !== driverLog.directoryDevice ||
+      directoryAfter.ino !== driverLog.directoryInode
+    ) {
+      return cannotVerify();
+    }
     if (result.timedOut || result.outputTruncated) return cannotVerify();
     if (result.exitCode === 1 && result.stdout === "" && result.stderr === "") {
       return { state: "STOPPED", checkedAt };

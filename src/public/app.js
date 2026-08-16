@@ -76,7 +76,7 @@ function updateSnapshotStatus(documentRoot, state, now) {
         ? "paused"
         : state.peerTimedOut
           ? "peer timed out"
-          : "refresh failed";
+          : "snapshot too old";
     generated.classList.toggle("stale", Boolean(stale));
     generated.textContent = stale
       ? `Stale · last good snapshot ${displayAge(state.lastGoodGeneratedAt, now)} (${displayTime(state.lastGoodGeneratedAt)}) — ${reason}`
@@ -642,9 +642,7 @@ function isCostsData(value) {
     !isRecord(value) ||
     value.schemaVersion !== 1 ||
     !isTimestamp(value.recordedAt) ||
-    typeof value.currency !== "string" ||
-    value.currency.length === 0 ||
-    value.currency.length > 1024 ||
+    value.currency !== "USD" ||
     !isRecord(value.tasks) ||
     Object.keys(value.tasks).length > MAX_COST_TASKS
   ) {
@@ -812,7 +810,10 @@ function meteredTotal(repositories) {
     const tasks = repositoryCostData(repository);
     if (!tasks) return "Unavailable";
     for (const counters of Object.values(tasks)) {
-      if (isCostCounters(counters)) total += counters.usd;
+      if (isCostCounters(counters)) {
+        total += counters.usd;
+        if (!Number.isFinite(total)) return "Unavailable";
+      }
     }
   }
   return formatUsd(total);
@@ -1530,7 +1531,7 @@ export async function loadFleet(
     }
     const views = machineViews.get(documentRoot);
     if (!views) return true;
-    state.peerTimedOut = await fanOutToPeers(
+    const peerTimedOut = await fanOutToPeers(
       fleet.peers,
       views,
       documentRoot,
@@ -1538,6 +1539,8 @@ export async function loadFleet(
       dependencies,
       generation,
     );
+    if (loadGenerations.get(documentRoot) !== generation) return false;
+    state.peerTimedOut = peerTimedOut;
     updateSnapshotStatus(documentRoot, state, dependencies.now());
     return true;
   } catch (cause) {

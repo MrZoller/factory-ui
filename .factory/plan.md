@@ -22,7 +22,7 @@ task.
 - [x] T2 (major) — Establish configuration, filesystem, bind, and CORS boundaries
   - acceptance: In `src/config.ts`, `src/paths.ts`, `src/server.ts`, and colocated tests, validate unique path-safe repository names, canonical clone roots, bounded repository/peer counts, literal loopback or tailnet bind addresses, peer origins, GitHub repository URLs, and explicit localhost development origins; reject wildcard/public/hostname-ambiguous binds, traversal and symlink escapes, and unsafe origins before listening; read only fixed documented `.factory` paths; grant browser CORS only to the local dashboard, configured peers, and explicit development origins with `Vary: Origin`; prove errors do not leak clone paths and no request value controls a filesystem path or command argument (spec 1, 3, 8, 9, 10).
   - deps: T1
-- [ ] T3 (standard) — Add conservative cross-platform driver liveness
+- [R] T3 (standard) — Add conservative cross-platform driver liveness
   - acceptance: In `src/liveness.ts` and tests, select only a recognized driver log under a configured clone, invoke a fixed shell-free and timeout-bounded `lsof` probe through an injectable runner, report `RUNNING` only for an exact `tee` opener and `STOPPED` only for an unambiguous successful no-opener result, and report `CANNOT_VERIFY` for a missing executable, timeout, failure, malformed output, unsafe target, or ambiguous exit; prove `tail -F`, unrelated processes, and browser/repository values cannot produce `RUNNING` or alter process arguments; expose the result and check time through `src/snapshot.ts` (spec 4, 9).
   - deps: T2
 - [ ] T4 (standard) — Parse bounded state and runnable plan data

@@ -376,6 +376,10 @@ describe("server", () => {
           repositories: [
             {
               name: "repo1",
+              liveness: {
+                state: "CANNOT_VERIFY",
+                checkedAt: "2026-08-16T00:00:00.000Z",
+              },
               status: "available" as const,
               project: "test-project",
               phase: "build" as const,
@@ -408,6 +412,7 @@ describe("server", () => {
         repositories: [
           {
             name: "repo1",
+            liveness: { state: "CANNOT_VERIFY", checkedAt: expect.any(String) },
             status: "available",
             project: "test-project",
             phase: "build",
@@ -425,6 +430,10 @@ describe("server", () => {
           repositories: [
             {
               name: "repo1",
+              liveness: {
+                state: "CANNOT_VERIFY",
+                checkedAt: "2026-08-16T00:00:00.000Z",
+              },
               status: "unavailable" as const,
               warning: "state.json is missing",
             },
@@ -451,6 +460,7 @@ describe("server", () => {
       expect(data.repositories).toEqual([
         {
           name: "repo1",
+          liveness: { state: "CANNOT_VERIFY", checkedAt: expect.any(String) },
           status: "unavailable",
           warning: "state.json is missing",
         },
@@ -495,13 +505,13 @@ describe("server", () => {
 
       expect(response.status).toBe(200);
       const data = await response.json();
-      expect(data.repositories).toEqual([
-        {
-          name: "repo1",
-          status: "unavailable",
-          warning: "state.json could not be read",
-        },
-      ]);
+      // Check that liveness state is CANNOT_VERIFY and checkedAt is a valid ISO date
+      expect(data.repositories[0].liveness.state).toBe("CANNOT_VERIFY");
+      expect(data.repositories[0].liveness.checkedAt).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+      );
+      expect(data.repositories[0].status).toBe("unavailable");
+      expect(data.repositories[0].warning).toBe("state.json could not be read");
     });
   });
 

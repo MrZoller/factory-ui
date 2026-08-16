@@ -141,7 +141,7 @@ task.
   - deps: T21
   - pr: 22
 
-- [ ] T23 (standard) — Show what each task cost
+- [~] T23 (standard) — Show what each task cost
   - acceptance: The factory engine now writes `.factory/logs/costs.json` (schemaVersion 1: `recordedAt`, `currency`, `tasks.<T-id|unattributed>.{usd,messages,sessions,tokens{input,output,reasoning,cacheRead,cacheWrite},byModel{"<provider>/<model>": same counters},firstAt,lastAt}`; metered lanes carry real USD, subscription lanes report 0 and count as tokens). In `src/paths.ts`, `src/readers/`, `src/contracts.ts`, `src/snapshot.ts`, `src/public/app.js`, `src/public/styles.css`, README, and colocated tests: add `logs/costs.json` as a fixed documented `.factory` read target (same containment/symlink/size/type checks; bounded ≤ 64 KiB), parse it into a bounded, validated `costs` reader result on the repository snapshot (unknown keys ignored; missing/oversized/unparseable/wrong schemaVersion → `unavailable` with a warning; task-id keys validated `^T[1-9][0-9]*$` or `unattributed`; numbers finite and non-negative; at most 256 tasks and 64 models per task); render on each task line a compact metered cost (`$1.23`) with tokens on a title/secondary line, and `sub` (tokens only) when usd is 0 but tokens are non-zero; show `unattributed` and a per-repository metered total in the repository strip row and a per-machine total in the fleet strip; a task with no entry shows nothing (not `$0`); hostile keys/values remain literal and inert; document the target and schema in the README's read-surface section (spec 3, 7, 8). External dependency: opencode-factory writes the file (PR pending at task start); until it lands the reader reports `Unavailable`.
   - deps: T21
 

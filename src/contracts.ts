@@ -2,9 +2,13 @@ export const FACTORY_PHASES = ["specify", "plan", "build", "idle"] as const;
 
 export type FactoryPhase = (typeof FACTORY_PHASES)[number];
 
-export interface RepositoryConfig {
+export interface RepositorySource {
   name: string;
   path: string;
+}
+
+export interface RepositoryConfig extends RepositorySource {
+  githubUrl: string;
 }
 
 export interface PeerConfig {
@@ -12,11 +16,19 @@ export interface PeerConfig {
   origin: string;
 }
 
-export interface AppConfig {
+export interface AppConfigSource {
   machine: string;
-  repositories: RepositoryConfig[];
+  repositories: RepositorySource[];
   peers: PeerConfig[];
   port: number;
+  bind?: string;
+  developmentOrigins?: string[];
+}
+
+export interface AppConfig extends AppConfigSource {
+  repositories: RepositoryConfig[];
+  bind: string;
+  developmentOrigins: string[];
 }
 
 export type RepositorySnapshot =

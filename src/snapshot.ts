@@ -1,13 +1,15 @@
-import { join } from "node:path";
+import { constants } from "node:fs";
+import { open, stat } from "node:fs/promises";
 
 import {
   FACTORY_PHASES,
-  type AppConfig,
+  type AppConfigSource,
   type FactoryPhase,
   type FleetSnapshot,
-  type RepositoryConfig,
+  type RepositorySource,
   type RepositorySnapshot,
 } from "./contracts";
+import { resolveFactoryPath } from "./paths";
 
 export const MAX_STATE_BYTES = 64 * 1024;
 export const MAX_PROJECT_LENGTH = 200;
@@ -22,8 +24,43 @@ function isPhase(value: unknown): value is FactoryPhase {
   );
 }
 
+async function readValidatedStateFile(
+  repositoryPath: string,
+  validatedPath: string,
+): Promise<ArrayBuffer> {
+  const handle = await open(
+    validatedPath,
+    constants.O_RDONLY | constants.O_NOFOLLOW,
+  );
+  try {
+    // A pathname can be replaced after resolveFactoryPath validates it. Re-run
+    // that validation after opening, then require the descriptor to be the
+    // same file before reading from the descriptor rather than the pathname.
+    const currentPath = await resolveFactoryPath(repositoryPath, "state");
+    if (currentPath === null) throw new Error("state.json is missing");
+
+    const [opened, current] = await Promise.all([
+      handle.stat(),
+      stat(currentPath),
+    ]);
+    if (
+      !opened.isFile() ||
+      opened.dev !== current.dev ||
+      opened.ino !== current.ino
+    ) {
+      throw new Error("state.json changed while being opened");
+    }
+
+    return await Bun.file(handle.fd)
+      .slice(0, MAX_STATE_BYTES + 1)
+      .arrayBuffer();
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function readRepositorySnapshot(
-  repository: RepositoryConfig,
+  repository: RepositorySource,
 ): Promise<RepositorySnapshot> {
   const unavailable = (warning: string): RepositorySnapshot => ({
     name: repository.name,
@@ -32,11 +69,11 @@ export async function readRepositorySnapshot(
   });
 
   try {
-    const file = Bun.file(join(repository.path, ".factory", "state.json"));
-    if (!(await file.exists())) {
+    const path = await resolveFactoryPath(repository.path, "state");
+    if (path === null) {
       return unavailable("state.json is missing");
     }
-    const bytes = await file.slice(0, MAX_STATE_BYTES + 1).arrayBuffer();
+    const bytes = await readValidatedStateFile(repository.path, path);
     if (bytes.byteLength > MAX_STATE_BYTES) {
       return unavailable("state.json is too large");
     }
@@ -66,7 +103,7 @@ export async function readRepositorySnapshot(
 }
 
 export async function createFleetSnapshot(
-  config: AppConfig,
+  config: AppConfigSource,
 ): Promise<FleetSnapshot> {
   return {
     hostname: config.machine,

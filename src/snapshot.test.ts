@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -520,7 +520,113 @@ describe("snapshot", () => {
       expect(result.repositories[0]).toEqual({
         name: "repo1",
         status: "unavailable",
-        warning: "state.json is missing",
+        warning: "state.json could not be read",
+      });
+    });
+  });
+
+  describe("symlink escape and isolation", () => {
+    let tempRoot: string;
+    let tempRepo: string;
+    let tempOutside: string;
+
+    beforeEach(() => {
+      tempRoot = mkdtempSync(join(process.cwd(), "tmp-snapshot-symlink-"));
+      tempRepo = join(tempRoot, "repo");
+      tempOutside = join(tempRoot, "outside");
+      mkdirSync(tempRepo, { recursive: true });
+      mkdirSync(`${tempRepo}/.factory`, { recursive: true });
+      mkdirSync(tempOutside, { recursive: true });
+    });
+
+    afterEach(() => {
+      try {
+        rmSync(tempRoot, { recursive: true, force: true });
+      } catch {
+        // ignore
+      }
+    });
+
+    test("rejects symlinked .factory escaping to outside directory", async () => {
+      // Create state.json in outside directory
+      const outsideState = join(tempOutside, "state.json");
+      await Bun.write(outsideState, '{"project":"outside","phase":"build"}');
+
+      // Remove the existing .factory directory and create a symlink to outside
+      rmSync(`${tempRepo}/.factory`, { recursive: true, force: true });
+      symlinkSync(tempOutside, `${tempRepo}/.factory`);
+
+      const result = await readRepositorySnapshot({
+        name: "test-repo",
+        path: tempRepo,
+      });
+
+      expect(result).toEqual({
+        name: "test-repo",
+        status: "unavailable",
+        warning: "state.json could not be read",
+      });
+    });
+
+    test("rejects symlinked state.json escaping .factory directory", async () => {
+      // Create state.json in outside directory
+      const outsideState = join(tempOutside, "state.json");
+      await Bun.write(outsideState, '{"project":"outside","phase":"build"}');
+
+      // Remove the existing state.json and create a symlink to outside
+      rmSync(`${tempRepo}/.factory/state.json`, { force: true });
+      symlinkSync(outsideState, `${tempRepo}/.factory/state.json`);
+
+      const result = await readRepositorySnapshot({
+        name: "test-repo",
+        path: tempRepo,
+      });
+
+      expect(result).toEqual({
+        name: "test-repo",
+        status: "unavailable",
+        warning: "state.json could not be read",
+      });
+    });
+
+    test("isolates repositories - one with symlink escape, one clean", async () => {
+      // Create state in clean repo
+      const cleanState = join(tempRepo, ".factory", "state.json");
+      await Bun.write(cleanState, '{"project":"clean","phase":"build"}');
+
+      // Create another repo with symlink escape
+      const escapedRepo = join(tempRoot, "escaped-repo");
+      mkdirSync(escapedRepo, { recursive: true });
+      mkdirSync(`${escapedRepo}/.factory`, { recursive: true });
+
+      const escapedState = join(tempOutside, "escaped-state.json");
+      await Bun.write(escapedState, '{"project":"escaped","phase":"build"}');
+      const stateSymlink = join(escapedRepo, ".factory", "state.json");
+      symlinkSync(escapedState, stateSymlink);
+
+      const config = {
+        machine: "test-machine",
+        repositories: [
+          { name: "clean-repo", path: tempRepo },
+          { name: "escaped-repo", path: escapedRepo },
+        ],
+        peers: [],
+        port: 7777,
+      };
+
+      const result = await createFleetSnapshot(config);
+
+      expect(result.repositories).toHaveLength(2);
+      expect(result.repositories[0]).toEqual({
+        name: "clean-repo",
+        status: "available",
+        project: "clean",
+        phase: "build",
+      });
+      expect(result.repositories[1]).toEqual({
+        name: "escaped-repo",
+        status: "unavailable",
+        warning: "state.json could not be read",
       });
     });
   });

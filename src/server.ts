@@ -1,4 +1,4 @@
-import type { AppConfig, FleetSnapshot } from "./contracts";
+import type { AppConfig, AppConfigSource, FleetSnapshot } from "./contracts";
 import { createFleetSnapshot } from "./snapshot";
 
 const PUBLIC_ROOT = new URL("./public/", import.meta.url);
@@ -10,7 +10,7 @@ const STATIC_FILES = new Map([
 ]);
 
 export interface HandlerDependencies {
-  snapshot?: (config: AppConfig) => Promise<FleetSnapshot>;
+  snapshot?: (config: AppConfigSource) => Promise<FleetSnapshot>;
 }
 
 function textResponse(status: number, message: string): Response {
@@ -21,43 +21,56 @@ function textResponse(status: number, message: string): Response {
 }
 
 export function createRequestHandler(
-  config: AppConfig,
+  config: AppConfigSource,
   dependencies: HandlerDependencies = {},
 ): (request: Request) => Promise<Response> {
   const snapshot = dependencies.snapshot ?? createFleetSnapshot;
+  const bind = config.bind ?? "127.0.0.1";
+  const dashboardHost = bind.includes(":") ? `[${bind}]` : bind;
+  const allowedOrigins = new Set([
+    new URL(`http://${dashboardHost}:${config.port}`).origin,
+    ...config.peers.map(({ origin }) => origin),
+    ...(config.developmentOrigins ?? []),
+  ]);
 
   return async (request: Request): Promise<Response> => {
+    let response: Response;
     if (request.method !== "GET") {
-      return new Response("Method Not Allowed", {
+      response = new Response("Method Not Allowed", {
         status: 405,
         headers: {
           allow: "GET",
           "content-type": "text/plain; charset=utf-8",
         },
       });
-    }
-
-    const { pathname } = new URL(request.url);
-    if (pathname === "/api/fleet") {
-      return Response.json(await snapshot(config));
-    }
-
-    const asset = STATIC_FILES.get(pathname);
-    if (asset) {
-      const file = Bun.file(new URL(asset.file, PUBLIC_ROOT));
-      if (await file.exists()) {
-        return new Response(file, { headers: { "content-type": asset.type } });
+    } else {
+      const { pathname } = new URL(request.url);
+      if (pathname === "/api/fleet") {
+        response = Response.json(await snapshot(config));
+      } else {
+        const asset = STATIC_FILES.get(pathname);
+        if (asset) {
+          const file = Bun.file(new URL(asset.file, PUBLIC_ROOT));
+          response = (await file.exists())
+            ? new Response(file, { headers: { "content-type": asset.type } })
+            : textResponse(500, "Dashboard asset unavailable");
+        } else {
+          response = textResponse(404, "Not Found");
+        }
       }
-      return textResponse(500, "Dashboard asset unavailable");
     }
-
-    return textResponse(404, "Not Found");
+    response.headers.set("vary", "Origin");
+    const origin = request.headers.get("origin");
+    if (origin !== null && allowedOrigins.has(origin)) {
+      response.headers.set("access-control-allow-origin", origin);
+    }
+    return response;
   };
 }
 
 export function startServer(config: AppConfig): ReturnType<typeof Bun.serve> {
   return Bun.serve({
-    hostname: "127.0.0.1",
+    hostname: config.bind ?? "127.0.0.1",
     port: config.port,
     fetch: createRequestHandler(config),
   });

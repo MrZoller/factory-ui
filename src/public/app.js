@@ -1188,8 +1188,14 @@ export function renderFleet(fleet, documentRoot = document, now = new Date()) {
     loadStates.get(documentRoot)?.refreshIntervalMilliseconds ?? 30_000;
 
   machine.textContent = fleet?.hostname ?? "Local machine";
-  generated.classList.remove("stale");
-  generated.textContent = `Updated ${displayTime(fleet?.generatedAt)}`;
+  updateSnapshotStatus(
+    documentRoot,
+    {
+      lastGoodGeneratedAt: fleet?.generatedAt,
+      refreshIntervalMilliseconds: intervalMilliseconds,
+    },
+    now,
+  );
   error.textContent = "";
   const machines = [
     { identity: fleet.hostname, fleet, isPeer: false },

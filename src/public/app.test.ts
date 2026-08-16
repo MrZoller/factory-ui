@@ -292,6 +292,25 @@ describe("local dashboard rendering", () => {
     expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
+  test("renders an already-old snapshot as stale immediately", () => {
+    const document = dashboardDocument();
+
+    renderFleet(
+      {
+        hostname: "mini",
+        generatedAt: "2026-08-16T11:59:29.000Z",
+        repositories: [],
+      },
+      document,
+      NOW,
+    );
+
+    expect(document.querySelector("#generated")?.textContent).toMatch(
+      /^Stale · last good snapshot 31s ago/,
+    );
+    expect(document.querySelector("#generated")?.classList).toContain("stale");
+  });
+
   test("renders validated GitHub links", () => {
     const document = dashboardDocument();
     const task = {

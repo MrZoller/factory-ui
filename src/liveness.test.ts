@@ -212,6 +212,34 @@ describe("liveness", () => {
         );
       });
 
+      test("selects the greatest numeric sequence within one timestamp", async () => {
+        writeFileSync(join(logsDir, "driver-20240102-120000-9.log"), "old");
+        writeFileSync(join(logsDir, "driver-20240102-120000-10.log"), "new");
+
+        const mockRunner: LivenessDependencies["runner"] = vi.fn(
+          async (): Promise<ProbeResult> => ({
+            exitCode: 1,
+            stdout: "",
+            stderr: "",
+          }),
+        );
+
+        await checkRepositoryLiveness(tempDir, { runner: mockRunner });
+
+        expect(mockRunner).toHaveBeenCalledWith(
+          "lsof",
+          [
+            "-Fpc",
+            "--",
+            expect.stringContaining("driver-20240102-120000-10.log"),
+          ],
+          {
+            timeoutMs: LSOF_TIMEOUT_MS,
+            maxOutputBytes: MAX_LSOF_OUTPUT_BYTES,
+          },
+        );
+      });
+
       test("returns CANNOT_VERIFY when logs exceed MAX_LOG_ENTRIES", async () => {
         for (let i = 0; i < 257; i++) {
           writeFileSync(

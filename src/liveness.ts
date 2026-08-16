@@ -36,12 +36,18 @@ interface BoundedRead {
   truncated: boolean;
 }
 
-function isValidDriverLogName(name: string): boolean {
+interface DriverLogName {
+  timestamp: string;
+  sequence: bigint;
+}
+
+function parseDriverLogName(name: string): DriverLogName | null {
   const match = DRIVER_LOG_PATTERN.exec(name);
-  if (match === null) return false;
-  const [, year, month, day, hour, minute, second] = match;
+  if (match === null) return null;
+  const [, year, month, day, hour, minute, second, sequence] = match;
+  if (sequence === undefined) return null;
   const parts = [year, month, day, hour, minute, second].map(Number);
-  if (parts.some((part) => !Number.isSafeInteger(part))) return false;
+  if (parts.some((part) => !Number.isSafeInteger(part))) return null;
   const [y, mo, d, h, mi, s] = parts as [
     number,
     number,
@@ -51,14 +57,20 @@ function isValidDriverLogName(name: string): boolean {
     number,
   ];
   const date = new Date(Date.UTC(y, mo - 1, d, h, mi, s));
-  return (
+  if (
     date.getUTCFullYear() === y &&
     date.getUTCMonth() === mo - 1 &&
     date.getUTCDate() === d &&
     date.getUTCHours() === h &&
     date.getUTCMinutes() === mi &&
     date.getUTCSeconds() === s
-  );
+  ) {
+    return {
+      timestamp: `${year}${month}${day}${hour}${minute}${second}`,
+      sequence: BigInt(sequence),
+    };
+  }
+  return null;
 }
 
 async function selectDriverLog(repositoryRoot: string): Promise<string | null> {
@@ -66,23 +78,26 @@ async function selectDriverLog(repositoryRoot: string): Promise<string | null> {
   if (logsPath === null) return null;
   const directory = await opendir(logsPath);
   let entryCount = 0;
-  let selected: string | undefined;
+  let selected: { name: string; parsed: DriverLogName } | undefined;
   for await (const entry of directory) {
     entryCount += 1;
     if (entryCount > MAX_LOG_ENTRIES) {
       throw new Error("too many log entries");
     }
+    const parsed = entry.isFile() ? parseDriverLogName(entry.name) : null;
     if (
-      entry.isFile() &&
-      isValidDriverLogName(entry.name) &&
-      (selected === undefined || entry.name > selected)
+      parsed !== null &&
+      (selected === undefined ||
+        parsed.timestamp > selected.parsed.timestamp ||
+        (parsed.timestamp === selected.parsed.timestamp &&
+          parsed.sequence > selected.parsed.sequence))
     ) {
-      selected = entry.name;
+      selected = { name: entry.name, parsed };
     }
   }
   if (selected === undefined) return null;
 
-  const path = join(logsPath, selected);
+  const path = join(logsPath, selected.name);
   const target = await lstat(path);
   if (!target.isFile() || target.isSymbolicLink()) {
     throw new Error("unsafe driver log");

@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T22",
+  "branch": "factory/t22-dashboard-wordmark",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-16T20:10:18Z"
+  "updated": "2026-08-16T20:11:46Z"
 }

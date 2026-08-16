@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T24",
-  "branch": "factory/t24-how-it-works",
-  "pr": 24,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-16T21:28:54Z"
+  "updated": "2026-08-16T21:39:00Z"
 }

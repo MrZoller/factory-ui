@@ -89,6 +89,8 @@ task.
   - Add `overflow-wrap: anywhere` to the dynamic dashboard machine heading so a valid long unbroken configured hostname cannot be clipped by the no-horizontal-body-scroll layout (PR #21 review).
   - Reject or visibly segregate non-USD `costs.json` data so the UI never formats another currency as dollars or mixes currencies in aggregate totals (PR #23 review).
   - Prevent finite per-task USD counters from overflowing aggregate repository, machine, or fleet totals to `$Infinity` (PR #23 review).
+  - Preserve focus and the selected diagram's horizontal scroll position while peer fan-out completions update the `/how` page (PR #24 review).
+  - Render subscription-lane model usage as `sub`, rather than `$0.00 metered`, on the `/how` page (PR #24 review).
 
 - [x] T12 (standard) — Add MIT license and clean test scratch directories
   - acceptance: add a root `LICENSE` containing the MIT license text with `Copyright (c) 2026 Chris Zoller`; ensure tests remove `tmp-hostile-*`, `tmp-logs-debug-*`, and `tmp-test-oversized-*` scratch directories on success or failure; remove current scratch-directory litter; add the `tmp-` pattern to `.gitignore`; and pass `bun test` plus `bun run lint`.
@@ -148,7 +150,8 @@ task.
   - deps: T21
   - pr: 23
 
-- [R] T24 (standard) — "How it works" page: the factory as a live diagram
+- [x] T24 (standard) — "How it works" page: the factory as a live diagram
   - acceptance: Add a second page served at `/how` (same server, same CSP, no external assets, no inline scripts, text-only content insertion) linked from the main header, that renders an inline-SVG or CSS-grid diagram of the factory pipeline — `spec → plan → build → ship → shepherd → merge` with the approval gates and the `hold` (major) path drawn as branches, and one node per agent role (driver, architect, shepherd, reviewer, verifier, test-engineer, mapper, docsmith, plus `small_model`) attached to the phase it acts in — where the static structure is authored as data in the client and the LIVE overlay comes from the existing API: each agent node shows its provider/model and `steps` cap from the machine's routing (T15) with the same provider classing, and, when costs (T23) are available, the metered cost of that node's model on this machine; a machine selector at the top mirrors the main page's tabs (`#machine=<name>` hash, keyboard-operable); a machine or role without routing renders `Unavailable`; the page is responsive (diagram scrolls in its own container, never the body); tests cover the static structure, the routing overlay including an unavailable role, and hostile provider/model strings staying literal (spec 3, 7, 8). Direction: slick and modern but restrained — same visual language as the design system (T21) and wordmark (T22).
   - deps: T23
+  - pr: 24
   - pr: 24

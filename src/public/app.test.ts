@@ -211,6 +211,15 @@ function costCounters(usd: unknown, tokenCount = 0) {
   };
 }
 
+function validCostTask(usd = 1.23, tokenCount = 123) {
+  return {
+    ...costCounters(usd, tokenCount),
+    byModel: { "openai/gpt-5.6": costCounters(usd, tokenCount) },
+    firstAt: "2026-08-16T11:00:00.000Z",
+    lastAt: "2026-08-16T11:59:00.000Z",
+  };
+}
+
 function fleet(
   hostname: string,
   peers: Array<{ name: string; origin: string }> = [],
@@ -1776,6 +1785,74 @@ describe("browser peer fan-out", () => {
     expect(
       document.querySelectorAll(".peer-machine").item(0).textContent,
     ).toContain("Unavailable");
+  });
+
+  test("accepts a peer response with valid costs", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "macbook", origin: "http://100.64.0.8:7777" };
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === "/api/fleet") {
+        return Promise.resolve(jsonResponse(fleet("mini", [peer])));
+      }
+      return Promise.resolve(
+        jsonResponse(
+          fleet(
+            "macbook",
+            [],
+            [richRepository({ costs: costs({ T8: validCostTask() }) })],
+          ),
+        ),
+      );
+    });
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    expect(document.querySelector(".peer-machine .unreachable")).toBeNull();
+    expect(summaryCells(document, "macbook")).toEqual([
+      "macbook",
+      "RUNNING",
+      "T8",
+      "PR #42",
+      "HELD",
+      "1",
+      "",
+      "$1.23",
+    ]);
+  });
+
+  test("marks peers with invalid costs unreachable", async () => {
+    const document = dashboardDocument();
+    const peers = [
+      { name: "wrong-cost-schema", origin: "http://100.64.0.9:7777" },
+      { name: "wrong-cost-task", origin: "http://100.64.0.10:7777" },
+    ];
+    let request = 0;
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === "/api/fleet") {
+        return Promise.resolve(jsonResponse(fleet("mini", peers)));
+      }
+      request += 1;
+      const valid = costs({ T8: validCostTask() });
+      const repository =
+        request === 1
+          ? richRepository({
+              costs: { ...valid, data: { ...valid.data, schemaVersion: 2 } },
+            })
+          : richRepository({ costs: costs({ T01: validCostTask() }) });
+      return Promise.resolve(jsonResponse(fleet("peer", [], [repository])));
+    });
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    expect(
+      document.querySelectorAll(".peer-machine .unreachable"),
+    ).toHaveLength(2);
+    expect(
+      Array.from(
+        document.querySelectorAll(".peer-machine .unreachable"),
+        (node) => node.textContent,
+      ),
+    ).toEqual(["UNREACHABLE", "UNREACHABLE"]);
   });
 
   test("never starts more than four peer requests concurrently", async () => {

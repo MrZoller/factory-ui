@@ -77,6 +77,18 @@ describe("costs reader", () => {
     },
   );
 
+  test("rejects invalid UTF-8 with an explicit warning", () => {
+    expect(parseFactoryCosts(new Uint8Array([0xc3, 0x28]))).toEqual({
+      status: "unavailable",
+      warnings: [
+        {
+          code: "COSTS_INVALID_UTF8",
+          message: "costs.json is not valid UTF-8",
+        },
+      ],
+    });
+  });
+
   test.each([
     ["schemaVersion", 2],
     ["recordedAt", "2026-02-31T00:00:00Z"],

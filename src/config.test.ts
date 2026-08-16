@@ -981,7 +981,7 @@ describe("config", () => {
       );
     });
 
-    test("rejects githubUrl with repository starting with dot", () => {
+    test("accepts githubUrl with repository starting with dot", () => {
       const input = {
         ...baseInput,
         repositories: [
@@ -992,8 +992,9 @@ describe("config", () => {
           },
         ],
       };
-      expect(() => parseConfig(input)).toThrow(
-        "repositories[0].githubUrl has invalid owner or repository segments",
+      const result = parseConfig(input);
+      expect(result.repositories[0]!.githubUrl).toBe(
+        "https://github.com/test/.repo",
       );
     });
 

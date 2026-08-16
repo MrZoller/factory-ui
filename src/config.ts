@@ -16,6 +16,7 @@ const MAX_PATH_LENGTH = 4096;
 const MAX_URL_LENGTH = 2048;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const GITHUB_OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+const GITHUB_REPOSITORY = /^[A-Za-z0-9._-]+$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -174,7 +175,7 @@ function parseGithubUrl(value: unknown, field: string): string {
     : match[2]!;
   if (
     !GITHUB_OWNER.test(owner) ||
-    !IDENTIFIER.test(repository) ||
+    !GITHUB_REPOSITORY.test(repository) ||
     repository.length > 100 ||
     repository === "." ||
     repository === ".."

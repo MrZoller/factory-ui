@@ -80,12 +80,23 @@ function addDefinition(list, term, value) {
   appendText(list, "dd", value);
 }
 
-function safePullRequestUrl(value) {
+function safeGithubUrl(value, kind) {
+  const patterns = {
+    repository:
+      /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+$/,
+    branch:
+      /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/tree\/([A-Za-z0-9._/-]{1,200})$/,
+    pull: /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/pull\/[1-9][0-9]*$/,
+    issue:
+      /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/issues\/[1-9][0-9]*$/,
+  };
+  const match = typeof value === "string" ? patterns[kind]?.exec(value) : null;
   if (
-    typeof value !== "string" ||
-    !/^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/pull\/[1-9][0-9]*$/.test(
-      value,
-    )
+    !match ||
+    (kind === "branch" &&
+      (match[1].startsWith("-") ||
+        match[1].startsWith("/") ||
+        match[1].split("/").includes("..")))
   ) {
     return undefined;
   }
@@ -108,19 +119,42 @@ function safePullRequestUrl(value) {
   }
 }
 
+function appendExternalOrText(parent, text, value, kind) {
+  const href = safeGithubUrl(value, kind);
+  if (!href) return appendText(parent, "span", text);
+  const link = textElement(parent.ownerDocument, "a", text);
+  link.href = href;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  parent.append(link);
+  return link;
+}
+
 function renderCurrent(card, repository) {
   const panel = addPanel(card, "Current", "current-panel");
   const state = readerData(repository.state);
   const list = panel.ownerDocument.createElement("dl");
   list.className = "facts";
-  addDefinition(
-    list,
-    "Project",
+  appendText(list, "dt", "Project");
+  const projectDefinition = list.ownerDocument.createElement("dd");
+  appendExternalOrText(
+    projectDefinition,
     repository.project ?? state?.project ?? "Unknown",
+    repository.repositoryUrl,
+    "repository",
   );
+  list.append(projectDefinition);
   addDefinition(list, "Phase", repository.phase ?? state?.phase ?? "Unknown");
   addDefinition(list, "Task", displayOptional(state?.currentTask));
-  addDefinition(list, "Branch", displayOptional(state?.branch));
+  appendText(list, "dt", "Branch");
+  const branchDefinition = list.ownerDocument.createElement("dd");
+  appendExternalOrText(
+    branchDefinition,
+    displayOptional(state?.branch),
+    repository.branchUrl,
+    "branch",
+  );
+  list.append(branchDefinition);
 
   appendText(list, "dt", "Pull request");
   const prValue =
@@ -129,7 +163,7 @@ function renderCurrent(card, repository) {
       : state.pr === null
         ? "None"
         : `PR #${state.pr}`;
-  const prUrl = safePullRequestUrl(repository.prUrl);
+  const prUrl = safeGithubUrl(repository.prUrl, "pull");
   const prDefinition = list.ownerDocument.createElement("dd");
   if (prUrl && state?.pr != null) {
     const link = textElement(list.ownerDocument, "a", prValue);
@@ -173,6 +207,20 @@ function renderTask(panel, task) {
       `deps: ${task.dependencies.join(", ")}`,
       "task-deps",
     );
+  }
+  if (Number.isSafeInteger(task?.pr) && task.pr > 0) {
+    appendExternalOrText(item, `PR #${task.pr}`, task.prUrl, "pull");
+  }
+  if (Array.isArray(task?.issueNumbers)) {
+    task.issueNumbers.forEach((issue, index) => {
+      if (Number.isSafeInteger(issue) && issue > 0)
+        appendExternalOrText(
+          item,
+          `Fixes #${issue}`,
+          Array.isArray(task.issueUrls) ? task.issueUrls[index] : undefined,
+          "issue",
+        );
+    });
   }
   panel.append(item);
 }

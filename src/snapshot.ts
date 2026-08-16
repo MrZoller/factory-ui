@@ -7,6 +7,8 @@ import {
   type ReaderResult,
   type RepositoryFactorySnapshot,
   type RepositorySnapshot,
+  type PlanData,
+  type PlanTask,
 } from "./contracts";
 import {
   checkRepositoryLiveness,
@@ -85,15 +87,32 @@ export async function readRepositoryFactorySnapshot(
   const state =
     data.state.status === "unavailable" ? undefined : data.state.data;
   const available = state?.project !== undefined && state.phase !== undefined;
-  const prUrl = createPullRequestUrl(repository.githubUrl, state?.pr);
+  const repositoryUrl = validGithubRepositoryUrl(repository.githubUrl);
+  const prUrl = createPullRequestUrl(repositoryUrl, state?.pr);
+  const branchUrl = createBranchUrl(repositoryUrl, state?.branch);
+  const plan = enrichPlanLinks(data.plan, repositoryUrl);
   return {
     ...data,
+    plan,
     status: available ? "available" : "unavailable",
     ...(available
       ? { project: state.project, phase: state.phase }
       : { warning: "repository state is unavailable" }),
     ...(prUrl === undefined ? {} : { prUrl }),
+    ...(repositoryUrl === undefined ? {} : { repositoryUrl }),
+    ...(branchUrl === undefined ? {} : { branchUrl }),
   };
+}
+
+const GITHUB_REPOSITORY =
+  /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+$/;
+
+function validGithubRepositoryUrl(
+  value: string | undefined,
+): string | undefined {
+  return value !== undefined && GITHUB_REPOSITORY.test(value)
+    ? value
+    : undefined;
 }
 
 function createPullRequestUrl(
@@ -106,13 +125,63 @@ function createPullRequestUrl(
     pr === undefined ||
     pr === null ||
     pr < 1 ||
-    !/^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+$/.test(
-      githubUrl,
-    )
+    !GITHUB_REPOSITORY.test(githubUrl)
   ) {
     return undefined;
   }
   return `${githubUrl}/pull/${pr}`;
+}
+
+function createBranchUrl(
+  githubUrl: string | undefined,
+  branch: string | null | undefined,
+): string | undefined {
+  if (
+    githubUrl === undefined ||
+    typeof branch !== "string" ||
+    !/^[A-Za-z0-9._/-]{1,200}$/.test(branch) ||
+    branch.startsWith("-") ||
+    branch.startsWith("/") ||
+    branch.split("/").includes("..")
+  )
+    return undefined;
+  return `${githubUrl}/tree/${branch}`;
+}
+
+function enrichTaskLinks(
+  task: PlanTask,
+  githubUrl: string | undefined,
+): PlanTask {
+  const prUrl = createPullRequestUrl(githubUrl, task.pr);
+  const issueUrls = task.issueNumbers?.map(
+    (issue) => `${githubUrl}/issues/${issue}`,
+  );
+  return {
+    ...task,
+    ...(prUrl === undefined ? {} : { prUrl }),
+    ...(githubUrl === undefined || !issueUrls?.length ? {} : { issueUrls }),
+  };
+}
+
+function enrichPlanLinks(
+  result: ReaderResult<PlanData>,
+  githubUrl: string | undefined,
+): ReaderResult<PlanData> {
+  if (result.status === "unavailable") return result;
+  const map = (tasks: PlanTask[]) =>
+    tasks.map((task) => enrichTaskLinks(task, githubUrl));
+  return {
+    ...result,
+    data: {
+      tasks: map(result.data.tasks),
+      active: map(result.data.active),
+      review: map(result.data.review),
+      nextRunnable: map(result.data.nextRunnable),
+      completed: map(result.data.completed),
+      blocked: map(result.data.blocked),
+      remaining: map(result.data.remaining),
+    },
+  };
 }
 
 export async function createFactoryFleetData(

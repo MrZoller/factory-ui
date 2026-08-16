@@ -114,6 +114,10 @@ export interface PlanTask {
   title: string;
   dependencies: string[] | null;
   runnable: boolean;
+  pr?: number;
+  issueNumbers?: number[];
+  prUrl?: string;
+  issueUrls?: string[];
 }
 
 export interface OpenQuestion {
@@ -190,6 +194,8 @@ export interface RepositoryFactorySnapshot extends RepositoryFactoryData {
   project?: string;
   phase?: FactoryPhase;
   prUrl?: string;
+  repositoryUrl?: string;
+  branchUrl?: string;
   warning?: string;
 }
 

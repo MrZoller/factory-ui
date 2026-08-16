@@ -90,6 +90,23 @@ describe("plan", () => {
     });
 
     describe("task parsing - valid tasks", () => {
+      test("parses an optional task PR and distinct Fixes issue references", () => {
+        const plan = `- [R] T17 (standard) — Link GitHub work
+  - acceptance: Dashboard navigation Fixes #17 and Fixes #23, not #17 again
+  - pr: 42
+  - deps: none`;
+        const result = parseFactoryPlan(plan);
+
+        expect(result.status).toBe("available");
+        if (result.status === "available" || result.status === "partial") {
+          expect(result.data.tasks[0]).toMatchObject({
+            id: "T17",
+            pr: 42,
+            issueNumbers: [17, 23],
+          });
+        }
+      });
+
       test("parses todo task", () => {
         const plan = `- [ ] T1 (standard) — Implement feature`;
         const result = parseFactoryPlan(plan);
@@ -308,6 +325,55 @@ describe("plan", () => {
     });
 
     describe("dependency parsing", () => {
+      test("ignores malformed PR and Fixes values with bounded warnings", () => {
+        const plan = `- [ ] T17 (standard) — Link GitHub work
+  - acceptance: Fixes #0, Fixes #-3, Fixes #9007199254740992
+  - pr: 0
+  - deps: none`;
+        const result = parseFactoryPlan(plan);
+
+        expect(result.status).toBe("partial");
+        if (result.status === "available" || result.status === "partial") {
+          expect(result.data.tasks[0]).toMatchObject({
+            pr: undefined,
+            issueNumbers: [],
+          });
+        }
+        expect(
+          result.warnings.some(
+            (warning) => warning.code === "PLAN_MALFORMED_PR",
+          ),
+        ).toBe(true);
+        expect(
+          result.warnings.some(
+            (warning) => warning.code === "PLAN_MALFORMED_ISSUE",
+          ),
+        ).toBe(true);
+      });
+
+      test("bounds Fixes issue references per task without failing the plan", () => {
+        const issues = Array.from(
+          { length: 33 },
+          (_, index) => `Fixes #${index + 1}`,
+        ).join(", ");
+        const result = parseFactoryPlan(`- [ ] T17 (standard) — Link GitHub work
+  - acceptance: ${issues}
+  - deps: none`);
+
+        expect(result.status).toBe("partial");
+        if (result.status === "available" || result.status === "partial") {
+          expect(
+            (result.data.tasks[0] as unknown as { issueNumbers: number[] })
+              .issueNumbers,
+          ).toHaveLength(32);
+        }
+        expect(
+          result.warnings.some(
+            (warning) => warning.code === "PLAN_TOO_MANY_ISSUES",
+          ),
+        ).toBe(true);
+      });
+
       test("warns when task is missing dependency metadata", () => {
         const plan = `- [ ] T1 (standard) — Task without deps`;
         const result = parseFactoryPlan(plan);

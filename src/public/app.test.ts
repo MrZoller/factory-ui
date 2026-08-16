@@ -231,6 +231,112 @@ describe("local dashboard rendering", () => {
     expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
+  test("renders validated GitHub links", () => {
+    const document = dashboardDocument();
+    const task = {
+      ...richRepository().plan.data.tasks[0],
+      pr: 42,
+      issueNumbers: [17, 23],
+      prUrl: "https://github.com/example/factory-ui/pull/42",
+      issueUrls: [
+        "https://github.com/example/factory-ui/issues/17",
+        "https://github.com/example/factory-ui/issues/23",
+      ],
+    };
+    renderFleet(
+      {
+        hostname: "mini",
+        generatedAt: "2026-08-16T12:00:00.000Z",
+        repositories: [
+          richRepository({
+            repositoryUrl: "https://github.com/example/factory-ui",
+            branchUrl:
+              "https://github.com/example/factory-ui/tree/factory/t8-safe-dashboard",
+            plan: {
+              ...richRepository().plan,
+              data: {
+                ...richRepository().plan.data,
+                tasks: [task],
+                active: [task],
+              },
+            },
+          }),
+        ],
+      },
+      document,
+      NOW,
+    );
+
+    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>("a"));
+    expect(links.map((link) => [link.textContent, link.href])).toEqual(
+      expect.arrayContaining([
+        ["factory-ui", "https://github.com/example/factory-ui"],
+        [
+          "factory/t8-safe-dashboard",
+          "https://github.com/example/factory-ui/tree/factory/t8-safe-dashboard",
+        ],
+        ["PR #42", "https://github.com/example/factory-ui/pull/42"],
+        ["Fixes #17", "https://github.com/example/factory-ui/issues/17"],
+        ["Fixes #23", "https://github.com/example/factory-ui/issues/23"],
+      ]),
+    );
+    links.forEach((link) => {
+      expect(link.target).toBe("_blank");
+      expect(link.rel).toBe("noopener noreferrer");
+    });
+  });
+
+  test("renders hostile links as plain text", () => {
+    const document = dashboardDocument();
+    const task = {
+      ...richRepository().plan.data.tasks[0],
+      pr: 42,
+      issueNumbers: [17],
+      prUrl: "https://github.com@example.invalid/factory-ui/pull/42",
+      issueUrls: [
+        "https://github.com/example/factory-ui/issues/17?redirect=evil",
+      ],
+    };
+    renderFleet(
+      {
+        hostname: "mini",
+        generatedAt: "2026-08-16T12:00:00.000Z",
+        repositories: [
+          richRepository({
+            prUrl: undefined,
+            repositoryUrl: "https://github.com/example/factory-ui#fragment",
+            branchUrl:
+              "https://github.com/example/factory-ui/tree/factory/t8-safe-dashboard?redirect=evil",
+            plan: {
+              ...richRepository().plan,
+              data: {
+                ...richRepository().plan.data,
+                tasks: [task],
+                active: [task],
+              },
+            },
+          }),
+        ],
+      },
+      document,
+      NOW,
+    );
+
+    expect(document.querySelectorAll("a")).toHaveLength(0);
+    expect(document.querySelector(".current-panel")?.textContent).toContain(
+      "factory-ui",
+    );
+    expect(document.querySelector(".current-panel")?.textContent).toContain(
+      "factory/t8-safe-dashboard",
+    );
+    expect(document.querySelector(".active-work")?.textContent).toContain(
+      "PR #42",
+    );
+    expect(document.querySelector(".active-work")?.textContent).toContain(
+      "Fixes #17",
+    );
+  });
+
   test("keeps hostile repository-derived strings literal and inert", () => {
     const document = dashboardDocument();
     const hostile =

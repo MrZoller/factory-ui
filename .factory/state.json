@@ -1,6 +1,6 @@
 {
   "project": "factory-ui",
-  "phase": "idle",
+  "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
   "current_task": null,

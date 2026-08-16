@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   createFleetSnapshot,
   readRepositoryFactoryData,
+  readRepositoryFactorySnapshot,
   readRepositorySnapshot,
   MAX_PROJECT_LENGTH,
 } from "./snapshot";
@@ -57,6 +58,28 @@ describe("snapshot", () => {
       expect(result.plan.status).toBe("available");
       expect(result.questions.status).toBe("partial");
       expect(result.worklog.status).toBe("available");
+      expect(result.routing.status).toBe("unavailable");
+      expect(result.state.status).toBe("available");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps a repository available when routing is absent", async () => {
+    const root = mkdtempSync(join(process.cwd(), "tmp-factory-routing-"));
+    mkdirSync(join(root, ".factory"));
+    try {
+      await Bun.write(
+        join(root, ".factory", "state.json"),
+        JSON.stringify({ project: "factory-ui", phase: "build" }),
+      );
+      const result = await readRepositoryFactorySnapshot({
+        name: "factory-ui",
+        path: root,
+      });
+      expect(result.status).toBe("available");
+      expect(result.routing.status).toBe("unavailable");
+      expect(result.routing.warnings[0]?.code).toBe("ROUTING_MISSING");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

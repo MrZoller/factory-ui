@@ -28,6 +28,7 @@ function unavailable(name: string): RepositoryFactorySnapshot {
     questions: { status: "unavailable", warnings: [warning] },
     worklog: { status: "unavailable", warnings: [warning] },
     logs: { status: "unavailable", warnings: [warning] },
+    routing: { status: "unavailable", warnings: [warning] },
     liveness: {
       state: "CANNOT_VERIFY",
       checkedAt: "2026-08-16T11:59:00.000Z",
@@ -82,6 +83,15 @@ describe("versioned read-only API", () => {
         "## Q7 (task T7, open) — Which schema?\nContext: API contract\nOptions considered: A / B\n**A:**",
       ),
       fixture.writeWorklog("- 2026-08-16 UTC - T7 API work"),
+      fixture.writeRouting({
+        schemaVersion: 1,
+        recordedAt: "2026-08-16T11:44:00Z",
+        model: "openai/gpt-5.6",
+        smallModel: "opencode/gpt-5-mini",
+        agents: {
+          builder: { provider: "openai", model: "gpt-5.6", steps: 25 },
+        },
+      }),
     ]);
     fixture.writeDriverLog(
       "driver-20260816-110000-0.log",
@@ -146,6 +156,19 @@ describe("versioned read-only API", () => {
         lastActivityAt: expect.any(String),
       },
       asOf: { overall: expect.any(String) },
+    });
+    expect(body.routing).toEqual({
+      status: "available",
+      data: {
+        schemaVersion: 1,
+        recordedAt: "2026-08-16T11:44:00Z",
+        model: "openai/gpt-5.6",
+        smallModel: "opencode/gpt-5-mini",
+        agents: {
+          builder: { provider: "openai", model: "gpt-5.6", steps: 25 },
+        },
+      },
+      warnings: [],
     });
     expect(["RUNNING", "STOPPED", "CANNOT_VERIFY"]).toContain(
       body.liveness.state,

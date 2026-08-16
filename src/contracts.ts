@@ -158,6 +158,20 @@ export interface LogsData {
   asOf: LogSourceAges;
 }
 
+export interface RoutingAgent {
+  provider: string;
+  model: string;
+  steps: number | null;
+}
+
+export interface RoutingData {
+  schemaVersion: 1;
+  recordedAt: string;
+  model: string;
+  smallModel: string;
+  agents: Record<string, RoutingAgent>;
+}
+
 export interface RepositoryFactoryData {
   name: string;
   state: ReaderResult<FactoryStateData>;
@@ -165,6 +179,7 @@ export interface RepositoryFactoryData {
   questions: ReaderResult<QuestionsData>;
   worklog: ReaderResult<WorklogData>;
   logs: ReaderResult<LogsData>;
+  routing: ReaderResult<RoutingData>;
   liveness: LivenessSnapshot;
 }
 

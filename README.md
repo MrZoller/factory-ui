@@ -68,6 +68,9 @@ network.
   `- YYYY-MM-DD HH:MM UTC - `. Clock times use zero-padded 24-hour UTC time.
 - Logs: at most 256 directory entries are considered; narration is capped at
   64 KiB, 100 lines, and 2,000 bytes per line.
+- Agent routing: `.factory/logs/routing.json` is capped at 16 KiB, 64 agents,
+  128 characters per agent name, and 1,024 characters per model/provider
+  string; an agent's optional step cap is an integer from 0 through 1,000,000.
 - Liveness: the fixed, shell-free `lsof` probe has a two-second timeout and
   bounded output. Missing `lsof`, timeout, failure, malformed output, or an
   ambiguous result is `CANNOT_VERIFY`, never evidence that the driver stopped.
@@ -76,6 +79,35 @@ network.
 
 Inputs beyond a limit become unavailable or partial with warnings; the service
 does not silently expand its read surface.
+
+## `.factory` read surface
+
+The service reads only the fixed targets `.factory/state.json`,
+`.factory/plan.md`, `.factory/questions.md`, `.factory/worklog.md`, the bounded
+driver/cycle/shepherd files selected from `.factory/logs/`, and
+`.factory/logs/routing.json`. Canonical containment, target type, symlink, and
+opened-descriptor identity checks apply before bounded reads. Routing absence
+or invalidity is independent and does not make repository state unavailable.
+
+Routing uses schema version 1:
+
+```json
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-16T12:00:00Z",
+  "model": "openai/gpt-5.6",
+  "smallModel": "opencode/gpt-5-mini",
+  "agents": {
+    "builder": { "provider": "openai", "model": "gpt-5.6", "steps": 25 }
+  }
+}
+```
+
+`recordedAt` must be an ISO-8601 UTC timestamp. `model` and `smallModel` are
+`provider/model` identifiers. Each agent has bounded non-empty `provider` and
+`model` strings and an integer or null `steps`; unknown keys are ignored. A
+missing, oversized, malformed, unsupported-version, or otherwise invalid file
+is reported as routing `Unavailable` with a warning.
 
 ## Three-machine runbook
 

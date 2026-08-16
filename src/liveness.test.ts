@@ -66,7 +66,7 @@ describe("liveness", () => {
     });
 
     test("returns null for unexpected line format", () => {
-      expect(parseCommands("p0\nsomething\n")).toBeNull();
+      expect(parseCommands("p0\nc0\n?unexpected\n")).toBeNull();
     });
 
     test("returns null for multiple p lines without c lines", () => {
@@ -78,9 +78,20 @@ describe("liveness", () => {
       expect(result).toEqual(["0"]);
     });
 
-    test("parses multiple commands correctly", () => {
-      const result = parseCommands("p0\nc0\np1\nc1\n");
-      expect(result).toEqual(["0", "1"]);
+    test("parses captured lsof process and file sets", () => {
+      const result = parseCommands("p22022\nctee\nf3\np22341\nctail\nf3\n");
+      expect(result).toEqual(["tee", "tail"]);
+    });
+
+    test("ignores other single-letter-prefixed file fields", () => {
+      const result = parseCommands(
+        "p22022\nctee\nf3\na r\nl \ntREG\nn/tmp/driver.log\nk1\ni42\ns128\n",
+      );
+      expect(result).toEqual(["tee"]);
+    });
+
+    test("returns null for a file field before the process command", () => {
+      expect(parseCommands("p22022\nf3\nctee\n")).toBeNull();
     });
 
     test("parses command with special characters", () => {
@@ -355,11 +366,11 @@ describe("liveness", () => {
         );
       });
 
-      test("returns RUNNING when command is exactly 'tee'", async () => {
+      test("returns RUNNING for captured lsof output containing tee", async () => {
         const mockRunner: LivenessDependencies["runner"] = vi.fn(
           async (): Promise<ProbeResult> => ({
             exitCode: 0,
-            stdout: "p0\nctee\n",
+            stdout: "p22022\nctee\nf3\np22341\nctail\nf3\n",
             stderr: "",
           }),
         );

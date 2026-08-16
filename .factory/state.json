@@ -5,7 +5,7 @@
   "plan_approved": true,
   "current_task": "T7",
   "branch": "factory/t7-versioned-read-only-api",
-  "pr": null,
+  "pr": 7,
   "hold": false,
-  "updated": "2026-08-16T10:32:32Z"
+  "updated": "2026-08-16T10:47:36Z"
 }

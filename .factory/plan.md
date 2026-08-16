@@ -34,7 +34,7 @@ task.
 - [x] T6 (standard) — Add bounded narration, timing, and source-age data
   - acceptance: In `src/readers/logs.ts`, `src/liveness.ts`, `src/snapshot.ts`, `src/contracts.ts`, and tests, enumerate only bounded recognized driver/cycle/shepherd log names, select logs deterministically, return a byte/line/line-length-bounded narration tail verbatim, and derive only defensible start/activity/duration values from names and filesystem timestamps; expose distinct per-source and overall “as of” timestamps, integrate the trusted driver log with liveness, and cover malformed names, equal timestamps, growing or multibyte oversized logs, missing logs, and stale stopped state without fabricating timing (spec 2, 4, 5, 7).
   - deps: T3, T4
-- [~] T7 (standard) — Finalize the versioned read-only API
+- [R] T7 (standard) — Finalize the versioned read-only API
   - acceptance: In `src/contracts.ts`, `src/snapshot.ts`, `src/server.ts`, and integration tests, finalize schema-versioned `GET /api/fleet` and `GET /api/repo/<encoded-name>` responses containing every spec-2 field; accept exactly one decoded configured repository name and reject malformed encodings, separators, and unknown names before filesystem or process work; isolate per-repository failures; include bounded warnings and generation/source timestamps; enforce security headers, CORS, 404/405 behavior, and safe errors; and prove representative page/API requests leave source contents and metadata unchanged and expose no absolute paths, environment values, or unrelated files (spec 2, 3, 5, 9).
   - deps: T5, T6
 - [ ] T8 (major) — Render the complete local repository dashboard safely

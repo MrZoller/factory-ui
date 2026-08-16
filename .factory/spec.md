@@ -26,7 +26,9 @@ state or control path.
 - A small Bun service on each factory machine, configured with local clone
   paths, peer machines, a bind address, and port 7777 by default.
 - A JSON API for local-machine and per-repository snapshots derived only from
-  the configured clones' `.factory` files and logs.
+  the configured clones' `.factory` files and logs, with browser access granted
+  only to the local dashboard, configured peer origins, and explicitly allowed
+  localhost development origins.
 - Current phase and task, completed/active/next/blocked plan items, open
   questions, holds, PR links, recent worklog entries, bounded narration tails,
   and run/cycle timing.
@@ -61,11 +63,15 @@ state or control path.
 2. For each configured valid clone, the local API reports the hostname,
    project and phase, current task, branch, PR and hold state, plan items by
    status, open questions, recent worklog entries, a bounded recent narration
-   tail, run/cycle timing, and source-derived “as of” timestamps.
+   tail, run/cycle timing, and source-derived “as of” timestamps. Narration and
+   worklog text is served verbatim within those bounds and rendered only as
+   text.
 3. API reads are limited to the configured clone roots and the documented
    `.factory` read surface. Requests cannot select arbitrary filesystem paths,
    mutate repository or factory state, or supply arguments to a system
-   command.
+   command. Browser responses grant cross-origin access only to the local
+   dashboard origin, configured peer origins, and explicitly allowed localhost
+   development origins.
 4. Liveness is `RUNNING` only when `tee` has a driver log open, `STOPPED` only
    when the probe succeeds and finds no such opener, and `CANNOT_VERIFY` when
    `lsof` is absent, fails, or returns an unparseable result. Other readers,
@@ -112,14 +118,9 @@ state or control path.
 
 ## Open questions
 
-1. **Which browser origins may read each machine's API?** Options are any
-   origin on the tailnet, or only the configured peer origins plus the local
-   dashboard origin. **Recommendation:** allow only configured peers and the
-   local origin, with an explicit development allowance for localhost; this
-   preserves browser fan-out without making every tailnet web page a reader.
-2. **Should narration and worklog text be served verbatim or filtered for
-   possible secrets?** Options are bounded verbatim text under the same trust
-   model as repository access, best-effort redaction, or omitting log text.
-   **Recommendation:** serve bounded verbatim text as plain text and document
-   the repository-equivalent trust boundary; best-effort redaction risks both
-   leaks and misleading operators.
+None.
+
+## Changelog
+
+- 2026-08-15: Restricted browser origins and confirmed bounded, verbatim text
+  for narration and worklog content.

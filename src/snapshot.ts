@@ -2,12 +2,28 @@ import {
   type AppConfigSource,
   type FleetSnapshot,
   type RepositorySource,
+  type RepositoryFactoryData,
   type RepositorySnapshot,
 } from "./contracts";
 import { checkRepositoryLiveness } from "./liveness";
+import { readFactoryPlan } from "./readers/plan";
+import { readFactoryQuestions } from "./readers/questions";
 import { readFactoryState } from "./readers/state";
+import { readFactoryWorklog } from "./readers/worklog";
 
 export { MAX_PROJECT_LENGTH, MAX_STATE_BYTES } from "./readers/state";
+
+export async function readRepositoryFactoryData(
+  repository: RepositorySource,
+): Promise<RepositoryFactoryData> {
+  const [state, plan, questions, worklog] = await Promise.all([
+    readFactoryState(repository.path),
+    readFactoryPlan(repository.path),
+    readFactoryQuestions(repository.path),
+    readFactoryWorklog(repository.path),
+  ]);
+  return { name: repository.name, state, plan, questions, worklog };
+}
 
 export async function readRepositorySnapshot(
   repository: RepositorySource,

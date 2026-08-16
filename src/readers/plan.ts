@@ -3,12 +3,10 @@ import {
   type PlanTask,
   type ReaderResult,
   type ReaderWarning,
-  type RepositoryFactoryData,
   type TaskSize,
   type TaskStatus,
 } from "../contracts";
 import { readFactoryFile } from "./file";
-import { readFactoryState } from "./state";
 
 export const MAX_PLAN_BYTES = 256 * 1024;
 export const MAX_PLAN_LINES = 4096;
@@ -259,17 +257,6 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
   return warnings.length === 0
     ? { status: "available", data, warnings: [] }
     : { status: "partial", data, warnings };
-}
-
-export async function readRepositoryFactoryData(repository: {
-  name: string;
-  path: string;
-}): Promise<RepositoryFactoryData> {
-  const [state, plan] = await Promise.all([
-    readFactoryState(repository.path),
-    readFactoryPlan(repository.path),
-  ]);
-  return { name: repository.name, state, plan };
 }
 
 export async function readFactoryPlan(

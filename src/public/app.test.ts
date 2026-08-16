@@ -55,6 +55,34 @@ function fakeTimers() {
   };
 }
 
+function strictGlobalTimers() {
+  const timers = fakeTimers();
+  const requireGlobalReceiver = (receiver: unknown) => {
+    if (receiver !== undefined && receiver !== globalThis) {
+      throw new TypeError("Illegal invocation: timer receiver must be global");
+    }
+  };
+  return {
+    ...timers,
+    setTimeout(this: unknown, callback: TimerCallback, milliseconds = 0) {
+      requireGlobalReceiver(this);
+      return timers.setTimeout(callback, milliseconds);
+    },
+    setInterval(this: unknown, callback: TimerCallback, milliseconds = 0) {
+      requireGlobalReceiver(this);
+      return timers.setInterval(callback, milliseconds);
+    },
+    clearTimeout(this: unknown, id: number) {
+      requireGlobalReceiver(this);
+      return timers.clearTimeout(id);
+    },
+    clearInterval(this: unknown, id: number) {
+      requireGlobalReceiver(this);
+      return timers.clearInterval(id);
+    },
+  };
+}
+
 async function bootDashboard(
   document: Document,
   fetcher: BrowserFetcher,
@@ -77,9 +105,14 @@ async function bootDashboard(
   globals.clearTimeout = timers.clearTimeout;
   globals.setInterval = timers.setInterval;
   globals.clearInterval = timers.clearInterval;
-  await import(`./app.js?auto-refresh-test=${crypto.randomUUID()}`);
-  await flushPromises();
-  return () => Object.assign(globals, original);
+  try {
+    await import(`./app.js?auto-refresh-test=${crypto.randomUUID()}`);
+    await flushPromises();
+    return () => Object.assign(globals, original);
+  } catch (error) {
+    Object.assign(globals, original);
+    throw error;
+  }
 }
 
 function richRepository(overrides: Record<string, unknown> = {}) {
@@ -2113,6 +2146,44 @@ describe("browser peer fan-out", () => {
 });
 
 describe("dashboard auto-refresh", () => {
+  test("uses globally bound default timers for initial, scheduled, and peer loads", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "macbook", origin: "https://macbook.example" };
+    const timers = strictGlobalTimers();
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      String(input) === "/api/fleet"
+        ? Promise.resolve(jsonResponse(fleet("mini", [peer])))
+        : Promise.resolve(
+            jsonResponse(fleet("macbook", [], [richRepository()])),
+          ),
+    );
+    const restore = await bootDashboard(document, fetcher, timers);
+    try {
+      expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
+        "/api/fleet",
+        "https://macbook.example/api/fleet",
+      ]);
+      expect(timers.callbacksAt(1_000)).toHaveLength(1);
+      expect(timers.callbacksAt(30_000)).toHaveLength(1);
+      expect(
+        document.querySelector(".peer-machine .repository")?.textContent,
+      ).toContain("factory-ui");
+
+      timers.callbacksAt(30_000).forEach(({ callback }) => callback());
+      await flushPromises();
+
+      expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
+        "/api/fleet",
+        "https://macbook.example/api/fleet",
+        "/api/fleet",
+        "https://macbook.example/api/fleet",
+      ]);
+      expect(timers.callbacksAt(30_000)).toHaveLength(1);
+    } finally {
+      restore();
+    }
+  });
+
   test("shows a fresh absolute Updated time, marks a hidden tab stale, and clears it after refresh", async () => {
     vi.useFakeTimers();
     const document = dashboardDocument();

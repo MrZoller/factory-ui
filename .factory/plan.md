@@ -159,7 +159,7 @@ task.
   - deps: T23
   - pr: 24
 
-- [ ] T26 (trivial) — Fix "Illegal invocation": timer functions must not be called as methods of the dependencies object
+- [~] T26 (trivial) — Fix "Illegal invocation": timer functions must not be called as methods of the dependencies object
   - acceptance: In `src/public/app.js` and colocated tests: every default timer dependency in `startDashboard`, `loadFleet`, and `fetchPeerFleet` is bound to the global (`globalThis.setTimeout.bind(globalThis)` or an arrow wrapper), never a bare `globalThis.setTimeout` stored on an object and invoked as `dependencies.setTimeout(...)`; a fresh page load fires `GET /api/fleet` immediately, installs the age ticker, and re-arms the refresh timer after each load without any override injected; a regression test injects timer fakes that throw when invoked with a `this` other than `undefined`/`globalThis` (mirroring Chrome's WebIDL check) through the DEFAULT path — i.e. by temporarily replacing `globalThis.setTimeout`/`setInterval`/`clearTimeout`/`clearInterval` rather than passing overrides — and asserts initial load, scheduled refresh, and peer fetch all succeed (spec 7, T19 acceptance).
   - deps: none
 

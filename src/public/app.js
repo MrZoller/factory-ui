@@ -1385,11 +1385,16 @@ export function renderFleet(fleet, documentRoot = document, now = new Date()) {
   machineViews.set(documentRoot, views);
 }
 
-export async function fetchPeerFleet(peer, fetcher, dependencies) {
+export async function fetchPeerFleet(peer, fetcher, dependencyOverrides = {}) {
+  const setTimeout =
+    dependencyOverrides.setTimeout ?? globalThis.setTimeout.bind(globalThis);
+  const clearTimeout =
+    dependencyOverrides.clearTimeout ??
+    globalThis.clearTimeout.bind(globalThis);
   const controller = new AbortController();
   let timeout;
   const timeoutFailure = new Promise((_, reject) => {
-    timeout = dependencies.setTimeout(() => {
+    timeout = setTimeout(() => {
       controller.abort();
       reject(new Error("Peer request timed out"));
     }, PEER_FETCH_TIMEOUT_MS);
@@ -1403,7 +1408,7 @@ export async function fetchPeerFleet(peer, fetcher, dependencies) {
     })();
     return await Promise.race([request, timeoutFailure]);
   } finally {
-    dependencies.clearTimeout(timeout);
+    clearTimeout(timeout);
   }
 }
 
@@ -1478,8 +1483,11 @@ export async function loadFleet(
   const generated = documentRoot.querySelector("#generated");
   const error = documentRoot.querySelector("#error");
   const dependencies = {
-    setTimeout: dependencyOverrides.setTimeout ?? globalThis.setTimeout,
-    clearTimeout: dependencyOverrides.clearTimeout ?? globalThis.clearTimeout,
+    setTimeout:
+      dependencyOverrides.setTimeout ?? globalThis.setTimeout.bind(globalThis),
+    clearTimeout:
+      dependencyOverrides.clearTimeout ??
+      globalThis.clearTimeout.bind(globalThis),
     now: dependencyOverrides.now ?? (() => new Date()),
   };
   const state = loadStates.get(documentRoot) ?? {
@@ -1575,11 +1583,17 @@ export function startDashboard(
 ) {
   dashboardControllers.get(documentRoot)?.cleanup();
   const dependencies = {
-    setTimeout: dependencyOverrides.setTimeout ?? globalThis.setTimeout,
-    clearTimeout: dependencyOverrides.clearTimeout ?? globalThis.clearTimeout,
-    setInterval: dependencyOverrides.setInterval ?? globalThis.setInterval,
+    setTimeout:
+      dependencyOverrides.setTimeout ?? globalThis.setTimeout.bind(globalThis),
+    clearTimeout:
+      dependencyOverrides.clearTimeout ??
+      globalThis.clearTimeout.bind(globalThis),
+    setInterval:
+      dependencyOverrides.setInterval ??
+      globalThis.setInterval.bind(globalThis),
     clearInterval:
-      dependencyOverrides.clearInterval ?? globalThis.clearInterval,
+      dependencyOverrides.clearInterval ??
+      globalThis.clearInterval.bind(globalThis),
     now: dependencyOverrides.now ?? (() => new Date()),
   };
   const intervalMilliseconds = refreshSeconds(documentRoot.defaultView) * 1_000;

@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T26",
+  "branch": "factory/t26-bind-default-timers",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-16T22:13:30Z"
+  "updated": "2026-08-16T22:15:21Z"
 }

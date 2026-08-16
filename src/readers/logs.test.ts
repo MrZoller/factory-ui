@@ -1044,7 +1044,9 @@ describe("logs reader", () => {
 
       expect(logsRead.driver).not.toBeNull();
 
-      const liveness = await checkTrustedDriverLiveness(logsRead.driver);
+      const liveness = await checkTrustedDriverLiveness(logsRead.driver, {
+        runner: async () => ({ exitCode: 1, stdout: "", stderr: "" }),
+      });
 
       expect(liveness.state).toBe("STOPPED");
     });

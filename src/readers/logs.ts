@@ -75,14 +75,14 @@ export function parseLogName(name: string): ParsedLogName | null {
   const [y, mo, d, h, mi, s] = [year, month, day, hour, minute, second].map(
     Number,
   ) as [number, number, number, number, number, number];
-  const startedAt = new Date(y, mo - 1, d, h, mi, s);
+  const startedAt = new Date(Date.UTC(y, mo - 1, d, h, mi, s));
   if (
-    startedAt.getFullYear() !== y ||
-    startedAt.getMonth() !== mo - 1 ||
-    startedAt.getDate() !== d ||
-    startedAt.getHours() !== h ||
-    startedAt.getMinutes() !== mi ||
-    startedAt.getSeconds() !== s
+    startedAt.getUTCFullYear() !== y ||
+    startedAt.getUTCMonth() !== mo - 1 ||
+    startedAt.getUTCDate() !== d ||
+    startedAt.getUTCHours() !== h ||
+    startedAt.getUTCMinutes() !== mi ||
+    startedAt.getUTCSeconds() !== s
   ) {
     return null;
   }

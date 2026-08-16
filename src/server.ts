@@ -17,7 +17,9 @@ const PUBLIC_ROOT = new URL("./public/", import.meta.url);
 
 const STATIC_FILES = new Map([
   ["/", { file: "index.html", type: "text/html; charset=utf-8" }],
+  ["/how", { file: "how.html", type: "text/html; charset=utf-8" }],
   ["/app.js", { file: "app.js", type: "text/javascript; charset=utf-8" }],
+  ["/how.js", { file: "how.js", type: "text/javascript; charset=utf-8" }],
   ["/styles.css", { file: "styles.css", type: "text/css; charset=utf-8" }],
 ]);
 

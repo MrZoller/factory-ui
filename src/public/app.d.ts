@@ -26,3 +26,15 @@ export function startDashboard(
 ): { cleanup(): void };
 export const PEER_FETCH_TIMEOUT_MS: 5000;
 export const MAX_CONCURRENT_PEER_FETCHES: 4;
+export function providerCategory(
+  provider: unknown,
+): "openai" | "opencode" | "amazon-bedrock" | "other";
+export function readFleetResponse(response: Response): Promise<unknown>;
+export function fetchPeerFleet(
+  peer: { origin: string },
+  fetcher: typeof fetch,
+  dependencies: {
+    setTimeout: typeof globalThis.setTimeout;
+    clearTimeout: typeof globalThis.clearTimeout;
+  },
+): Promise<unknown>;

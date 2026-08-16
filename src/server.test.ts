@@ -370,6 +370,30 @@ describe("server", () => {
       expect(text).not.toMatch(/(?:src|href)="https?:\/\//i);
     });
 
+    test("serves the how page and module through the static pipeline with restrictive CSP", async () => {
+      const handler = createRequestHandler(baseConfig);
+      const page = await handler(new Request("http://localhost/how"));
+      const script = await handler(new Request("http://localhost/how.js"));
+      const html = await page.text();
+
+      expect(page.status).toBe(200);
+      expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      expect(page.headers.get("content-security-policy")).toContain(
+        "script-src 'self'",
+      );
+      expect(html).toContain('<script src="/how.js" type="module">');
+      expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/i);
+      expect(html).not.toMatch(/(?:src|href)="https?:\/\//i);
+      expect(html).not.toMatch(/\son[a-z]+\s*=/i);
+      expect(script.status).toBe(200);
+      expect(script.headers.get("content-type")).toBe(
+        "text/javascript; charset=utf-8",
+      );
+      expect(script.headers.get("content-security-policy")).toBe(
+        page.headers.get("content-security-policy"),
+      );
+    });
+
     test("returns 404 for static files that don't exist", async () => {
       const handler = createRequestHandler(baseConfig);
 

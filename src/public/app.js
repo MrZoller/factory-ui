@@ -456,7 +456,7 @@ function renderWarnings(card, repository) {
   panel.append(list);
 }
 
-function providerCategory(provider) {
+export function providerCategory(provider) {
   if (provider === "openai") return "openai";
   if (provider === "opencode") return "opencode";
   if (provider === "amazon-bedrock") return "amazon-bedrock";
@@ -780,7 +780,7 @@ async function readBoundedBody(response) {
   }
 }
 
-async function readFleetResponse(response) {
+export async function readFleetResponse(response) {
   if (!response?.ok) {
     throw new Error(`Request failed (${response?.status ?? "unknown"})`);
   }
@@ -1384,7 +1384,7 @@ export function renderFleet(fleet, documentRoot = document, now = new Date()) {
   machineViews.set(documentRoot, views);
 }
 
-async function fetchPeerFleet(peer, fetcher, dependencies) {
+export async function fetchPeerFleet(peer, fetcher, dependencies) {
   const controller = new AbortController();
   let timeout;
   const timeoutFailure = new Promise((_, reject) => {

@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T19",
+  "branch": "factory/t19-auto-refresh-dashboard",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-16T18:44:12Z"
+  "updated": "2026-08-16T18:45:24Z"
 }

@@ -176,6 +176,117 @@ describe("versioned read-only API", () => {
     expect(body.liveness.checkedAt).toEqual(expect.any(String));
   });
 
+  test("builds all GitHub links from trusted data", async () => {
+    const fixture = createFactoryFixture();
+    fixtures.push(fixture);
+    await Promise.all([
+      fixture.writeState({
+        project: "factory-ui",
+        phase: "build",
+        branch: "factory/t17-github-links",
+        pr: null,
+      }),
+      fixture.writePlan(`- [R] T17 (standard) — Link GitHub work
+  - acceptance: Fixes #17 and Fixes #23
+  - pr: 42
+  - deps: none`),
+    ]);
+
+    const handler = createRequestHandler(
+      config([
+        {
+          name: "factory-ui",
+          path: fixture.root,
+          githubUrl: "https://github.com/example/factory-ui",
+        },
+      ]),
+    );
+    const response = await handler(
+      new Request("http://localhost/api/repo/factory-ui"),
+    );
+    const body = (await response.json()) as Record<string, unknown>;
+    const task = (body.plan as { data: { tasks: Record<string, unknown>[] } })
+      .data.tasks[0]!;
+
+    expect(response.status).toBe(200);
+    expect(body.repositoryUrl).toBe("https://github.com/example/factory-ui");
+    expect(body.branchUrl).toBe(
+      "https://github.com/example/factory-ui/tree/factory/t17-github-links",
+    );
+    expect(task.prUrl).toBe("https://github.com/example/factory-ui/pull/42");
+    expect(task.issueUrls).toEqual([
+      "https://github.com/example/factory-ui/issues/17",
+      "https://github.com/example/factory-ui/issues/23",
+    ]);
+  });
+
+  test("omits links for hostile GitHub inputs", async () => {
+    const fixture = createFactoryFixture();
+    fixtures.push(fixture);
+    await Promise.all([
+      fixture.writeState({
+        project: "factory-ui",
+        phase: "build",
+        branch: "factory/../private",
+        pr: null,
+      }),
+      fixture.writePlan(`- [R] T17 (standard) — Link GitHub work
+  - acceptance: Fixes #0
+  - pr: 0
+  - deps: none`),
+    ]);
+
+    const handler = createRequestHandler(
+      config([
+        {
+          name: "factory-ui",
+          path: fixture.root,
+          githubUrl: "https://github.com/example/factory-ui?redirect=evil",
+        },
+      ]),
+    );
+    const body = (await (
+      await handler(new Request("http://localhost/api/repo/factory-ui"))
+    ).json()) as Record<string, unknown>;
+    const task = (body.plan as { data: { tasks: Record<string, unknown>[] } })
+      .data.tasks[0]!;
+
+    expect(body.repositoryUrl).toBeUndefined();
+    expect(body.branchUrl).toBeUndefined();
+    expect(task.prUrl).toBeUndefined();
+    expect(task.issueUrls).toBeUndefined();
+  });
+
+  test.each(["-private", "/private"])(
+    "omits a branch link for rejected branch %s",
+    async (branch) => {
+      const fixture = createFactoryFixture();
+      fixtures.push(fixture);
+      await fixture.writeState({
+        project: "factory-ui",
+        phase: "build",
+        branch,
+        pr: null,
+      });
+      const handler = createRequestHandler(
+        config([
+          {
+            name: "factory-ui",
+            path: fixture.root,
+            githubUrl: "https://github.com/example/factory-ui",
+          },
+        ]),
+      );
+
+      const body = (await (
+        await handler(new Request("http://localhost/api/repo/factory-ui"))
+      ).json()) as Record<string, unknown>;
+
+      expect(body.repositoryUrl).toBe("https://github.com/example/factory-ui");
+      expect(body.branchUrl).toBeUndefined();
+    },
+  );
+
   test("rejects selectors before repository I/O and decodes exactly once", async () => {
     const readRepository = vi.fn(async (_repository: RepositorySource) =>
       unavailable("repo-one"),

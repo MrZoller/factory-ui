@@ -106,7 +106,7 @@ task.
   - deps: none
   - pr: 16
 
-- [ ] T17 (standard) — Link projects, branches, and tasks to GitHub
+- [~] T17 (standard) — Link projects, branches, and tasks to GitHub
   - acceptance: The factory protocol now records `  - pr: N` under a plan task at ship time (kept at merge) and backlog tasks carry `Fixes #N` in acceptance. In `src/readers/plan.ts`, `src/contracts.ts`, `src/snapshot.ts`, `src/public/app.js`, and colocated tests: parse an optional `pr` (positive safe integer) and the set of `Fixes #N` issue numbers per plan task (bounded count; malformed values ignored with a warning, never a parse failure); build all links server-side from the config-validated `githubUrl` only — repository page (`<githubUrl>`), branch (`<githubUrl>/tree/<branch>` only when `state.branch` matches `^[A-Za-z0-9._/-]{1,200}$`, contains no `..` segment, and does not start with `-` or `/`), task PR (`<githubUrl>/pull/<pr>`), issue (`<githubUrl>/issues/<n>`) — and expose them as `repositoryUrl`, `branchUrl`, and per-task `prUrl`/`issueUrls` on the API alongside the existing `prUrl`; the client re-validates every URL with the same anchored https/github.com/no-credentials/no-query/no-hash rule it applies to `prUrl` before creating an anchor, renders links with `target="_blank"` and `rel="noopener noreferrer"`, and renders plain text (never a link) when a URL is absent or fails validation; the project name in the Current panel links to the repository, the branch value to the branch, each task line with a `pr` to its PR (`PR #N` text) and each `Fixes #N` to its issue; hostile `githubUrl`-shaped, branch, and `pr:` values in fixtures produce no anchor; tests cover every link kind positive and negative (spec 7, 8, 9).
   - deps: T15
 

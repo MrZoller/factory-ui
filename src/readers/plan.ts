@@ -13,11 +13,14 @@ export const MAX_PLAN_LINES = 4096;
 export const MAX_PLAN_LINE_LENGTH = 8192;
 export const MAX_PLAN_TASKS = 256;
 export const MAX_TASK_DEPENDENCIES = 32;
+export const MAX_TASK_ISSUES = 32;
 export const MAX_PLAN_WARNINGS = 32;
 
 const TASK_LINE =
   /^- \[([ ~Rx!])\] (T[1-9][0-9]*) \((trivial|standard|major)\) — (.+)$/;
 const DEPENDENCIES_LINE = /^  - deps: (none|T[1-9][0-9]*(?:, T[1-9][0-9]*)*)$/;
+const PR_LINE = /^  - pr: (.+)$/;
+const ACCEPTANCE_LINE = /^  - acceptance: (.*)$/;
 const STATUS: Record<string, TaskStatus> = {
   " ": "todo",
   "~": "active",
@@ -28,6 +31,8 @@ const STATUS: Record<string, TaskStatus> = {
 
 interface ParsedTask extends Omit<PlanTask, "runnable"> {
   line: number;
+  prMetadataPresent: boolean;
+  acceptanceMetadataPresent: boolean;
 }
 
 function emptyPlan(tasks: PlanTask[]): PlanData {
@@ -129,9 +134,66 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
 
     let dependencies: string[] | null = null;
     let dependencyLines = 0;
+    let pr: number | undefined;
+    let prLines = 0;
+    let acceptanceLines = 0;
+    const issueNumbers: number[] = [];
+    const seenIssues = new Set<number>();
     for (let child = index + 1; child < lines.length; child += 1) {
       const childLine = lines[child]?.replace(/\r$/, "") ?? "";
       if (TASK_LINE.test(childLine) || childLine.startsWith("- [")) break;
+      const prMatch = PR_LINE.exec(childLine);
+      if (prMatch) {
+        prLines += 1;
+        const value = prMatch[1];
+        const parsedPr =
+          value && /^[1-9][0-9]*$/.test(value) ? Number(value) : NaN;
+        if (prLines > 1 || !Number.isSafeInteger(parsedPr)) {
+          pr = undefined;
+          addWarning(
+            warnings,
+            planWarning(
+              "PLAN_MALFORMED_PR",
+              "task PR metadata is malformed or duplicated",
+              child + 1,
+            ),
+          );
+        } else {
+          pr = parsedPr;
+        }
+      }
+      const acceptanceMatch = ACCEPTANCE_LINE.exec(childLine);
+      if (acceptanceMatch) {
+        acceptanceLines += 1;
+        for (const match of acceptanceMatch[1]?.matchAll(
+          /Fixes #([^\s,.;)]+)/g,
+        ) ?? []) {
+          const value = match[1] ?? "";
+          const issue = /^[1-9][0-9]*$/.test(value) ? Number(value) : NaN;
+          if (!Number.isSafeInteger(issue)) {
+            addWarning(
+              warnings,
+              planWarning(
+                "PLAN_MALFORMED_ISSUE",
+                "task issue metadata is malformed",
+                child + 1,
+              ),
+            );
+          } else if (!seenIssues.has(issue)) {
+            seenIssues.add(issue);
+            if (issueNumbers.length < MAX_TASK_ISSUES) issueNumbers.push(issue);
+            else
+              addWarning(
+                warnings,
+                planWarning(
+                  "PLAN_TOO_MANY_ISSUES",
+                  "task has too many issue references",
+                  child + 1,
+                ),
+              );
+          }
+        }
+      }
       if (!childLine.startsWith("  - deps:")) continue;
       dependencyLines += 1;
       const dependencyMatch = DEPENDENCIES_LINE.exec(childLine);
@@ -194,6 +256,10 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
       size: size as TaskSize,
       title,
       dependencies,
+      pr,
+      issueNumbers,
+      prMetadataPresent: prLines > 0,
+      acceptanceMetadataPresent: acceptanceLines > 0,
       line: index + 1,
     });
   }
@@ -250,6 +316,10 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
       title: task.title,
       dependencies: task.dependencies,
       runnable,
+      ...(task.prMetadataPresent ? { pr: task.pr } : {}),
+      ...(task.acceptanceMetadataPresent
+        ? { issueNumbers: task.issueNumbers }
+        : {}),
     };
   });
 

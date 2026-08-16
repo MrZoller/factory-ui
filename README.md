@@ -84,8 +84,11 @@ does not silently expand its read surface.
 3. Confirm MagicDNS and ACL access to port 7777 in both directions among all
    three machines.
 4. Run `bun run serve --config factory-ui.config.json` on each host.
-5. Open one dashboard and confirm local data and both peers. Repeat from each
-   machine to verify CORS symmetry and route availability.
+5. Open each dashboard through its configured MagicDNS origin (for example,
+   `http://mini:7777`) and confirm local data and both peers. Do not use the
+   literal Tailscale bind IP in the browser: peer requests must originate from
+   a configured MagicDNS origin to pass CORS. Repeat from each machine to
+   verify CORS symmetry and route availability.
 
 This repository documents the topology; it does not claim the three named
 machines have been deployed or verified.

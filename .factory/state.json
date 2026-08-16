@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T27",
-  "branch": "factory/t27-scannable-worklog",
-  "pr": 27,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-16T22:48:34Z"
+  "updated": "2026-08-16T23:43:38Z"
 }

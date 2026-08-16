@@ -24,15 +24,15 @@ factory's own `/spec` gate.
 
 ## Data contract (what the UI reads)
 
-| Source | Fields consumed | Meaning |
-|---|---|---|
-| `.factory/state.json` | project, phase, current_task, branch, pr, hold, updated | The "now" |
-| `.factory/plan.md` | status marks `[ ] [~] [R] [x] [!]`, sizes, deps, Ad-hoc note | Done / doing / next / blocked |
-| `.factory/questions.md` | `## Qn (task, open)` entries | What waits on the human |
-| `.factory/worklog.md` | newest N entries, rendered as text | History |
-| `.factory/logs/driver-*.log` | filename stamps, mtime, tail lines | Run start, last narration |
-| `.factory/logs/cycle-*.log`, `shepherd-*.log` | filename stamps, mtimes | Cycle/pass timing |
-| lsof on driver logs | `tee` opener present | RUNNING / STOPPED / CANNOT VERIFY |
+| Source                                        | Fields consumed                                              | Meaning                           |
+| --------------------------------------------- | ------------------------------------------------------------ | --------------------------------- |
+| `.factory/state.json`                         | project, phase, current_task, branch, pr, hold, updated      | The "now"                         |
+| `.factory/plan.md`                            | status marks `[ ] [~] [R] [x] [!]`, sizes, deps, Ad-hoc note | Done / doing / next / blocked     |
+| `.factory/questions.md`                       | `## Qn (task, open)` entries                                 | What waits on the human           |
+| `.factory/worklog.md`                         | newest N entries, rendered as text                           | History                           |
+| `.factory/logs/driver-*.log`                  | filename stamps, mtime, tail lines                           | Run start, last narration         |
+| `.factory/logs/cycle-*.log`, `shepherd-*.log` | filename stamps, mtimes                                      | Cycle/pass timing                 |
+| lsof on driver logs                           | `tee` opener present                                         | RUNNING / STOPPED / CANNOT VERIFY |
 
 The file formats are factory-protocol's contract; this table is the
 UI's complete read surface. Anything more the UI wants must become a
@@ -81,15 +81,15 @@ the ChatGPT-Max driver tier is subscription.
 
 ## Backlog
 
-| ID | Size | Task | Deps |
-|---|---|---|---|
-| T1 | standard | Scaffold: bun project, config format (clones, port, peers), CI, lint/format | — |
-| T2 | standard | `.factory` reader library: typed snapshot of state/plan/questions/worklog + fixture-tree tests | T1 |
-| T3 | standard | Liveness & timing module: tee-probe tristate, run/cycle durations from log names+mtimes | T1 |
-| T4 | standard | HTTP server + JSON API, tailnet/localhost bind rules, serialization tests | T2, T3 |
-| T5 | major | The page: now/next/done/blocked, questions, holds, narration tail, as-of stamps — the XSS boundary | T4 |
-| T6 | standard | Fleet fan-out: peer fetch over MagicDNS, per-machine columns, UNREACHABLE state | T5 |
-| T7 | standard | `factory-ui serve` launcher + README install/run docs per machine | T4 |
+| ID  | Size     | Task                                                                                               | Deps   |
+| --- | -------- | -------------------------------------------------------------------------------------------------- | ------ |
+| T1  | standard | Scaffold: bun project, config format (clones, port, peers), CI, lint/format                        | —      |
+| T2  | standard | `.factory` reader library: typed snapshot of state/plan/questions/worklog + fixture-tree tests     | T1     |
+| T3  | standard | Liveness & timing module: tee-probe tristate, run/cycle durations from log names+mtimes            | T1     |
+| T4  | standard | HTTP server + JSON API, tailnet/localhost bind rules, serialization tests                          | T2, T3 |
+| T5  | major    | The page: now/next/done/blocked, questions, holds, narration tail, as-of stamps — the XSS boundary | T4     |
+| T6  | standard | Fleet fan-out: peer fetch over MagicDNS, per-machine columns, UNREACHABLE state                    | T5     |
+| T7  | standard | `factory-ui serve` launcher + README install/run docs per machine                                  | T4     |
 
 (T8 — phase-2 token usage — is deferred by decision; it arrives as a
 later issue import, not in this plan.)

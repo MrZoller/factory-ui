@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T17",
-  "branch": "factory/t17-github-links",
-  "pr": 17,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-16T18:00:28Z"
+  "updated": "2026-08-16T18:10:45Z"
 }

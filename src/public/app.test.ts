@@ -252,6 +252,113 @@ describe("local dashboard rendering", () => {
     expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
   });
 
+  test("renders worklog entry heading with time as YYYY-MM-DD HH:MM UTC", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      worklog: {
+        status: "available",
+        data: {
+          entries: [
+            {
+              date: "2026-08-16",
+              time: "14:30",
+              text: "- 2026-08-16 14:30 UTC - Timed entry",
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(
+      {
+        hostname: "mini",
+        generatedAt: "2026-08-16T12:00:00.000Z",
+        repositories: [repository],
+      },
+      document,
+      NOW,
+    );
+
+    const worklogPanel = document.querySelector(".worklog-panel")!;
+    const heading = worklogPanel.querySelector("h5")!;
+    expect(heading.textContent).toBe("2026-08-16 14:30 UTC");
+  });
+
+  test("renders worklog legacy entry heading as YYYY-MM-DD without time", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      worklog: {
+        status: "available",
+        data: {
+          entries: [
+            { date: "2026-08-16", text: "- 2026-08-16 UTC - Legacy entry" },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(
+      {
+        hostname: "mini",
+        generatedAt: "2026-08-16T12:00:00.000Z",
+        repositories: [repository],
+      },
+      document,
+      NOW,
+    );
+
+    const worklogPanel = document.querySelector(".worklog-panel")!;
+    const heading = worklogPanel.querySelector("h5")!;
+    expect(heading.textContent).toBe("2026-08-16");
+  });
+
+  test("renders mixed legacy and timed worklog entries with correct headings", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      worklog: {
+        status: "available",
+        data: {
+          entries: [
+            {
+              date: "2026-08-14",
+              time: "09:00",
+              text: "- 2026-08-14 09:00 UTC - First timed",
+            },
+            { date: "2026-08-15", text: "- 2026-08-15 UTC - Second legacy" },
+            {
+              date: "2026-08-16",
+              time: "23:45",
+              text: "- 2026-08-16 23:45 UTC - Third timed",
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(
+      {
+        hostname: "mini",
+        generatedAt: "2026-08-16T12:00:00.000Z",
+        repositories: [repository],
+      },
+      document,
+      NOW,
+    );
+
+    const headings = Array.from(
+      document.querySelectorAll(".worklog-panel h5"),
+      (h) => h.textContent,
+    );
+    expect(headings).toEqual([
+      "2026-08-14 09:00 UTC",
+      "2026-08-15",
+      "2026-08-16 23:45 UTC",
+    ]);
+  });
+
   test("renders partial and unavailable sources without hiding usable data", () => {
     const document = dashboardDocument();
     renderFleet(

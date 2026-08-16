@@ -68,9 +68,7 @@ export function createRequestHandler(
   };
 }
 
-export function startServer(
-  config: AppConfig,
-): ReturnType<typeof Bun.serve> {
+export function startServer(config: AppConfig): ReturnType<typeof Bun.serve> {
   return Bun.serve({
     hostname: config.bind ?? "127.0.0.1",
     port: config.port,

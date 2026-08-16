@@ -1,17 +1,292 @@
 import { afterEach, describe, expect, test, vi } from "bun:test";
 
 import { createRequestHandler, startServer } from "./server";
-import type { AppConfig, FleetSnapshot } from "./contracts";
+import type { AppConfigSource, FleetSnapshot } from "./contracts";
 
 describe("server", () => {
   describe("createRequestHandler", () => {
-    test("returns 405 for POST request", async () => {
-      const handler = createRequestHandler({
-        machine: "test-machine",
-        repositories: [{ name: "repo1", path: "/fake/path" }],
-        peers: [],
-        port: 7777,
+    const baseConfig: AppConfigSource = {
+      machine: "test-machine",
+      repositories: [{ name: "repo1", path: "/fake/path" }],
+      peers: [],
+      port: 7777,
+    };
+
+    describe("CORS - Access-Control-Allow-Origin", () => {
+      test("returns ACAO header for dashboard origin (127.0.0.1)", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/", {
+          headers: { origin: "http://127.0.0.1:7777" },
+        });
+
+        const response = await handler(request);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("access-control-allow-origin")).toBe(
+          "http://127.0.0.1:7777",
+        );
       });
+
+      test("returns ACAO header for configured peer origin", async () => {
+        const config = {
+          ...baseConfig,
+          peers: [{ name: "peer1", origin: "http://100.64.0.1:8080" }],
+        };
+        const handler = createRequestHandler(config);
+
+        const request = new Request("http://localhost/", {
+          headers: { origin: "http://100.64.0.1:8080" },
+        });
+
+        const response = await handler(request);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("access-control-allow-origin")).toBe(
+          "http://100.64.0.1:8080",
+        );
+      });
+
+      test("returns ACAO header for development origin", async () => {
+        const config = {
+          ...baseConfig,
+          developmentOrigins: ["http://localhost:3000"],
+        };
+        const handler = createRequestHandler(config);
+
+        const request = new Request("http://localhost/", {
+          headers: { origin: "http://localhost:3000" },
+        });
+
+        const response = await handler(request);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("access-control-allow-origin")).toBe(
+          "http://localhost:3000",
+        );
+      });
+
+      test("does not return ACAO header for unconfigured origin", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/", {
+          headers: { origin: "http://evil.com" },
+        });
+
+        const response = await handler(request);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      });
+
+      test("does not return ACAO header for malformed origin", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/", {
+          headers: { origin: "not-a-valid-origin" },
+        });
+
+        const response = await handler(request);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      });
+
+      test("does not return ACAO header for null origin", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/", {
+          headers: { origin: "null" },
+        });
+
+        const response = await handler(request);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      });
+
+      test("does not return ACAO header for empty origin", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/", {
+          headers: { origin: "" },
+        });
+
+        const response = await handler(request);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      });
+
+      test("does not return ACAO header for wildcard origin", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/", {
+          headers: { origin: "*" },
+        });
+
+        const response = await handler(request);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      });
+
+      test("returns no ACAO for 404 response", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/unknown", {
+          headers: { origin: "http://localhost:3000" },
+        });
+
+        const response = await handler(request);
+        expect(response.status).toBe(404);
+        expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      });
+
+      test("returns no ACAO for 405 response", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/", {
+          method: "POST",
+          headers: { origin: "http://localhost:3000" },
+        });
+
+        const response = await handler(request);
+        expect(response.status).toBe(405);
+        expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      });
+    });
+
+    describe("Vary Origin header", () => {
+      test("returns Vary: Origin for 200 response", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/");
+        const response = await handler(request);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("vary")).toBe("Origin");
+      });
+
+      test("returns Vary: Origin for 404 response", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/unknown");
+        const response = await handler(request);
+        expect(response.status).toBe(404);
+        expect(response.headers.get("vary")).toBe("Origin");
+      });
+
+      test("returns Vary: Origin for 405 response", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/", {
+          method: "POST",
+        });
+
+        const response = await handler(request);
+        expect(response.status).toBe(405);
+        expect(response.headers.get("vary")).toBe("Origin");
+      });
+    });
+
+    describe("Hostile path/query/header/body values", () => {
+      test("handles hostile path with traversal", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/../../../etc/passwd");
+        const response = await handler(request);
+        expect(response.status).toBe(404);
+      });
+
+      test("handles hostile query string", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/?../../../etc/passwd");
+        const response = await handler(request);
+        expect(response.status).toBe(200);
+      });
+
+      test("handles hostile header value", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/", {
+          headers: {
+            origin: "http://localhost:3000",
+            "x-hostile": "../../../etc/passwd",
+          },
+        });
+
+        const response = await handler(request);
+        expect(response.status).toBe(200);
+      });
+
+      test("handles hostile body value", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/", {
+          method: "POST",
+          body: "../../../etc/passwd",
+        });
+
+        const response = await handler(request);
+        expect(response.status).toBe(405);
+      });
+
+      test("handles path with null bytes", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/\x00/etc/passwd");
+        const response = await handler(request);
+        expect(response.status).toBe(404);
+      });
+
+      test("handles path with control characters", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/\x1b[31m/etc/passwd");
+        const response = await handler(request);
+        expect(response.status).toBe(404);
+      });
+
+      test("handles path with unicode", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/../../../éñ");
+        const response = await handler(request);
+        expect(response.status).toBe(404);
+      });
+
+      test("handles path with percent encoding", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request(
+          "http://localhost/%2e%2e%2f%2e%2e%2fetc/passwd",
+        );
+        const response = await handler(request);
+        expect(response.status).toBe(404);
+      });
+
+      test("handles path with double encoding", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request(
+          "http://localhost/%252e%252e%252f%252e%252e%252fetc/passwd",
+        );
+        const response = await handler(request);
+        expect(response.status).toBe(404);
+      });
+
+      test("handles path with backslash", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/..\\..\\etc\\passwd");
+        const response = await handler(request);
+        expect(response.status).toBe(404);
+      });
+
+      test("handles path with mixed slashes", async () => {
+        const handler = createRequestHandler(baseConfig);
+
+        const request = new Request("http://localhost/../../../etc\\passwd");
+        const response = await handler(request);
+        expect(response.status).toBe(404);
+      });
+    });
+
+    test("returns 405 for POST request", async () => {
+      const handler = createRequestHandler(baseConfig);
 
       const request = new Request("http://localhost/api/fleet", {
         method: "POST",
@@ -25,12 +300,7 @@ describe("server", () => {
     });
 
     test("returns 405 for PUT request", async () => {
-      const handler = createRequestHandler({
-        machine: "test-machine",
-        repositories: [{ name: "repo1", path: "/fake/path" }],
-        peers: [],
-        port: 7777,
-      });
+      const handler = createRequestHandler(baseConfig);
 
       const request = new Request("http://localhost/api/fleet", {
         method: "PUT",
@@ -43,12 +313,7 @@ describe("server", () => {
     });
 
     test("returns 405 for DELETE request", async () => {
-      const handler = createRequestHandler({
-        machine: "test-machine",
-        repositories: [{ name: "repo1", path: "/fake/path" }],
-        peers: [],
-        port: 7777,
-      });
+      const handler = createRequestHandler(baseConfig);
 
       const request = new Request("http://localhost/api/fleet", {
         method: "DELETE",
@@ -60,12 +325,7 @@ describe("server", () => {
     });
 
     test("returns 404 for unknown path", async () => {
-      const handler = createRequestHandler({
-        machine: "test-machine",
-        repositories: [{ name: "repo1", path: "/fake/path" }],
-        peers: [],
-        port: 7777,
-      });
+      const handler = createRequestHandler(baseConfig);
 
       const request = new Request("http://localhost/unknown");
 
@@ -75,12 +335,7 @@ describe("server", () => {
     });
 
     test("returns 404 for /api/unknown path", async () => {
-      const handler = createRequestHandler({
-        machine: "test-machine",
-        repositories: [{ name: "repo1", path: "/fake/path" }],
-        peers: [],
-        port: 7777,
-      });
+      const handler = createRequestHandler(baseConfig);
 
       const request = new Request("http://localhost/api/unknown");
 
@@ -90,12 +345,7 @@ describe("server", () => {
     });
 
     test("returns 200 for / with valid index.html", async () => {
-      const handler = createRequestHandler({
-        machine: "test-machine",
-        repositories: [{ name: "repo1", path: "/fake/path" }],
-        peers: [],
-        port: 7777,
-      });
+      const handler = createRequestHandler(baseConfig);
 
       const request = new Request("http://localhost/");
 
@@ -110,12 +360,7 @@ describe("server", () => {
     });
 
     test("returns 404 for static files that don't exist", async () => {
-      const handler = createRequestHandler({
-        machine: "test-machine",
-        repositories: [{ name: "repo1", path: "/fake/path" }],
-        peers: [],
-        port: 7777,
-      });
+      const handler = createRequestHandler(baseConfig);
 
       const request = new Request("http://localhost/unknown-static.js");
 
@@ -126,7 +371,7 @@ describe("server", () => {
 
     test("returns API response for /api/fleet", async () => {
       const mockSnapshot = vi.fn(
-        async (config: AppConfig): Promise<FleetSnapshot> => ({
+        async (config: AppConfigSource): Promise<FleetSnapshot> => ({
           hostname: config.machine,
           repositories: [
             {
@@ -175,7 +420,7 @@ describe("server", () => {
 
     test("returns API response with unavailable repository", async () => {
       const mockSnapshot = vi.fn(
-        async (config: AppConfig): Promise<FleetSnapshot> => ({
+        async (config: AppConfigSource): Promise<FleetSnapshot> => ({
           hostname: config.machine,
           repositories: [
             {
@@ -254,7 +499,7 @@ describe("server", () => {
         {
           name: "repo1",
           status: "unavailable",
-          warning: "state.json is missing",
+          warning: "state.json could not be read",
         },
       ]);
     });
@@ -272,9 +517,17 @@ describe("server", () => {
     test("starts server on loopback", async () => {
       server = startServer({
         machine: "test-machine",
-        repositories: [{ name: "repo1", path: "/fake/path" }],
+        repositories: [
+          {
+            name: "repo1",
+            path: "/fake/path",
+            githubUrl: "https://github.com/example/repo1",
+          },
+        ],
         peers: [],
         port: 0,
+        bind: "127.0.0.1",
+        developmentOrigins: [],
       });
 
       expect(server.hostname).toBe("127.0.0.1");
@@ -288,9 +541,17 @@ describe("server", () => {
     test("returns server with correct fetch handler", async () => {
       server = startServer({
         machine: "test-machine",
-        repositories: [{ name: "repo1", path: "/fake/path" }],
+        repositories: [
+          {
+            name: "repo1",
+            path: "/fake/path",
+            githubUrl: "https://github.com/example/repo1",
+          },
+        ],
         peers: [],
         port: 0,
+        bind: "127.0.0.1",
+        developmentOrigins: [],
       });
 
       // Test GET /api/fleet
@@ -314,9 +575,17 @@ describe("server", () => {
     test("server stops cleanly", async () => {
       server = startServer({
         machine: "test-machine",
-        repositories: [{ name: "repo1", path: "/fake/path" }],
+        repositories: [
+          {
+            name: "repo1",
+            path: "/fake/path",
+            githubUrl: "https://github.com/example/repo1",
+          },
+        ],
         peers: [],
         port: 0,
+        bind: "127.0.0.1",
+        developmentOrigins: [],
       });
 
       const stopResult = await server.stop();

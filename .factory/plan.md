@@ -25,7 +25,7 @@ task.
 - [x] T3 (standard) — Add conservative cross-platform driver liveness
   - acceptance: In `src/liveness.ts` and tests, select only a recognized driver log under a configured clone, invoke a fixed shell-free and timeout-bounded `lsof` probe through an injectable runner, report `RUNNING` only for an exact `tee` opener and `STOPPED` only for an unambiguous successful no-opener result, and report `CANNOT_VERIFY` for a missing executable, timeout, failure, malformed output, unsafe target, or ambiguous exit; prove `tail -F`, unrelated processes, and browser/repository values cannot produce `RUNNING` or alter process arguments; expose the result and check time through `src/snapshot.ts` (spec 4, 9).
   - deps: T2
-- [ ] T4 (standard) — Parse bounded state and runnable plan data
+- [~] T4 (standard) — Parse bounded state and runnable plan data
   - acceptance: In `src/readers/state.ts`, `src/readers/plan.ts`, `src/test-support.ts`, `src/contracts.ts`, and tests, conservatively parse the approved state fields and exact top-level `[ ]`, `[~]`, `[R]`, `[x]`, and `[!]` plan tasks with sizes and dependencies; group active/review, next runnable, completed, blocked, and remaining work without treating nested bullets as tasks; mark work runnable only when all declared dependencies are completed; return bounded partial/unavailable results and warnings for missing, malformed, duplicate, oversized, hostile, or partially written input without inventing values or losing configured repository identity (spec 2, 5, 7).
   - deps: T2
 - [ ] T5 (standard) — Add open-question and recent-worklog readers

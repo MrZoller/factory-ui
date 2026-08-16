@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T3",
-  "branch": "factory/t3-driver-liveness",
-  "pr": 3,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-16T04:45:11Z"
+  "updated": "2026-08-16T05:46:41Z"
 }

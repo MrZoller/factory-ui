@@ -409,6 +409,38 @@ describe("local dashboard rendering", () => {
     ).toBe("Unavailable");
   });
 
+  test("does not present a partial machine cost as a total", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({ costs: costs({ T8: costCounters(1.23, 123) }) }),
+          richRepository({
+            costs: {
+              status: "unavailable",
+              warnings: [
+                { code: "COSTS_MISSING", message: "costs unavailable" },
+              ],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    expect(
+      summaryRow(document, "mini")?.querySelector(".cost-total")?.textContent,
+    ).toBe("Unavailable");
+    expect(
+      Array.from(document.querySelectorAll(".warnings-panel")).some((panel) =>
+        panel.textContent?.includes("costs: COSTS_MISSING"),
+      ),
+    ).toBe(true);
+  });
+
   test("keeps hostile costs from a peer response inert", () => {
     const document = dashboardDocument();
     const hostile = '<img src=x onerror="globalThis.pwned=1">';

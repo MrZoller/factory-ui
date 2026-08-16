@@ -440,6 +440,7 @@ function renderWarnings(card, repository) {
     ["worklog", repository.worklog],
     ["logs", repository.logs],
     ["routing", repository.routing],
+    ["costs", repository.costs],
   ]) {
     if (!Array.isArray(result?.warnings)) continue;
     for (const warning of result.warnings) {
@@ -805,17 +806,16 @@ function repositoryCostData(repository) {
 }
 
 function meteredTotal(repositories) {
+  if (repositories.length === 0) return "Unavailable";
   let total = 0;
-  let available = false;
   for (const repository of repositories) {
     const tasks = repositoryCostData(repository);
-    if (!tasks) continue;
-    available = true;
+    if (!tasks) return "Unavailable";
     for (const counters of Object.values(tasks)) {
       if (isCostCounters(counters)) total += counters.usd;
     }
   }
-  return available ? formatUsd(total) : "Unavailable";
+  return formatUsd(total);
 }
 
 function aggregateCurrent(repositories, key, format) {

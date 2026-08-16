@@ -236,6 +236,12 @@ describe("local dashboard rendering", () => {
               status: "unavailable",
               warnings: [{ code: "PLAN_MISSING", message: "plan unavailable" }],
             },
+            questions: {
+              status: "unavailable",
+              warnings: [
+                { code: "QUESTIONS_MISSING", message: "questions unavailable" },
+              ],
+            },
           }),
         ],
       },
@@ -246,8 +252,11 @@ describe("local dashboard rendering", () => {
     expect(document.querySelector(".status.unavailable")?.textContent).toBe(
       "UNAVAILABLE",
     );
+    expect(document.querySelector(".active-work")?.textContent).toContain(
+      "Unavailable",
+    );
     expect(document.querySelector(".questions-panel")?.textContent).toContain(
-      "Which layout?",
+      "Unavailable",
     );
     expect(document.querySelector(".warnings-panel")?.textContent).toContain(
       "PLAN_MISSING",
@@ -292,6 +301,39 @@ describe("local dashboard rendering", () => {
     );
     expect(document.querySelector(".current-panel")?.textContent).toContain(
       "Gatesspec Unknown; plan Unknown",
+    );
+  });
+
+  test("keeps valid partial state fields visible", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      {
+        hostname: "mini",
+        generatedAt: "2026-08-16T12:00:00.000Z",
+        repositories: [
+          richRepository({
+            status: "unavailable",
+            project: undefined,
+            phase: undefined,
+            state: {
+              status: "partial",
+              data: { project: "factory-ui" },
+              warnings: [
+                { code: "STATE_INVALID", message: "phase unavailable" },
+              ],
+            },
+          }),
+        ],
+      },
+      document,
+      NOW,
+    );
+
+    expect(document.querySelector(".current-panel")?.textContent).toContain(
+      "Projectfactory-ui",
+    );
+    expect(document.querySelector(".current-panel")?.textContent).toContain(
+      "PhaseUnknown",
     );
   });
 

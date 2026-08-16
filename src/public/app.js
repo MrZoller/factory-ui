@@ -98,8 +98,12 @@ function renderCurrent(card, repository) {
   const state = readerData(repository.state);
   const list = panel.ownerDocument.createElement("dl");
   list.className = "facts";
-  addDefinition(list, "Project", repository.project ?? "Unknown");
-  addDefinition(list, "Phase", repository.phase ?? "Unknown");
+  addDefinition(
+    list,
+    "Project",
+    repository.project ?? state?.project ?? "Unknown",
+  );
+  addDefinition(list, "Phase", repository.phase ?? state?.phase ?? "Unknown");
   addDefinition(list, "Task", displayOptional(state?.currentTask));
   addDefinition(list, "Branch", displayOptional(state?.branch));
 
@@ -162,6 +166,10 @@ function renderTasks(card, repository) {
   const plan = readerData(repository.plan);
   for (const [title, key, className] of TASK_GROUPS) {
     const panel = addPanel(card, title, className);
+    if (!plan) {
+      appendText(panel, "p", "Unavailable", "unavailable");
+      continue;
+    }
     const tasks = Array.isArray(plan?.[key]) ? plan[key] : [];
     if (tasks.length === 0) {
       appendText(panel, "p", "None", "empty");
@@ -177,6 +185,10 @@ function renderTasks(card, repository) {
 function renderQuestions(card, repository) {
   const panel = addPanel(card, "Open questions", "questions-panel");
   const open = readerData(repository.questions)?.open;
+  if (!open) {
+    appendText(panel, "p", "Unavailable", "unavailable");
+    return;
+  }
   if (!Array.isArray(open) || open.length === 0) {
     appendText(panel, "p", "None", "empty");
     return;

@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T5",
+  "branch": "factory/t5-question-worklog-readers",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-16T07:29:03Z"
+  "updated": "2026-08-16T07:31:07Z"
 }

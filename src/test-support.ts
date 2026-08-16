@@ -7,6 +7,8 @@ export interface FactoryFixture {
   factoryPath: string;
   writeState(value: unknown | string | Uint8Array): Promise<void>;
   writePlan(value: string | Uint8Array): Promise<void>;
+  writeQuestions(value: string | Uint8Array): Promise<void>;
+  writeWorklog(value: string | Uint8Array): Promise<void>;
   cleanup(): void;
 }
 
@@ -27,6 +29,12 @@ export function createFactoryFixture(): FactoryFixture {
     },
     writePlan: async (value) => {
       await Bun.write(join(factoryPath, "plan.md"), value);
+    },
+    writeQuestions: async (value) => {
+      await Bun.write(join(factoryPath, "questions.md"), value);
+    },
+    writeWorklog: async (value) => {
+      await Bun.write(join(factoryPath, "worklog.md"), value);
     },
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };

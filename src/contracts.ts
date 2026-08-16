@@ -115,8 +115,30 @@ export interface PlanTask {
   runnable: boolean;
 }
 
+export interface OpenQuestion {
+  id: string;
+  taskId: string;
+  title: string;
+  text: string;
+}
+
+export interface QuestionsData {
+  open: OpenQuestion[];
+}
+
+export interface WorklogEntry {
+  date: string;
+  text: string;
+}
+
+export interface WorklogData {
+  entries: WorklogEntry[];
+}
+
 export interface RepositoryFactoryData {
   name: string;
   state: ReaderResult<FactoryStateData>;
   plan: ReaderResult<PlanData>;
+  questions: ReaderResult<QuestionsData>;
+  worklog: ReaderResult<WorklogData>;
 }

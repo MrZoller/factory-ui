@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T8",
-  "branch": "factory/t8-safe-dashboard",
-  "pr": 8,
-  "hold": true,
-  "updated": "2026-08-16T11:22:07Z"
+  "current_task": null,
+  "branch": null,
+  "pr": null,
+  "hold": false,
+  "updated": "2026-08-16T12:01:39Z"
 }

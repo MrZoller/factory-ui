@@ -85,6 +85,7 @@ task.
   - Recognize `Fixes #N` references followed by `:`, `!`, or `?` punctuation without treating the valid issue number as malformed (PR #17 review).
   - Warn when a present `pr:` metadata line has an empty value rather than silently treating it as absent (PR #17 review).
   - Distinguish a successfully fetched but already-old snapshot from `refresh failed`; T20's closed reason set currently has no truthful age-only reason (T20 panel review).
+  - Guard peer-timeout status updates by load generation so a late timeout from an older overlapping refresh cannot temporarily mark a newer successful snapshot stale (PR #20 review).
 
 - [x] T12 (standard) — Add MIT license and clean test scratch directories
   - acceptance: add a root `LICENSE` containing the MIT license text with `Copyright (c) 2026 Chris Zoller`; ensure tests remove `tmp-hostile-*`, `tmp-logs-debug-*`, and `tmp-test-oversized-*` scratch directories on success or failure; remove current scratch-directory litter; add the `tmp-` pattern to `.gitignore`; and pass `bun test` plus `bun run lint`.
@@ -124,7 +125,7 @@ task.
   - deps: T18
   - pr: 19
 
-- [R] T20 (standard) — Show snapshot freshness only when it is a signal
+- [x] T20 (standard) — Show snapshot freshness only when it is a signal
   - acceptance: In `src/public/app.js`, `src/public/styles.css`, and colocated tests: replace the always-visible `Snapshot <age> · <time>` line with a muted `Updated <local time>` (absolute time only, no ticking age) while the latest refresh succeeded within the active refresh interval; when the last successful snapshot is older than the interval, a refresh has failed, or refresh is paused (hidden tab), render instead a visibly classed `Stale · last good snapshot <age> (<time>) — <reason>` where reason is one of `refresh failed`, `paused`, `peer timed out`; clear back to `Updated …` on the next successful fetch; apply the same rule to the fleet strip's per-machine data-age cell (blank/muted within the interval, highlighted with the age beyond it); tests cover healthy → stale → healthy transitions and the three reasons (spec 7).
   - deps: T19
   - pr: 20

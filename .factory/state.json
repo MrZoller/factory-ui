@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T20",
-  "branch": "factory/t20-snapshot-freshness",
-  "pr": 20,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-16T19:39:11Z"
+  "updated": "2026-08-16T19:44:39Z"
 }

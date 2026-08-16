@@ -136,7 +136,7 @@ task.
   - deps: T20
   - pr: 21
 
-- [R] T22 (standard) — Give the dashboard a proper wordmark
+- [x] T22 (standard) — Give the dashboard a proper wordmark
   - acceptance: In `src/public/index.html`, `src/public/styles.css`, and colocated tests: replace the plain `<h1>` with a wordmark treatment — a display-weight system-font stack with tight tracking, two-tone or gradient text via `background-clip: text` with a solid-colour fallback, and a small inline SVG mark (no external fonts, images, or scripts; CSP unchanged) — that reads well in both light and dark themes and at narrow widths; the machine name / subtitle stays text-only and secondary; the document `<title>` and the `<h1>` text remain literal ("Factory"/product name) so screen readers and tabs are unchanged; tests assert the heading text and that no inline event handlers or external asset URLs were introduced (spec 3, 7, 8). Direction, not spec: modern, restrained, "control room" rather than "startup landing page"; Chris will redirect after seeing it.
   - deps: T21
   - pr: 22

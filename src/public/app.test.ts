@@ -723,111 +723,185 @@ describe("local dashboard rendering", () => {
     expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
   });
 
-  test("renders worklog entry heading with time as YYYY-MM-DD HH:MM UTC", () => {
+  test("renders the newest six worklog entries first, grouped by date, and expands the reader window", () => {
     const document = dashboardDocument();
+    const entries = Array.from({ length: 7 }, (_, index) => ({
+      date: index < 2 ? "2026-08-15" : "2026-08-16",
+      time: `0${index}:00`,
+      text: `- 2026-08-${index < 2 ? "15" : "16"} 0${index}:00 UTC - Entry ${index}. Remaining ${index}.`,
+    }));
     const repository = richRepository({
-      worklog: {
-        status: "available",
-        data: {
-          entries: [
-            {
-              date: "2026-08-16",
-              time: "14:30",
-              text: "- 2026-08-16 14:30 UTC - Timed entry",
-            },
-          ],
-        },
-        warnings: [],
-      },
+      worklog: { status: "available", data: { entries }, warnings: [] },
     });
 
-    renderFleet(
-      {
-        hostname: "mini",
-        generatedAt: "2026-08-16T12:00:00.000Z",
-        repositories: [repository],
-      },
-      document,
-      NOW,
-    );
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
 
-    const worklogPanel = document.querySelector(".worklog-panel")!;
-    const heading = worklogPanel.querySelector("h5")!;
-    expect(heading.textContent).toBe("2026-08-16 14:30 UTC");
-  });
-
-  test("renders worklog legacy entry heading as YYYY-MM-DD without time", () => {
-    const document = dashboardDocument();
-    const repository = richRepository({
-      worklog: {
-        status: "available",
-        data: {
-          entries: [
-            { date: "2026-08-16", text: "- 2026-08-16 UTC - Legacy entry" },
-          ],
-        },
-        warnings: [],
-      },
-    });
-
-    renderFleet(
-      {
-        hostname: "mini",
-        generatedAt: "2026-08-16T12:00:00.000Z",
-        repositories: [repository],
-      },
-      document,
-      NOW,
-    );
-
-    const worklogPanel = document.querySelector(".worklog-panel")!;
-    const heading = worklogPanel.querySelector("h5")!;
-    expect(heading.textContent).toBe("2026-08-16");
-  });
-
-  test("renders mixed legacy and timed worklog entries with correct headings", () => {
-    const document = dashboardDocument();
-    const repository = richRepository({
-      worklog: {
-        status: "available",
-        data: {
-          entries: [
-            {
-              date: "2026-08-14",
-              time: "09:00",
-              text: "- 2026-08-14 09:00 UTC - First timed",
-            },
-            { date: "2026-08-15", text: "- 2026-08-15 UTC - Second legacy" },
-            {
-              date: "2026-08-16",
-              time: "23:45",
-              text: "- 2026-08-16 23:45 UTC - Third timed",
-            },
-          ],
-        },
-        warnings: [],
-      },
-    });
-
-    renderFleet(
-      {
-        hostname: "mini",
-        generatedAt: "2026-08-16T12:00:00.000Z",
-        repositories: [repository],
-      },
-      document,
-      NOW,
-    );
-
-    const headings = Array.from(
-      document.querySelectorAll(".worklog-panel h5"),
-      (h) => h.textContent,
-    );
-    expect(headings).toEqual([
-      "2026-08-14 09:00 UTC",
-      "2026-08-15",
-      "2026-08-16 23:45 UTC",
+    const panel = document.querySelector(".worklog-panel")!;
+    expect(
+      Array.from(
+        panel.querySelectorAll(".worklog-entry"),
+        (entry) => entry.querySelector(".worklog-summary")?.textContent,
+      ),
+    ).toEqual([
+      "Entry 6.",
+      "Entry 5.",
+      "Entry 4.",
+      "Entry 3.",
+      "Entry 2.",
+      "Entry 1.",
     ]);
+    expect(
+      Array.from(
+        panel.querySelectorAll(".worklog-date"),
+        (date) => date.textContent,
+      ),
+    ).toEqual(["2026-08-16", "2026-08-15"]);
+    expect(
+      Array.from(
+        panel.querySelectorAll(".worklog-time"),
+        (time) => time.textContent,
+      ),
+    ).toEqual(["06:00", "05:00", "04:00", "03:00", "02:00", "01:00"]);
+    expect(
+      Array.from(
+        panel.querySelectorAll(".worklog-summary, .worklog-body"),
+        (node) => node.textContent,
+      ).join(" "),
+    ).not.toContain("UTC - Entry");
+    expect(panel.querySelector(".worklog-toggle")?.textContent).toBe(
+      "Show all 7",
+    );
+
+    panel.querySelector<HTMLButtonElement>(".worklog-toggle")!.click();
+    expect(panel.querySelectorAll(".worklog-entry")).toHaveLength(7);
+    expect(panel.querySelector(".worklog-toggle")?.textContent).toBe(
+      "Show newest 6",
+    );
+  });
+
+  test("renders worklog event chips, sentence bodies, raw fallbacks, and safe inline highlights", () => {
+    const document = dashboardDocument();
+    const sha = "0123456789abcdef0123456789abcdef01234567";
+    const events = [
+      ["Opened PR #12 for T27.", "opened PR"],
+      ["Merged the release.", "merged"],
+      ["Waiting for review.", "review wait"],
+      ["Parked review minors.", "parked minors"],
+      ["Reclassified T27 as major.", "reclassified"],
+      ["Escalated the decision.", "escalated"],
+      ["Filed question Q1.", "question filed"],
+      ["Documented the dashboard.", "other"],
+    ];
+    const entries = events.map(([sentence], index) => ({
+      date: "2026-08-16",
+      time: `0${index}:00`,
+      text: `- 2026-08-16 0${index}:00 UTC - ${sentence} Follow-up has T27, PR #12, issue #34, ${sha}, and \`literal code\`.`,
+    }));
+    entries.push({
+      date: "2026-08-15",
+      time: "09:00",
+      text: "not a worklog stamp <em>at all</em>",
+    });
+    const repository = richRepository({
+      repositoryUrl: "https://github.com/example/factory-ui",
+      worklog: { status: "available", data: { entries }, warnings: [] },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const panel = document.querySelector(".worklog-panel")!;
+    panel.querySelector<HTMLButtonElement>(".worklog-toggle")!.click();
+    const rendered = Array.from(panel.querySelectorAll(".worklog-entry"));
+    expect(
+      rendered
+        .slice(1)
+        .map(
+          (entry) => entry.querySelector(".worklog-event-chip")?.textContent,
+        ),
+    ).toEqual(events.map(([, event]) => event).reverse());
+    const opened = rendered[8]!;
+    expect(opened.querySelector(".worklog-summary")?.textContent).toBe(
+      "Opened PR #12 for T27.",
+    );
+    expect(opened.querySelector(".worklog-body")?.textContent).toContain(
+      "Follow-up has T27, PR #12, issue #34",
+    );
+    expect(opened.querySelector(".worklog-body")?.textContent).toContain(
+      "0123456",
+    );
+    expect(opened.querySelector(".worklog-body")?.textContent).not.toContain(
+      sha,
+    );
+    expect(
+      Array.from(
+        opened.querySelectorAll(".worklog-body code"),
+        (code) => code.textContent,
+      ),
+    ).toContain("literal code");
+    expect(opened.querySelector("details summary")?.textContent).toBe(
+      "Raw entry",
+    );
+    expect(opened.querySelector("details")?.open).toBe(false);
+    expect(opened.querySelector("details pre")?.textContent).toContain(sha);
+    expect(opened.querySelector("details pre")?.textContent).toContain("UTC -");
+    expect(
+      Array.from(
+        opened.querySelectorAll<HTMLAnchorElement>("a"),
+        (link) => link.href,
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        "https://github.com/example/factory-ui/blob/HEAD/.factory/plan.md",
+        "https://github.com/example/factory-ui/pull/12",
+        "https://github.com/example/factory-ui/issues/34",
+        `https://github.com/example/factory-ui/commit/${sha}`,
+      ]),
+    );
+    opened.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => {
+      expect(link.target).toBe("_blank");
+      expect(link.rel).toBe("noopener noreferrer");
+    });
+    const malformed = rendered[0]!;
+    expect(malformed.querySelector(".worklog-event-chip")?.textContent).toBe(
+      "other",
+    );
+    expect(malformed.querySelector(".worklog-summary")?.textContent).toBe(
+      "not a worklog stamp <em>at all</em>",
+    );
+    expect(malformed.querySelector(".worklog-body")).toBeNull();
+  });
+
+  test("keeps hostile worklog text inert and never invents remote links", () => {
+    const document = dashboardDocument();
+    const hostile =
+      '<script>globalThis.pwned=1</script> <a href="javascript:pwned=2">bad</a> https://example.invalid/x';
+    const repository = richRepository({
+      repositoryUrl: undefined,
+      worklog: {
+        status: "available",
+        data: {
+          entries: [
+            {
+              date: "2026-08-16",
+              time: "12:00",
+              text: `- 2026-08-16 12:00 UTC - ${hostile}. T27 PR #12 #34 0123456789abcdef0123456789abcdef01234567 \`<img onerror=pwned=3>\`.`,
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const panel = document.querySelector(".worklog-panel")!;
+    expect(panel.textContent).toContain(hostile);
+    expect(
+      panel.querySelectorAll(
+        "a, script, img, [href^='javascript:'], [onerror]",
+      ),
+    ).toHaveLength(0);
+    expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
   });
 
   test("renders partial and unavailable sources without hiding usable data", () => {

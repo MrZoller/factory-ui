@@ -5,7 +5,7 @@
   "plan_approved": true,
   "current_task": "T8",
   "branch": "factory/t8-safe-dashboard",
-  "pr": null,
-  "hold": false,
-  "updated": "2026-08-16T10:56:49Z"
+  "pr": 8,
+  "hold": true,
+  "updated": "2026-08-16T11:22:07Z"
 }

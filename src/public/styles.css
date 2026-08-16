@@ -1,0 +1,50 @@
+:root {
+  color-scheme: dark;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: #111816;
+  color: #e7eee9;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  width: min(70rem, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 3rem 0;
+}
+
+.eyebrow,
+.phase {
+  color: #8ec5a9;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.repository-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.repository {
+  padding: 1.25rem;
+  border: 1px solid #385047;
+  border-radius: 0.5rem;
+  background: #17211e;
+}
+
+.repository h3,
+.repository p {
+  overflow-wrap: anywhere;
+}
+
+.unavailable,
+#error {
+  color: #ffad8a;
+}
+
+.warning {
+  color: #d0bda7;
+}

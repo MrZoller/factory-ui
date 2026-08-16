@@ -31,15 +31,26 @@ export interface AppConfig extends AppConfigSource {
   developmentOrigins: string[];
 }
 
+export const LIVENESS_STATES = ["RUNNING", "STOPPED", "CANNOT_VERIFY"] as const;
+
+export type LivenessState = (typeof LIVENESS_STATES)[number];
+
+export interface LivenessSnapshot {
+  state: LivenessState;
+  checkedAt: string;
+}
+
 export type RepositorySnapshot =
   | {
       name: string;
+      liveness: LivenessSnapshot;
       status: "available";
       project: string;
       phase: FactoryPhase;
     }
   | {
       name: string;
+      liveness: LivenessSnapshot;
       status: "unavailable";
       warning: string;
     };

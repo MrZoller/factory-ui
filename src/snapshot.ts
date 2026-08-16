@@ -9,6 +9,7 @@ import {
   type RepositorySource,
   type RepositorySnapshot,
 } from "./contracts";
+import { checkRepositoryLiveness } from "./liveness";
 import { resolveFactoryPath } from "./paths";
 
 export const MAX_STATE_BYTES = 64 * 1024;
@@ -61,12 +62,17 @@ async function readValidatedStateFile(
 
 export async function readRepositorySnapshot(
   repository: RepositorySource,
+  readLiveness: typeof checkRepositoryLiveness = checkRepositoryLiveness,
 ): Promise<RepositorySnapshot> {
+  const livenessPromise = readLiveness(repository.path);
   const unavailable = (warning: string): RepositorySnapshot => ({
     name: repository.name,
+    liveness: awaitLiveness,
     status: "unavailable",
     warning,
   });
+
+  const awaitLiveness = await livenessPromise;
 
   try {
     const path = await resolveFactoryPath(repository.path, "state");
@@ -93,6 +99,7 @@ export async function readRepositorySnapshot(
 
     return {
       name: repository.name,
+      liveness: awaitLiveness,
       status: "available",
       project: value.project,
       phase: value.phase,
@@ -104,11 +111,14 @@ export async function readRepositorySnapshot(
 
 export async function createFleetSnapshot(
   config: AppConfigSource,
+  readLiveness: typeof checkRepositoryLiveness = checkRepositoryLiveness,
 ): Promise<FleetSnapshot> {
   return {
     hostname: config.machine,
     repositories: await Promise.all(
-      config.repositories.map(readRepositorySnapshot),
+      config.repositories.map((repository) =>
+        readRepositorySnapshot(repository, readLiveness),
+      ),
     ),
     peers: config.peers,
   };

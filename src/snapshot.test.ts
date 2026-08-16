@@ -50,6 +50,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "available",
         project: "test-project",
         phase: "build",
@@ -64,6 +68,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json is missing",
       });
@@ -85,6 +93,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json is too large",
       });
@@ -104,6 +116,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json has invalid project or phase data",
       });
@@ -123,6 +139,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "available",
         project: "   ",
         phase: "build",
@@ -143,6 +163,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json has invalid project or phase data",
       });
@@ -162,6 +186,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json has invalid project or phase data",
       });
@@ -180,6 +208,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json has invalid project or phase data",
       });
@@ -198,6 +230,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json has invalid project or phase data",
       });
@@ -213,6 +249,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json could not be read",
       });
@@ -228,6 +268,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json has invalid project or phase data",
       });
@@ -244,6 +288,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json could not be read",
       });
@@ -259,6 +307,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json has invalid project or phase data",
       });
@@ -274,6 +326,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json has invalid project or phase data",
       });
@@ -293,6 +349,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "available",
         project: "x".repeat(MAX_PROJECT_LENGTH),
         phase: "build",
@@ -313,6 +373,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json has invalid project or phase data",
       });
@@ -332,6 +396,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json has invalid project or phase data",
       });
@@ -351,6 +419,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json has invalid project or phase data",
       });
@@ -375,6 +447,10 @@ describe("snapshot", () => {
 
         expect(result).toEqual({
           name: "test-repo",
+          liveness: {
+            state: "CANNOT_VERIFY",
+            checkedAt: expect.any(String),
+          },
           status: "available",
           project: "test-project",
           phase,
@@ -390,6 +466,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json is missing",
       });
@@ -453,12 +533,20 @@ describe("snapshot", () => {
         repositories: [
           {
             name: "repo1",
+            liveness: {
+              state: "CANNOT_VERIFY",
+              checkedAt: expect.any(String),
+            },
             status: "available",
             project: "project1",
             phase: "build",
           },
           {
             name: "repo2",
+            liveness: {
+              state: "CANNOT_VERIFY",
+              checkedAt: expect.any(String),
+            },
             status: "available",
             project: "project2",
             phase: "plan",
@@ -494,12 +582,20 @@ describe("snapshot", () => {
       expect(result.repositories).toHaveLength(2);
       expect(result.repositories[0]).toEqual({
         name: "repo1",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "available",
         project: "project1",
         phase: "build",
       });
       expect(result.repositories[1]).toEqual({
         name: "repo2",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json is missing",
       });
@@ -519,6 +615,10 @@ describe("snapshot", () => {
       expect(result.repositories).toHaveLength(1);
       expect(result.repositories[0]).toEqual({
         name: "repo1",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json could not be read",
       });
@@ -563,6 +663,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json could not be read",
       });
@@ -584,6 +688,10 @@ describe("snapshot", () => {
 
       expect(result).toEqual({
         name: "test-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json could not be read",
       });
@@ -619,12 +727,20 @@ describe("snapshot", () => {
       expect(result.repositories).toHaveLength(2);
       expect(result.repositories[0]).toEqual({
         name: "clean-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "available",
         project: "clean",
         phase: "build",
       });
       expect(result.repositories[1]).toEqual({
         name: "escaped-repo",
+        liveness: {
+          state: "CANNOT_VERIFY",
+          checkedAt: expect.any(String),
+        },
         status: "unavailable",
         warning: "state.json could not be read",
       });

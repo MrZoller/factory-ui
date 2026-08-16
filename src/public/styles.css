@@ -1,8 +1,12 @@
 :root {
   color-scheme: dark;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  background: #111816;
+  background: #0c1211;
   color: #e7eee9;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
@@ -10,41 +14,251 @@ body {
 }
 
 main {
-  width: min(70rem, calc(100% - 2rem));
+  width: min(92rem, calc(100% - 2rem));
   margin: 0 auto;
-  padding: 3rem 0;
+  padding: 2.5rem 0 4rem;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+p {
+  margin-top: 0;
 }
 
 .eyebrow,
-.phase {
-  color: #8ec5a9;
+.age,
+.task-size,
+.task-deps,
+.empty {
+  color: #9aaba4;
+}
+
+.eyebrow,
+.status,
+.liveness,
+.task-size {
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
-.repository-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: 1rem;
-}
-
-.repository {
-  padding: 1.25rem;
-  border: 1px solid #385047;
-  border-radius: 0.5rem;
-  background: #17211e;
-}
-
-.repository h3,
-.repository p {
-  overflow-wrap: anywhere;
-}
-
+#error,
 .unavailable,
-#error {
+.blocked-work h4 {
   color: #ffad8a;
 }
 
-.warning {
-  color: #d0bda7;
+.repository-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.repository {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid #385047;
+  border-radius: 0.75rem;
+  background: #121b18;
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 20%);
+}
+
+.repository > header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.25rem 0.25rem 0.5rem;
+  border-bottom: 1px solid #385047;
+}
+
+.repository h3,
+.repository p,
+.repository dd,
+.repository li,
+.repository pre {
+  overflow-wrap: anywhere;
+}
+
+.status,
+.liveness {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.available,
+.running,
+.runnable-work h4 {
+  color: #78d9a6;
+}
+
+.unavailable,
+.unknown,
+.warnings-panel h4 {
+  color: #f2b17f;
+}
+
+.stopped,
+.completed-work h4 {
+  color: #94aaa1;
+}
+
+.review-work h4,
+.current-panel h4 {
+  color: #8fb9ff;
+}
+
+.active-work h4,
+.questions-panel h4 {
+  color: #dfb8ff;
+}
+
+.panel {
+  grid-column: span 4;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid #2d4039;
+  border-radius: 0.5rem;
+  background: #17231f;
+}
+
+.current-panel,
+.logs-panel,
+.questions-panel,
+.worklog-panel,
+.warnings-panel {
+  grid-column: span 6;
+}
+
+.panel h4 {
+  margin-bottom: 0.8rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) 1fr;
+  gap: 0.35rem 0.75rem;
+  margin: 0;
+}
+
+.facts dt {
+  color: #9aaba4;
+}
+
+.facts dd {
+  min-width: 0;
+  margin: 0;
+}
+
+a {
+  color: #9fc4ff;
+  text-underline-offset: 0.2em;
+}
+
+a:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 0.2rem;
+}
+
+.task-list,
+.warnings-panel ul {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.25rem 0.6rem;
+}
+
+.task-id {
+  color: #f4d58d;
+  font-weight: 700;
+}
+
+.task-deps {
+  grid-column: 2 / -1;
+  font-size: 0.78rem;
+}
+
+.text-entry + .text-entry {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #2d4039;
+}
+
+.text-entry h5,
+.entry-title {
+  margin-bottom: 0.35rem;
+}
+
+.verbatim {
+  max-height: 18rem;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: inherit;
+  color: #dbe5df;
+}
+
+.narration {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border-left: 3px solid #587568;
+  background: #101815;
+}
+
+@media (max-width: 64rem) {
+  .panel,
+  .current-panel,
+  .logs-panel,
+  .questions-panel,
+  .worklog-panel,
+  .warnings-panel {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 42rem) {
+  main {
+    width: min(100% - 1rem, 92rem);
+    padding-top: 1rem;
+  }
+
+  .repository {
+    display: block;
+    padding: 0.75rem;
+  }
+
+  .repository > header,
+  .panel {
+    margin-bottom: 0.75rem;
+  }
+
+  .repository > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .facts {
+    grid-template-columns: 1fr;
+  }
+
+  .facts dd {
+    margin-bottom: 0.5rem;
+  }
 }

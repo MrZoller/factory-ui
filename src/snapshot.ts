@@ -77,13 +77,34 @@ export async function readRepositoryFactorySnapshot(
   const state =
     data.state.status === "unavailable" ? undefined : data.state.data;
   const available = state?.project !== undefined && state.phase !== undefined;
+  const prUrl = createPullRequestUrl(repository.githubUrl, state?.pr);
   return {
     ...data,
     status: available ? "available" : "unavailable",
     ...(available
       ? { project: state.project, phase: state.phase }
       : { warning: "repository state is unavailable" }),
+    ...(prUrl === undefined ? {} : { prUrl }),
   };
+}
+
+function createPullRequestUrl(
+  githubUrl: string | undefined,
+  pr: number | null | undefined,
+): string | undefined {
+  if (
+    githubUrl === undefined ||
+    !Number.isSafeInteger(pr) ||
+    pr === undefined ||
+    pr === null ||
+    pr < 1 ||
+    !/^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+$/.test(
+      githubUrl,
+    )
+  ) {
+    return undefined;
+  }
+  return `${githubUrl}/pull/${pr}`;
 }
 
 export async function createFactoryFleetData(

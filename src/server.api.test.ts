@@ -91,7 +91,13 @@ describe("versioned read-only API", () => {
     fixture.writeShepherdLog("shepherd-20260816-114000.log", "review\n");
 
     const handler = createRequestHandler(
-      config([{ name: "factory-ui", path: fixture.root }]),
+      config([
+        {
+          name: "factory-ui",
+          path: fixture.root,
+          githubUrl: "https://github.com/example/factory-ui",
+        },
+      ]),
       { now: () => generatedAt },
     );
     const response = await handler(
@@ -105,6 +111,7 @@ describe("versioned read-only API", () => {
     expect(body.hostname).toBe("mini");
     expect(body.name).toBe("factory-ui");
     expect(body.status).toBe("available");
+    expect(body.prUrl).toBe("https://github.com/example/factory-ui/pull/17");
     expect(body.state.data).toMatchObject({
       project: "factory-ui",
       phase: "build",
@@ -309,6 +316,65 @@ describe("versioned read-only API", () => {
 
     const staticPage = await handler(new Request("http://localhost/"));
     expect(staticPage.status).toBe(200);
-    expect(await staticPage.text()).toContain('<script src="/app.js" defer>');
+    expect(await staticPage.text()).toContain(
+      '<script src="/app.js" type="module">',
+    );
+  });
+
+  test("applies restrictive CSP, nosniff, referrer policy on HTML page", async () => {
+    const handler = createRequestHandler(config([]));
+    const response = await handler(new Request("http://localhost/"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' http://127.0.0.1:7777 http://100.100.0.2:7777 http://localhost:3000; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    );
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("content-type")).toBe(
+      "text/html; charset=utf-8",
+    );
+  });
+
+  test("applies restrictive CSP on JS response", async () => {
+    const handler = createRequestHandler(config([]));
+    const response = await handler(new Request("http://localhost/app.js"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' http://127.0.0.1:7777 http://100.100.0.2:7777 http://localhost:3000; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    );
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("content-type")).toBe(
+      "text/javascript; charset=utf-8",
+    );
+  });
+
+  test("applies restrictive CSP on CSS response", async () => {
+    const handler = createRequestHandler(config([]));
+    const response = await handler(new Request("http://localhost/styles.css"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' http://127.0.0.1:7777 http://100.100.0.2:7777 http://localhost:3000; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    );
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("content-type")).toBe(
+      "text/css; charset=utf-8",
+    );
+  });
+
+  test("index.html uses type=module for script and links to styles.css", async () => {
+    const handler = createRequestHandler(config([]));
+    const response = await handler(new Request("http://localhost/"));
+    const html = await response.text();
+
+    expect(html).toContain('<script src="/app.js" type="module">');
+    expect(html).toContain('<link rel="stylesheet" href="/styles.css" />');
+    expect(html).not.toContain("innerHTML");
+    expect(html).not.toContain("onload=");
+    expect(html).not.toContain("onclick=");
   });
 });

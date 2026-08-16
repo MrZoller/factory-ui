@@ -153,6 +153,35 @@ p {
   background: #121b18;
 }
 
+.repository-summary {
+  width: 100%;
+  border-collapse: collapse;
+  background: #121b18;
+}
+
+.repository-summary-scroll {
+  margin: 1rem 0;
+}
+
+.repository-summary th,
+.repository-summary td {
+  padding: 0.7rem 0.8rem;
+  border-bottom: 1px solid #2d4039;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.repository-summary thead th {
+  color: #9aaba4;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.repository-summary tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
 #fleet-summary th,
 #fleet-summary td {
   padding: 0.75rem 0.9rem;
@@ -204,6 +233,48 @@ p {
 .machine-tab:focus-visible {
   outline: 2px solid #9fc4ff;
   outline-offset: -2px;
+}
+
+.repository-tabs {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  margin-top: 1rem;
+  border-bottom: 1px solid #385047;
+}
+
+.repository-tab {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 0.5rem 0.5rem 0 0;
+  background: transparent;
+  color: #9aaba4;
+  font: inherit;
+  cursor: pointer;
+}
+
+.repository-tab[aria-selected="true"] {
+  border-color: #385047;
+  background: #17231f;
+  color: #e7eee9;
+}
+
+.repository-tab:focus-visible {
+  outline: 2px solid #9fc4ff;
+  outline-offset: -2px;
+}
+
+.repository-panel {
+  padding-top: 0.75rem;
+}
+
+.repository-panel[hidden] {
+  display: none;
 }
 
 .tab-name {
@@ -435,6 +506,20 @@ a:focus-visible {
 
   #fleet-summary th:first-child,
   #fleet-summary td:first-child {
+    position: sticky;
+    left: 0;
+    min-width: 9rem;
+    background: #121b18;
+  }
+
+  .repository-summary th,
+  .repository-summary td {
+    min-width: 8rem;
+    padding: 0.65rem;
+  }
+
+  .repository-summary th:first-child,
+  .repository-summary td:first-child {
     position: sticky;
     left: 0;
     min-width: 9rem;

@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T15",
+  "branch": "factory/t15-agent-routing",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-16T16:38:00Z"
+  "updated": "2026-08-16T16:39:33Z"
 }

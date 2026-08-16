@@ -6,7 +6,16 @@ import {
   MAX_CONCURRENT_PEER_FETCHES,
   PEER_FETCH_TIMEOUT_MS,
   renderFleet,
+  UNKNOWN_WARNING_EXPLANATION,
+  WARNING_EXPLANATIONS,
 } from "./app.js";
+import { COSTS_WARNING_CODES } from "../readers/costs";
+import { LOGS_WARNING_CODES } from "../readers/logs";
+import { PLAN_WARNING_CODES } from "../readers/plan";
+import { QUESTIONS_WARNING_CODES } from "../readers/questions";
+import { ROUTING_WARNING_CODES } from "../readers/routing";
+import { STATE_WARNING_CODES } from "../readers/state";
+import { WORKLOG_WARNING_CODES } from "../readers/worklog";
 
 const NOW = new Date("2026-08-16T12:00:00.000Z");
 
@@ -340,7 +349,7 @@ describe("local dashboard rendering", () => {
       "Open questions": "panel-span-6",
       "Recent worklog": "panel-span-4",
       "Driver activity": "panel-span-4",
-      Warnings: "panel-span-4",
+      "Warnings · 1 · from this snapshot": "panel-span-4",
     });
     const task = card.querySelector(".task")!;
     expect(
@@ -468,9 +477,9 @@ describe("local dashboard rendering", () => {
       summaryRow(document, "mini")?.querySelector(".cost-total")?.textContent,
     ).toBe("Unavailable");
     expect(
-      Array.from(document.querySelectorAll(".warnings-panel")).some((panel) =>
-        panel.textContent?.includes("costs: COSTS_MISSING"),
-      ),
+      Array.from(
+        document.querySelectorAll(".warnings-panel .warning-code"),
+      ).some((code) => code.textContent === "COSTS_MISSING"),
     ).toBe(true);
   });
 
@@ -1067,6 +1076,235 @@ describe("local dashboard rendering", () => {
     expect(document.querySelector("#error")?.textContent).toBe(
       "Request failed (503)",
     );
+  });
+});
+
+describe("actionable warnings", () => {
+  test("explains every warning code exported by the seven readers", () => {
+    const readerWarningCodes = [
+      PLAN_WARNING_CODES,
+      WORKLOG_WARNING_CODES,
+      QUESTIONS_WARNING_CODES,
+      STATE_WARNING_CODES,
+      LOGS_WARNING_CODES,
+      ROUTING_WARNING_CODES,
+      COSTS_WARNING_CODES,
+    ].flat();
+
+    expect(readerWarningCodes).not.toHaveLength(0);
+    for (const code of readerWarningCodes) {
+      expect(WARNING_EXPLANATIONS[code]).toMatch(/\.$/);
+    }
+  });
+
+  test("groups identical source/code/line warnings, sorts rows, and shows their locations", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      plan: {
+        status: "partial",
+        data: richRepository().plan.data,
+        warnings: [
+          {
+            code: "PLAN_MALFORMED_TASK",
+            message: "bad task",
+            line: 12,
+            excerpt: "- [?] T12 — malformed",
+          },
+          {
+            code: "PLAN_MALFORMED_TASK",
+            message: "same warning again",
+            line: 12,
+            excerpt: "a different message does not make a new row",
+          },
+          {
+            code: "PLAN_MISSING_DEPS",
+            message: "missing deps",
+            line: 3,
+            excerpt: "- [ ] T3 (standard) — Needs dependencies",
+          },
+        ],
+      },
+      questions: {
+        status: "partial",
+        data: { open: [] },
+        warnings: [
+          {
+            code: "QUESTIONS_MALFORMED_ENTRY",
+            message: "bad question",
+            line: 2,
+            excerpt: "## Q1 malformed",
+          },
+        ],
+      },
+      worklog: {
+        status: "partial",
+        data: { entries: [] },
+        warnings: [
+          {
+            code: "WORKLOG_MALFORMED_ENTRY",
+            message: "bad worklog",
+            line: 1,
+            excerpt: "- malformed",
+          },
+        ],
+      },
+      logs: {
+        status: "available",
+        data: richRepository().logs.data,
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const panel = document.querySelector(".warnings-panel")!;
+    expect(panel.querySelector("summary")?.textContent).toBe(
+      "Warnings · 4 · from this snapshot",
+    );
+    const rows = Array.from(
+      panel.querySelectorAll<HTMLElement>(".warning-row"),
+    );
+    expect(
+      rows.map((row) => row.querySelector(".warning-source")?.textContent),
+    ).toEqual(["plan", "plan", "questions", "worklog"]);
+    expect(
+      rows.map((row) => row.querySelector(".warning-line")?.textContent),
+    ).toEqual(["line 3", "line 12", "line 2", "line 1"]);
+    expect(rows[1]?.querySelector(".warning-count")?.textContent).toBe("×2");
+    expect(rows[1]?.querySelector(".warning-excerpt")?.textContent).toBe(
+      "- [?] T12 — malformed",
+    );
+    expect(rows[0]?.querySelector(".warning-explanation")?.textContent).toBe(
+      WARNING_EXPLANATIONS.PLAN_MISSING_DEPS,
+    );
+  });
+
+  test("opens only for non-hygiene warnings, unavailable sources, truncation, or top-level warnings", () => {
+    const renderDetails = (overrides: Record<string, unknown>) => {
+      const document = dashboardDocument();
+      renderFleet(
+        fleet("mini", [], [richRepository(overrides)]),
+        document,
+        NOW,
+      );
+      return document.querySelector<HTMLDetailsElement>(
+        ".warnings-panel details",
+      )!;
+    };
+
+    expect(
+      renderDetails({
+        plan: {
+          status: "partial",
+          data: richRepository().plan.data,
+          warnings: [{ code: "PLAN_MALFORMED_TASK", message: "bad", line: 1 }],
+        },
+        worklog: {
+          status: "partial",
+          data: { entries: [] },
+          warnings: [
+            { code: "WORKLOG_MALFORMED_ENTRY", message: "bad", line: 2 },
+          ],
+        },
+        logs: {
+          status: "available",
+          data: richRepository().logs.data,
+          warnings: [],
+        },
+      }).open,
+    ).toBe(false);
+    expect(
+      renderDetails({
+        plan: {
+          status: "unavailable",
+          warnings: [{ code: "PLAN_MISSING", message: "missing" }],
+        },
+        logs: {
+          status: "available",
+          data: richRepository().logs.data,
+          warnings: [],
+        },
+      }).open,
+    ).toBe(true);
+    expect(
+      renderDetails({
+        plan: {
+          status: "partial",
+          data: richRepository().plan.data,
+          warnings: [{ code: "WARNINGS_TRUNCATED", message: "omitted" }],
+        },
+        logs: {
+          status: "available",
+          data: richRepository().logs.data,
+          warnings: [],
+        },
+      }).open,
+    ).toBe(true);
+    const topLevelDetails = renderDetails({
+      warning: "repository is incomplete",
+      plan: {
+        status: "partial",
+        data: richRepository().plan.data,
+        warnings: [{ code: "PLAN_MALFORMED_TASK", message: "bad", line: 1 }],
+      },
+      logs: {
+        status: "available",
+        data: richRepository().logs.data,
+        warnings: [],
+      },
+    });
+    expect(topLevelDetails.open).toBe(true);
+    expect(topLevelDetails.querySelector(".warning-excerpt")?.textContent).toBe(
+      "repository is incomplete",
+    );
+  });
+
+  test("uses the unknown fallback and keeps hostile excerpts inert text", () => {
+    const document = dashboardDocument();
+    const hostile = `<img src=x onerror="globalThis.warningPwned=1">\u0001${"x".repeat(151)}…`;
+    expect(Array.from(hostile)).toHaveLength(200);
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            plan: {
+              status: "partial",
+              data: richRepository().plan.data,
+              warnings: [
+                {
+                  code: "FUTURE_WARNING",
+                  message: "unknown",
+                  line: 9,
+                  excerpt: hostile,
+                },
+              ],
+            },
+            logs: {
+              status: "available",
+              data: richRepository().logs.data,
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const panel = document.querySelector(".warnings-panel")!;
+    expect(panel.querySelector(".warning-explanation")?.textContent).toBe(
+      UNKNOWN_WARNING_EXPLANATION,
+    );
+    expect(panel.querySelector(".warning-excerpt")?.textContent).toBe(hostile);
+    expect(
+      panel.querySelectorAll("img, script, [onerror], [src]"),
+    ).toHaveLength(0);
+    expect(
+      (globalThis as Record<string, unknown>).warningPwned,
+    ).toBeUndefined();
+    expect(panel.querySelector<HTMLDetailsElement>("details")?.open).toBe(true);
   });
 });
 

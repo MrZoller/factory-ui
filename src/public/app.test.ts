@@ -783,7 +783,7 @@ describe("local dashboard rendering", () => {
     const document = dashboardDocument();
     const sha = "0123456789abcdef0123456789abcdef01234567";
     const events = [
-      ["Opened PR #12 for T27.", "opened PR"],
+      ["T27 implemented and opened as PR #12.", "opened PR"],
       ["Merged the release.", "merged"],
       ["Waiting for review.", "review wait"],
       ["Parked review minors.", "parked minors"],
@@ -821,7 +821,7 @@ describe("local dashboard rendering", () => {
     ).toEqual(events.map(([, event]) => event).reverse());
     const opened = rendered[8]!;
     expect(opened.querySelector(".worklog-summary")?.textContent).toBe(
-      "Opened PR #12 for T27.",
+      "T27 implemented and opened as PR #12.",
     );
     expect(opened.querySelector(".worklog-body")?.textContent).toContain(
       "Follow-up has T27, PR #12, issue #34",

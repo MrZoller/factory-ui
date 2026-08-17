@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T34",
-  "branch": "factory/t34-review-metrics",
-  "pr": 38,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-17T05:23:23Z"
+  "updated": "2026-08-17T05:29:45Z"
 }

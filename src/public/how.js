@@ -212,9 +212,8 @@ function renderRole(documentRoot, role, routing, fleet) {
 function renderOperators(documentRoot) {
   const lane = element(documentRoot, "section", undefined, "operators-lane");
   lane.tabIndex = 0;
-  lane.setAttribute("aria-labelledby", "operators-title");
+  lane.setAttribute("aria-label", "Operators");
   const title = element(documentRoot, "h3", "Operators");
-  title.id = "operators-title";
   const nodes = element(documentRoot, "ol", undefined, "operator-nodes");
   for (const operator of OPERATORS) {
     const node = element(documentRoot, "li", undefined, "operator-node");

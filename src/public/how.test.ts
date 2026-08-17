@@ -163,6 +163,8 @@ describe("how factory works page", () => {
 
     const lane = document.querySelector<HTMLElement>(".operators-lane")!;
     expect(lane.tabIndex).toBe(0);
+    expect(lane.getAttribute("aria-label")).toBe("Operators");
+    expect(document.querySelector("#operators-title")).toBeNull();
     expect(
       Array.from(
         lane.querySelectorAll<HTMLElement>(".operator-node"),

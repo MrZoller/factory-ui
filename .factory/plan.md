@@ -172,6 +172,8 @@ task.
 - [!] T31 (trivial) — parked review minors (batch)
   - Extend `WORKLOG_EVENT_PATTERNS` review-wait matching to recognize canonical verdict-pending and in-flight wording so those worklog entries receive the `review wait` chip rather than `other` (PR #27 review).
   - Use own-property warning-explanation lookups so a future or hostile prototype-named warning code renders the generic unknown-code explanation (PR #28 review).
+  - Clear stale worklog-entry disclosure keys when an empty or unavailable worklog snapshot intervenes, so a later same-key entry does not inherit an obsolete open state (PR #33 review).
+  - Do not persist an automatic warnings-panel default as a user disclosure choice; preserve only an actual user toggle (PR #33 review).
   - deps: none
 
 - [x] T28 (standard) — Make the warnings panel actionable: grouped, located, explained, and explicitly current-as-of-snapshot
@@ -199,7 +201,7 @@ task.
   - deps: T23
   - pr: 32
 
-- [R] T36 (standard) — Disclosure state survives refresh: worklog show-all, entry details, warnings panel
+- [x] T36 (standard) — Disclosure state survives refresh: worklog show-all, entry details, warnings panel
   - acceptance: In `src/public/app.js` and colocated tests: a per-document, per-repository UI-state store (keyed by machine + repository name, kept for the page's lifetime, never persisted or sent anywhere) records every user-operated disclosure — the worklog "Show all N / Show newest k" toggle, each worklog entry's `<details>` open state (keyed by the entry's date+time stamp), and the warnings panel's `<details>` open state — and every re-render (auto-refresh, manual refresh, peer fan-out re-install) restores it instead of resetting; a state whose key no longer exists after a refresh (an entry that scrolled out of the 20-entry window) is dropped silently; the T20/T21/T27/T28 defaults apply only when no user choice is recorded; tests drive `renderFleet` twice with the same fixture and assert the toggle label, aria-expanded, and details open state carry over, that a changed default (warnings switching to error-state auto-open) does not override a recorded user choice, and that keys are per repository (two repos' toggles independent) (spec 7; T19, T27, T28).
   - deps: T28
   - pr: 33

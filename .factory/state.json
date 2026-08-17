@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T36",
-  "branch": "factory/t36-disclosure-state",
-  "pr": 33,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-17T02:55:07Z"
+  "updated": "2026-08-17T03:08:49Z"
 }

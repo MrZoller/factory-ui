@@ -745,6 +745,105 @@ describe("local dashboard rendering", () => {
     );
   });
 
+  test("renders safe factory document links beneath the project and on every plan-backed heading", () => {
+    const document = dashboardDocument();
+    const base = "https://github.com/example/factory-ui/blob/HEAD/.factory";
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            repositoryUrl: undefined,
+            branchUrl: undefined,
+            prUrl: undefined,
+            specUrl: `${base}/spec.md`,
+            planUrl: `${base}/plan.md`,
+            worklogUrl: `${base}/worklog.md`,
+            questionsUrl: `${base}/questions.md`,
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const current = document.querySelector(".current-panel")!;
+    const documentLinks = current.querySelector(".factory-document-links")!;
+    expect(documentLinks.textContent).toBe("spec · plan · worklog · questions");
+    expect(
+      Array.from(
+        documentLinks.querySelectorAll<HTMLAnchorElement>("a"),
+        (link) => [link.textContent, link.href],
+      ),
+    ).toEqual([
+      ["spec", `${base}/spec.md`],
+      ["plan", `${base}/plan.md`],
+      ["worklog", `${base}/worklog.md`],
+      ["questions", `${base}/questions.md`],
+    ]);
+    expect(documentLinks.classList).toContain("muted");
+
+    const planHeadings = [
+      "Active",
+      "In review",
+      "Next runnable",
+      "Blocked",
+      "Completed",
+    ];
+    for (const title of planHeadings) {
+      const heading = Array.from(document.querySelectorAll(".panel h4")).find(
+        (element) => element.textContent === title,
+      )!;
+      expect(heading.querySelector("a")?.href).toBe(`${base}/plan.md`);
+    }
+    expect(
+      document.querySelector<HTMLAnchorElement>(".worklog-panel h4 a")?.href,
+    ).toBe(`${base}/worklog.md`);
+    expect(
+      document.querySelector<HTMLAnchorElement>(".questions-panel h4 a")?.href,
+    ).toBe(`${base}/questions.md`);
+    document.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => {
+      expect(link.target).toBe("_blank");
+      expect(link.rel).toBe("noopener noreferrer");
+    });
+  });
+
+  test("does not anchor absent or hostile factory document URLs", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            repositoryUrl: undefined,
+            branchUrl: undefined,
+            prUrl: undefined,
+            specUrl:
+              "https://github.com/example/factory-ui/blob/HEAD/.factory/spec.md?redirect=evil",
+            planUrl:
+              "https://github.com@example.invalid/factory-ui/blob/HEAD/.factory/plan.md",
+            worklogUrl: "javascript:alert(1)",
+            questionsUrl: undefined,
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    expect(document.querySelector(".factory-document-links a")).toBeNull();
+    expect(document.querySelector(".factory-document-links")?.textContent).toBe(
+      "spec · plan · worklog · questions",
+    );
+    expect(
+      document.querySelectorAll(
+        ".active-work h4 a, .review-work h4 a, .runnable-work h4 a, .blocked-work h4 a, .completed-work h4 a, .worklog-panel h4 a, .questions-panel h4 a",
+      ),
+    ).toHaveLength(0);
+  });
+
   test("keeps hostile repository-derived strings literal and inert", () => {
     const document = dashboardDocument();
     const hostile =

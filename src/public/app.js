@@ -104,10 +104,16 @@ function displayDuration(milliseconds) {
   return `${hours}h ${minutes % 60}m`;
 }
 
-function addPanel(card, title, className, spanClass) {
+function addPanel(card, title, className, spanClass, titleUrl, titleUrlKind) {
   const section = card.ownerDocument.createElement("section");
   section.className = `panel ${className} ${spanClass}`;
-  appendText(section, "h4", title);
+  const heading = section.ownerDocument.createElement("h4");
+  if (titleUrlKind) {
+    appendExternalOrText(heading, title, titleUrl, titleUrlKind);
+  } else {
+    heading.textContent = title;
+  }
+  section.append(heading);
   card.append(section);
   return section;
 }
@@ -129,6 +135,11 @@ function safeGithubUrl(value, kind) {
     commit:
       /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/commit\/[0-9a-fA-F]{40}$/,
     plan: /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/blob\/HEAD\/\.factory\/plan\.md$/,
+    spec: /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/blob\/HEAD\/\.factory\/spec\.md$/,
+    worklog:
+      /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/blob\/HEAD\/\.factory\/worklog\.md$/,
+    questions:
+      /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/blob\/HEAD\/\.factory\/questions\.md$/,
   };
   const match = typeof value === "string" ? patterns[kind]?.exec(value) : null;
   if (
@@ -295,6 +306,20 @@ function renderCurrent(card, repository) {
     repository.repositoryUrl,
     "repository",
   );
+  const documentLinks = list.ownerDocument.createElement("p");
+  documentLinks.className = "factory-document-links muted";
+  const documents = [
+    ["spec", repository.specUrl, "spec"],
+    ["plan", repository.planUrl, "plan"],
+    ["worklog", repository.worklogUrl, "worklog"],
+    ["questions", repository.questionsUrl, "questions"],
+  ];
+  documents.forEach(([label, url, kind], index) => {
+    if (index > 0)
+      documentLinks.append(documentLinks.ownerDocument.createTextNode(" · "));
+    appendExternalOrText(documentLinks, label, url, kind);
+  });
+  projectDefinition.append(documentLinks);
   list.append(projectDefinition);
   addDefinition(list, "Phase", repository.phase ?? state?.phase ?? "Unknown");
   addDefinition(list, "Task", displayOptional(state?.currentTask));
@@ -414,7 +439,14 @@ function renderTasks(card, repository) {
   const plan = readerData(repository.plan);
   const costs = readerData(repository.costs)?.tasks;
   for (const [title, key, className, spanClass] of TASK_GROUPS) {
-    const panel = addPanel(card, title, className, spanClass);
+    const panel = addPanel(
+      card,
+      title,
+      className,
+      spanClass,
+      repository.planUrl,
+      "plan",
+    );
     if (!plan) {
       appendText(panel, "p", "Unavailable", "unavailable");
       continue;
@@ -438,6 +470,8 @@ function renderQuestions(card, repository) {
     "Open questions",
     "questions-panel",
     "panel-span-6",
+    repository.questionsUrl,
+    "questions",
   );
   const open = readerData(repository.questions)?.open;
   if (!open) {
@@ -474,6 +508,8 @@ function renderWorklog(card, repository) {
     "Recent worklog",
     "worklog-panel",
     "panel-span-4",
+    repository.worklogUrl,
+    "worklog",
   );
   const entries = readerData(repository.worklog)?.entries;
   if (entries === undefined) {

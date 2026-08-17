@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T29",
-  "branch": "factory/t29-liveness-freshness",
+  "current_task": "T30",
+  "branch": "factory/t30-link-factory-documents",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-17T00:20:17Z"
+  "updated": "2026-08-17T00:45:43Z"
 }

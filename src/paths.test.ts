@@ -42,6 +42,14 @@ describe("paths", () => {
       expect(result).toBe(planPath);
     });
 
+    test("resolves only the fixed spec.md target", async () => {
+      mkdirSync(`${tempDir}/.factory`, { recursive: true });
+      const specPath = join(tempDir, ".factory", "spec.md");
+      await Bun.write(specPath, "# Spec");
+
+      expect(await resolveFactoryPath(tempDir, "spec")).toBe(specPath);
+    });
+
     test("resolves questions.md path when exists", async () => {
       mkdirSync(`${tempDir}/.factory`, { recursive: true });
       const questionsPath = join(tempDir, ".factory", "questions.md");
@@ -278,17 +286,28 @@ describe("paths", () => {
       mkdirSync(`${tempDir}/.factory`, { recursive: true });
       const keys: Array<
         | "state"
+        | "spec"
         | "plan"
         | "questions"
         | "worklog"
         | "logs"
         | "routing"
         | "costs"
-      > = ["state", "plan", "questions", "worklog", "logs", "routing", "costs"];
+      > = [
+        "state",
+        "spec",
+        "plan",
+        "questions",
+        "worklog",
+        "logs",
+        "routing",
+        "costs",
+      ];
 
       for (const key of keys) {
         const expected = {
           state: "state.json",
+          spec: "spec.md",
           plan: "plan.md",
           questions: "questions.md",
           worklog: "worklog.md",

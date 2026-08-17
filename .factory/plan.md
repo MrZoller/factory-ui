@@ -179,10 +179,11 @@ task.
   - deps: T21
   - pr: 28
 
-- [~] T29 (trivial) — Apply the T20 freshness rule to the liveness "Checked" line
+- [x] T29 (trivial) — Apply the T20 freshness rule to the liveness "Checked" line
   - acceptance: In `src/public/app.js` and colocated tests: the Driver activity panel no longer renders the `Checked <age>` line when the liveness check is fresh (its `checkedAt` is within the refresh interval of the snapshot's `generatedAt`); when the liveness check is older than that, or `checkedAt` is missing while a state is shown, the panel renders `Liveness checked <age> — may be stale` in the same muted stale style T20 uses; the `Source age` line (age of the newest driver log write) is unchanged; tests cover fresh (line absent), stale (line present with the stale class), and missing `checkedAt` (spec 7, T20).
   - deps: T20
+  - pr: 29
 
-- [ ] T30 (trivial) — Link each project's `.factory` documents on GitHub
+- [~] T30 (standard) — Link each project's `.factory` documents on GitHub
   - acceptance: In `src/snapshot.ts`, `src/contracts.ts`, `src/public/app.js`, `src/public/styles.css`, and colocated tests: the server builds `specUrl`, `planUrl`, `worklogUrl`, and `questionsUrl` from the config-validated `githubUrl` as `<githubUrl>/blob/HEAD/.factory/<file>` (HEAD, never a branch name from state), each present only when the corresponding file was readable in this snapshot, and exposes them on the repository API entry beside the T17 links; the client re-validates every one with the same anchored https/github.com/no-credentials/no-query/no-hash rule before creating an anchor (target `_blank`, `rel="noopener noreferrer"`), rendering plain text or nothing when a URL is absent or fails validation; a muted `spec · plan · worklog · questions` link row renders under the project name in the Current panel, and the Plan, Recent worklog, and Questions panel headings link to their file when its URL is present; hostile `githubUrl`-shaped fixtures produce no anchor; tests cover presence/absence per file, the four link targets, heading links, and the hostile fixture (spec 7, 8, 9).
   - deps: T17

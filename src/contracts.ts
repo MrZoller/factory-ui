@@ -226,6 +226,10 @@ export interface RepositoryFactorySnapshot extends RepositoryFactoryData {
   prUrl?: string;
   repositoryUrl?: string;
   branchUrl?: string;
+  specUrl?: string;
+  planUrl?: string;
+  worklogUrl?: string;
+  questionsUrl?: string;
   warning?: string;
 }
 

@@ -169,13 +169,14 @@ task.
   - deps: T21
   - pr: 27
 
-- [~] T31 (standard) — parked review minors (batch)
+- [R] T31 (standard) — parked review minors (batch)
   - Extend `WORKLOG_EVENT_PATTERNS` review-wait matching to recognize canonical verdict-pending and in-flight wording so those worklog entries receive the `review wait` chip rather than `other` (PR #27 review).
   - Use own-property warning-explanation lookups so a future or hostile prototype-named warning code renders the generic unknown-code explanation (PR #28 review).
   - Clear stale worklog-entry disclosure keys when an empty or unavailable worklog snapshot intervenes, so a later same-key entry does not inherit an obsolete open state (PR #33 review).
   - Do not persist an automatic warnings-panel default as a user disclosure choice; preserve only an actual user toggle (PR #33 review).
   - Sort valid task IDs above `Number.MAX_SAFE_INTEGER` by their decimal value in the completed-task fallback so newest high-numbered tasks are not hidden (PR #34 review).
   - deps: none
+  - pr: 35
 
 - [x] T28 (standard) — Make the warnings panel actionable: grouped, located, explained, and explicitly current-as-of-snapshot
   - acceptance: In `src/public/app.js`, `src/public/styles.css`, `src/snapshot.ts` (or the readers) and colocated tests: identical warnings — same source, code, and line — collapse into one row carrying a `×N` count; rows sort by source then line; each row shows the source label, the code, the line number when present, and a bounded (≤ 200 chars, text-only, no HTML/markdown interpretation) excerpt of the offending source line supplied by the server alongside the existing `line` field (server reads the line from the already-bounded file text it parsed; absent when the reader had no line); a fixed client-side table maps every reader warning code that exists today (plan, worklog, questions, state, logs, routing, costs) to a one-sentence plain-English explanation, with a generic fallback for unknown codes; the panel heading reads "Warnings · N · from this snapshot" (N = grouped rows) so the current-as-of semantics are explicit — no per-warning timestamps are shown; the panel is collapsed under a `<details>` by default when every row is a format/hygiene warning (plan and worklog parse warnings) and open by default whenever any reader is in an error/unavailable/truncated state or the repository carries a top-level `warning`; excerpts from a hostile fixture (`<img onerror>`, control characters, an 8 KiB line) reach the DOM only as text nodes, truncated with an ellipsis; tests cover grouping and counts, sort order, line and excerpt rendering, the explanation table (every known code has an entry — a test enumerates the reader constants), collapsed-vs-open defaults, and the hostile fixture (spec 7).

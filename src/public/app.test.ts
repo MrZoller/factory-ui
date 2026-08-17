@@ -303,6 +303,78 @@ function summaryRow(
   ) as HTMLTableRowElement | undefined;
 }
 
+describe("driver liveness freshness", () => {
+  function activityPanel(document: Document): HTMLElement {
+    return Array.from(document.querySelectorAll<HTMLElement>(".panel")).find(
+      (panel) => panel.querySelector("h4")?.textContent === "Driver activity",
+    )!;
+  }
+
+  test("hides a fresh liveness check while retaining source age", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            liveness: {
+              state: "RUNNING",
+              checkedAt: "2026-08-16T12:00:01.000Z",
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const panel = activityPanel(document);
+    expect(panel.textContent).not.toContain("Liveness checked");
+    expect(panel.querySelector("p.age")).toBeNull();
+    expect(panel.textContent).toContain("Source age1m ago");
+  });
+
+  test("shows an old liveness check in the stale style", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            liveness: {
+              state: "RUNNING",
+              checkedAt: "2026-08-16T11:59:29.000Z",
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const stale = activityPanel(document).querySelector(".age.stale");
+    expect(stale?.textContent).toBe("Liveness checked 31s ago — may be stale");
+  });
+
+  test("warns when a shown liveness state has no check time", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [richRepository({ liveness: { state: "CANNOT_VERIFY" } })],
+      ),
+      document,
+      NOW,
+    );
+
+    const stale = activityPanel(document).querySelector(".age.stale");
+    expect(stale?.textContent).toBe("Liveness checked Unknown — may be stale");
+  });
+});
+
 function summaryCells(document: Document, name: string): Array<string | null> {
   return Array.from(
     summaryRow(document, name)?.children ?? [],

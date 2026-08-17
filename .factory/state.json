@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T28",
-  "branch": "factory/t28-actionable-warnings",
-  "pr": 28,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-17T00:11:53Z"
+  "updated": "2026-08-17T00:19:11Z"
 }

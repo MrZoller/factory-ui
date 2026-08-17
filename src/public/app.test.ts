@@ -1477,6 +1477,58 @@ describe("local dashboard rendering", () => {
     ).toEqual(["true", "false"]);
   });
 
+  test("keeps same-named repository disclosure state separate per machine", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "macbook", origin: "https://macbook.example" };
+    const entries = Array.from({ length: 7 }, (_, index) => ({
+      date: "2026-08-16",
+      time: `0${index}:00`,
+      text: `- 2026-08-16 0${index}:00 UTC - Entry ${index}.`,
+    }));
+    const local = fleet(
+      "mini",
+      [peer],
+      [
+        richRepository({
+          name: "shared",
+          worklog: { status: "available", data: { entries }, warnings: [] },
+        }),
+      ],
+    );
+    const remote = fleet(
+      "macbook",
+      [],
+      [
+        richRepository({
+          name: "shared",
+          worklog: { status: "available", data: { entries }, warnings: [] },
+        }),
+      ],
+    );
+    const fetcher = async (input: RequestInfo | URL) =>
+      jsonResponse(String(input) === "/api/fleet" ? local : remote);
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+    const machinePanels = document.querySelectorAll<HTMLElement>(
+      '#repositories > [role="tabpanel"]',
+    );
+    machinePanels[0]!
+      .querySelector<HTMLButtonElement>(".worklog-toggle")!
+      .click();
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    const refreshedPanels = document.querySelectorAll<HTMLElement>(
+      '#repositories > [role="tabpanel"]',
+    );
+    expect(
+      refreshedPanels[0]!.querySelector(".worklog-toggle")?.textContent,
+    ).toBe("Show newest 6");
+    expect(
+      refreshedPanels[1]!.querySelector(".worklog-toggle")?.textContent,
+    ).toBe("Show all 7");
+  });
+
   test("drops raw-entry disclosure state when an entry leaves the reader window", () => {
     const document = dashboardDocument();
     const oldEntry = {

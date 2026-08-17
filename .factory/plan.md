@@ -194,7 +194,7 @@ task.
   - deps: T23, T24
   - pr: 31
 
-- [ ] T33 (trivial) — Partial cost totals: sum what is available and say so, instead of Unavailable when any repository lacks costs
+- [~] T33 (trivial) — Partial cost totals: sum what is available and say so, instead of Unavailable when any repository lacks costs
   - acceptance: In `src/public/app.js` and colocated tests: the machine-row and fleet-level metered totals sum the repositories whose costs reader is available and render `$<sum>` when every repository contributed, `$<sum> (k of n repos)` with the non-contributing repository names in the tooltip when only some did, and `Unavailable` only when none did (or a sum is non-finite); the same rule applies to any notional total added by T32; tests cover all-available, partial, none, and the non-finite guard (spec 7; T23).
   - deps: T23
 

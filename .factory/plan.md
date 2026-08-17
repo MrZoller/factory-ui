@@ -228,7 +228,7 @@ task.
   - deps: T23
   - pr: 38
 
-- [R] T39 (standard) — parked review minors (batch)
+- [x] T39 (standard) — parked review minors (batch)
   - Preserve focus on the keyboard-reachable `/how` Operators lane across peer-fan-out rerenders (PR #37 review).
   - Use an unambiguous provider/model grouping key so slash-containing values cannot merge distinct routing lanes (PR #39 review).
   - deps: none

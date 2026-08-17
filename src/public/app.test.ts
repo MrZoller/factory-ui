@@ -1419,10 +1419,8 @@ describe("local dashboard rendering", () => {
     const warnings = document.querySelector<HTMLDetailsElement>(
       ".warnings-panel details",
     )!;
-    warnings.open = true;
-    warnings.dispatchEvent(new document.defaultView!.Event("toggle"));
-    warnings.open = false;
-    warnings.dispatchEvent(new document.defaultView!.Event("toggle"));
+    warnings.querySelector<HTMLElement>("summary")!.click();
+    warnings.querySelector<HTMLElement>("summary")!.click();
 
     const second = richRepository({
       worklog: { status: "available", data: { entries }, warnings: [] },
@@ -1549,6 +1547,35 @@ describe("local dashboard rendering", () => {
         (id) => id.textContent,
       ),
     ).toEqual(["T20", "T12", "T9", "T2"]);
+  });
+
+  test("orders completed task IDs above the safe-integer limit by decimal value", () => {
+    const document = dashboardDocument();
+    const completed = [
+      "T9007199254740993",
+      "T10000000000000000",
+      "T9007199254740992",
+    ].map((id) => ({
+      ...richRepository().plan.data.tasks[0],
+      id,
+      title: `Task ${id}`,
+    }));
+    const repository = richRepository({
+      plan: {
+        ...richRepository().plan,
+        data: { ...richRepository().plan.data, tasks: completed, completed },
+      },
+      metrics: undefined,
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    expect(
+      Array.from(
+        document.querySelectorAll(".completed-work .task-id"),
+        (id) => id.textContent,
+      ),
+    ).toEqual(["T10000000000000000", "T9007199254740993", "T9007199254740992"]);
   });
 
   test("caps completed tasks at eight and keeps its expanded scroll disclosure across rerenders", () => {
@@ -1724,6 +1751,37 @@ describe("local dashboard rendering", () => {
     expect(restoredOldRaw?.open).toBe(false);
   });
 
+  test("drops raw-entry disclosure state when worklog data intervenes without entries", () => {
+    for (const intervening of [
+      { status: "available", data: { entries: [] }, warnings: [] },
+      { status: "unavailable", warnings: [] },
+    ]) {
+      const document = dashboardDocument();
+      const entry = {
+        date: "2026-08-16",
+        time: "09:00",
+        text: "- 2026-08-16 09:00 UTC - Same-key entry.",
+      };
+      const repository = (worklog: unknown) => richRepository({ worklog });
+      const available = {
+        status: "available",
+        data: { entries: [entry] },
+        warnings: [],
+      };
+      renderFleet(fleet("mini", [], [repository(available)]), document, NOW);
+      const raw = document.querySelector<HTMLDetailsElement>(".worklog-raw")!;
+      raw.open = true;
+      raw.dispatchEvent(new document.defaultView!.Event("toggle"));
+
+      renderFleet(fleet("mini", [], [repository(intervening)]), document, NOW);
+      renderFleet(fleet("mini", [], [repository(available)]), document, NOW);
+
+      expect(
+        document.querySelector<HTMLDetailsElement>(".worklog-raw")?.open,
+      ).toBe(false);
+    }
+  });
+
   test("renders worklog event chips, sentence bodies, raw fallbacks, and safe inline highlights", () => {
     const document = dashboardDocument();
     const sha = "0123456789abcdef0123456789abcdef01234567";
@@ -1732,6 +1790,8 @@ describe("local dashboard rendering", () => {
       ["T2 implemented and opened as held major PR #2.", "opened PR"],
       ["Merged the release.", "merged"],
       ["Waiting for review.", "review wait"],
+      ["The exact-head verdict is still pending.", "review wait"],
+      ["Codex review is still in flight.", "review wait"],
       ["Parked review minors.", "parked minors"],
       ["Reclassified T27 as major.", "reclassified"],
       ["Escalated the decision.", "escalated"],
@@ -1740,8 +1800,8 @@ describe("local dashboard rendering", () => {
     ];
     const entries = events.map(([sentence], index) => ({
       date: "2026-08-16",
-      time: `0${index}:00`,
-      text: `- 2026-08-16 0${index}:00 UTC - ${sentence} Follow-up has T27, PR #12, issue #34, ${sha}, and \`literal code\`.`,
+      time: `${String(index).padStart(2, "0")}:00`,
+      text: `- 2026-08-16 ${String(index).padStart(2, "0")}:00 UTC - ${sentence} Follow-up has T27, PR #12, issue #34, ${sha}, and \`literal code\`.`,
     }));
     entries.push({
       date: "2026-08-15",
@@ -1765,7 +1825,7 @@ describe("local dashboard rendering", () => {
           (entry) => entry.querySelector(".worklog-event-chip")?.textContent,
         ),
     ).toEqual(events.map(([, event]) => event).reverse());
-    const opened = rendered[9]!;
+    const opened = rendered[events.length]!;
     expect(opened.querySelector(".worklog-summary")?.textContent).toBe(
       "T27 implemented and opened as PR #12.",
     );
@@ -2195,6 +2255,47 @@ describe("actionable warnings", () => {
     );
   });
 
+  test("recomputes automatic warning defaults until the user toggles the panel", () => {
+    const document = dashboardDocument();
+    const repository = (plan: unknown) =>
+      richRepository({
+        plan,
+        logs: {
+          status: "available",
+          data: richRepository().logs.data,
+          warnings: [],
+        },
+      });
+    const unavailable = {
+      status: "unavailable",
+      warnings: [{ code: "PLAN_MISSING", message: "missing" }],
+    };
+    const hygiene = {
+      status: "partial",
+      data: richRepository().plan.data,
+      warnings: [{ code: "PLAN_MALFORMED_TASK", message: "bad", line: 1 }],
+    };
+
+    renderFleet(fleet("mini", [], [repository(unavailable)]), document, NOW);
+    expect(
+      document.querySelector<HTMLDetailsElement>(".warnings-panel details")
+        ?.open,
+    ).toBe(true);
+
+    renderFleet(fleet("mini", [], [repository(hygiene)]), document, NOW);
+    const details = document.querySelector<HTMLDetailsElement>(
+      ".warnings-panel details",
+    )!;
+    expect(details.open).toBe(false);
+    details.querySelector<HTMLElement>("summary")!.click();
+
+    renderFleet(fleet("mini", [], [repository(hygiene)]), document, NOW);
+    expect(
+      document.querySelector<HTMLDetailsElement>(".warnings-panel details")
+        ?.open,
+    ).toBe(true);
+  });
+
   test("uses the unknown fallback and keeps hostile excerpts inert text", () => {
     const document = dashboardDocument();
     const hostile = `<img src=x onerror="globalThis.warningPwned=1">\u0001${"x".repeat(151)}…`;
@@ -2241,6 +2342,40 @@ describe("actionable warnings", () => {
       (globalThis as Record<string, unknown>).warningPwned,
     ).toBeUndefined();
     expect(panel.querySelector<HTMLDetailsElement>("details")?.open).toBe(true);
+  });
+
+  test("does not use inherited warning explanations", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            plan: {
+              status: "partial",
+              data: richRepository().plan.data,
+              warnings: [{ code: "constructor", message: "hostile code" }],
+            },
+            logs: {
+              status: "available",
+              data: richRepository().logs.data,
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const details = document.querySelector<HTMLDetailsElement>(
+      ".warnings-panel details",
+    )!;
+    expect(details.querySelector(".warning-explanation")?.textContent).toBe(
+      UNKNOWN_WARNING_EXPLANATION,
+    );
+    expect(details.open).toBe(true);
   });
 });
 

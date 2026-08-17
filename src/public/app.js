@@ -583,7 +583,7 @@ function renderWorklog(card, repository) {
   }
 }
 
-function renderLogs(card, repository, now) {
+function renderLogs(card, repository, now, generatedAt) {
   const panel = addPanel(card, "Driver activity", "logs-panel", "panel-span-4");
   const logs = readerData(repository.logs);
   const status = appendText(
@@ -600,12 +600,24 @@ function renderLogs(card, repository, now) {
         ? "stopped"
         : "unknown",
   );
-  appendText(
-    panel,
-    "p",
-    `Checked ${displayAge(repository.liveness?.checkedAt, now)}`,
-    "age",
-  );
+  const checkedAt = repository.liveness?.checkedAt;
+  const checkedMilliseconds = Date.parse(checkedAt);
+  const generatedMilliseconds = Date.parse(generatedAt);
+  const checkAgeAtSnapshot = generatedMilliseconds - checkedMilliseconds;
+  const refreshIntervalMilliseconds =
+    loadStates.get(panel.ownerDocument)?.refreshIntervalMilliseconds ?? 30_000;
+  const checkIsFresh =
+    Number.isFinite(checkAgeAtSnapshot) &&
+    checkAgeAtSnapshot >= 0 &&
+    checkAgeAtSnapshot <= refreshIntervalMilliseconds;
+  if (!checkIsFresh) {
+    appendText(
+      panel,
+      "p",
+      `Liveness checked ${displayAge(checkedAt, now)} — may be stale`,
+      "age stale",
+    );
+  }
 
   const list = panel.ownerDocument.createElement("dl");
   list.className = "facts timing";
@@ -906,7 +918,7 @@ function renderRoutingStrip(fleet, documentRoot) {
   return strip;
 }
 
-function renderRepository(repository, documentRoot, now) {
+function renderRepository(repository, documentRoot, now, generatedAt) {
   const card = documentRoot.createElement("article");
   card.className = "repository";
   const header = documentRoot.createElement("header");
@@ -924,7 +936,7 @@ function renderRepository(repository, documentRoot, now) {
   renderTasks(card, repository ?? {});
   renderQuestions(card, repository ?? {});
   renderWorklog(card, repository ?? {});
-  renderLogs(card, repository ?? {}, now);
+  renderLogs(card, repository ?? {}, now, generatedAt);
   renderWarnings(card, repository ?? {});
   return card;
 }
@@ -1463,6 +1475,7 @@ function createRepositoryView(
   index,
   documentRoot,
   now,
+  generatedAt,
 ) {
   const summary = summarizeRepository(repository, now);
   const row = documentRoot.createElement("tr");
@@ -1484,7 +1497,7 @@ function createRepositoryView(
   panel.setAttribute("role", "tabpanel");
   panel.setAttribute("aria-labelledby", tabId);
   panel.hidden = true;
-  panel.append(renderRepository(repository, documentRoot, now));
+  panel.append(renderRepository(repository, documentRoot, now, generatedAt));
   return { identity: repository.name, row, tab, panel };
 }
 
@@ -1542,7 +1555,14 @@ function updateMachineView(view, summary, fleet, now, unreachable = false) {
   repositoryTabs.setAttribute("aria-label", "Repositories");
   repositoryPanels.className = "repository-panels";
   view.repositories = fleet.repositories.map((repository, index) =>
-    createRepositoryView(repository, view.index, index, documentRoot, now),
+    createRepositoryView(
+      repository,
+      view.index,
+      index,
+      documentRoot,
+      now,
+      fleet.generatedAt,
+    ),
   );
   repositorySummary.body.replaceChildren(
     ...view.repositories.map((repository) => repository.row),

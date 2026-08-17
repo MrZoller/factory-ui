@@ -4,3 +4,4 @@
 {"schemaVersion":1,"task":"T39","event":"ship","at":"2026-08-17T18:05:58Z","size":"standard","reclassifiedFrom":"trivial","internal":{"rounds":2,"findings":{"blocking":0,"minor":1,"invalid":0},"fixed":1}}
 {"schemaVersion":1,"task":"T39","event":"pr","at":"2026-08-17T18:59:07Z","by":"factory-git","pr":40,"openedAt":"2026-08-17T18:05:52Z","mergedAt":"2026-08-17T18:59:00Z","commits":6,"commitsAfterOpen":0,"reviews":{},"issueComments":{},"reactions":{"chatgpt-codex-connector":{"eyes":1,"+1":1}},"threads":{},"checkRuns":{"total":1,"failed":0}}
 {"schemaVersion":1,"task":"T39","event":"merge","at":"2026-08-17T18:59:26Z","pr":40,"external":{"codex":{"rounds":1,"findings":{"blocking":0,"minor":0,"refuted":0},"fixPushes":0}},"ci":{"runs":1,"reruns":0}}
+{"schemaVersion":1,"task":"T41","event":"ship","at":"2026-08-17T19:27:53Z","size":"standard","reclassifiedFrom":null,"internal":{"rounds":2,"findings":{"blocking":0,"minor":2,"invalid":0},"fixed":2}}

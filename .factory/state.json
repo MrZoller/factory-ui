@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T33",
-  "branch": "factory/t33-partial-cost-totals",
-  "pr": 32,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-17T02:26:08Z"
+  "updated": "2026-08-17T02:28:00Z"
 }

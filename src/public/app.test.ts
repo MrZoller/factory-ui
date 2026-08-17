@@ -450,12 +450,15 @@ describe("local dashboard rendering", () => {
       "In review": "panel-span-4",
       "Next runnable": "panel-span-4",
       Blocked: "panel-span-4",
-      Completed: "panel-span-6",
+      Completed: "panel-span-12",
       "Open questions": "panel-span-6",
       "Recent worklog": "panel-span-4",
       "Driver activity": "panel-span-4",
       "Warnings · 1 · from this snapshot": "panel-span-4",
     });
+    expect(card.lastElementChild?.querySelector("h4")?.textContent).toBe(
+      "Completed",
+    );
     const task = card.querySelector(".task")!;
     expect(
       ["task-id", "task-title", "task-size"].every((name) =>
@@ -501,6 +504,198 @@ describe("local dashboard rendering", () => {
     );
     expect(link?.getAttribute("target")).toBe("_blank");
     expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  test("renders every available task group as an accessible table, including empty groups", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      plan: {
+        ...richRepository().plan,
+        data: {
+          ...richRepository().plan.data,
+          active: [],
+          review: [],
+          nextRunnable: [],
+          blocked: [],
+          completed: [],
+        },
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    for (const title of [
+      "Active",
+      "In review",
+      "Next runnable",
+      "Blocked",
+      "Completed",
+    ]) {
+      const panel = Array.from(
+        document.querySelectorAll<HTMLElement>(".panel"),
+      ).find(
+        (candidate) => candidate.querySelector("h4")?.textContent === title,
+      )!;
+      const table = panel.querySelector<HTMLTableElement>(
+        ".task-table-scroll > table.task-table",
+      )!;
+      expect(table.querySelector("caption")?.textContent).toBe(`${title} · 0`);
+      expect(table.querySelectorAll("thead tr")).toHaveLength(1);
+      expect(table.querySelectorAll("tbody tr")).toHaveLength(0);
+      expect(
+        Array.from(table.querySelectorAll("thead th"), (header) => [
+          header.textContent,
+          header.getAttribute("scope"),
+        ]),
+      ).toEqual([
+        ["Task", "col"],
+        ["Title", "col"],
+        ["Size", "col"],
+        ["Cost", "col"],
+        ["Review", "col"],
+        ["Refs", "col"],
+      ]);
+    }
+  });
+
+  test("keeps task metadata in distinct table cells with size guidance, costs, dependencies, and safe references", () => {
+    const document = dashboardDocument();
+    const tasks = ["trivial", "standard", "major"].map((size, index) => ({
+      ...richRepository().plan.data.tasks[0],
+      id: `T${index + 1}`,
+      size,
+      title: `${size} task`,
+      dependencies: index === 0 ? ["T99"] : [],
+      pr: index === 0 ? 42 : undefined,
+      issueNumbers: index === 0 ? [17] : [],
+      prUrl:
+        index === 0
+          ? "https://github.com/example/factory-ui/pull/42"
+          : undefined,
+      issueUrls:
+        index === 0 ? ["https://github.com/example/factory-ui/issues/17"] : [],
+    }));
+    const repository = richRepository({
+      costs: costs({ T1: costCounters(1.23, 123) }),
+      plan: {
+        ...richRepository().plan,
+        data: { ...richRepository().plan.data, tasks, active: tasks },
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const table = document.querySelector<HTMLTableElement>(
+      ".active-work .task-table",
+    )!;
+    expect(table.querySelector("th:nth-child(3)")?.getAttribute("title")).toBe(
+      "trivial: small, skips size gates · standard: one session, merges when clean · major: PR held for review",
+    );
+    const rows = Array.from(
+      table.querySelectorAll<HTMLTableRowElement>("tbody tr.task"),
+    );
+    expect(rows).toHaveLength(3);
+    expect(
+      rows.map((row) => Array.from(row.children, (cell) => cell.className)),
+    ).toEqual(
+      Array.from({ length: 3 }, () => [
+        "task-id",
+        "task-title",
+        "task-size task-numeric",
+        "task-cost-cell task-numeric",
+        "task-review",
+        "task-references",
+      ]),
+    );
+    expect(
+      rows.map((row) => row.querySelector<HTMLElement>(".task-size")?.title),
+    ).toEqual([
+      "small, skips size gates",
+      "one session, merges when clean",
+      "PR held for review",
+    ]);
+    expect(rows[0]!.querySelector(".task-deps")?.textContent).toBe("deps: T99");
+    expect(rows[0]!.querySelector(".task-cost")?.textContent).toBe(
+      "$1.23 metered",
+    );
+    expect(rows[0]!.querySelector(".task-review")?.textContent).toBe("");
+    expect(
+      Array.from(
+        rows[0]!.querySelectorAll<HTMLAnchorElement>(".task-references a"),
+        (link) => [link.textContent, link.href],
+      ),
+    ).toEqual([
+      ["PR #42", "https://github.com/example/factory-ui/pull/42"],
+      ["Fixes #17", "https://github.com/example/factory-ui/issues/17"],
+    ]);
+  });
+
+  test("renders a prototype-named task size with the fallback legend", () => {
+    const document = dashboardDocument();
+    const task = {
+      ...richRepository().plan.data.tasks[0],
+      size: "constructor",
+    };
+    const repository = richRepository({
+      plan: {
+        ...richRepository().plan,
+        data: { ...richRepository().plan.data, tasks: [task], active: [task] },
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const size = document.querySelector<HTMLElement>(
+      ".active-work .task-size",
+    )!;
+    expect(size.textContent).toBe("constructor");
+    expect(size.title).toBe(
+      "trivial: small, skips size gates · standard: one session, merges when clean · major: PR held for review",
+    );
+  });
+
+  test("uses a compact empty questions strip but full panels for questions and unavailable data", () => {
+    const emptyDocument = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            questions: {
+              status: "available",
+              data: { open: [] },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      emptyDocument,
+      NOW,
+    );
+    const compact = emptyDocument.querySelector("section.questions-compact")!;
+    expect(compact.textContent).toBe("Open questions · 0 · None");
+    expect(compact.classList.contains("panel")).toBe(false);
+    expect(emptyDocument.querySelector(".questions-panel")).toBeNull();
+
+    const unavailableDocument = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            questions: { status: "unavailable", warnings: [] },
+          }),
+        ],
+      ),
+      unavailableDocument,
+      NOW,
+    );
+    expect(unavailableDocument.querySelector(".questions-compact")).toBeNull();
+    expect(
+      unavailableDocument.querySelector(".questions-panel")?.textContent,
+    ).toContain("Unavailable");
   });
 
   test("renders metered and subscription task costs, while omitting tasks without an entry", () => {
@@ -1063,10 +1258,12 @@ describe("local dashboard rendering", () => {
     );
   });
 
-  test("bounds the expanded completed-task list with internal scrolling", async () => {
+  test("keeps table headers sticky and task-table scrolling internal", async () => {
     const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
     expect(css).toMatch(/\.task-list-scroll\s*\{[^}]*max-height: 24rem;/s);
-    expect(css).toMatch(/\.task-list-scroll\s*\{[^}]*overflow-y: auto;/s);
+    expect(css).toMatch(/\.task-list-scroll\s*\{[^}]*overflow: auto;/s);
+    expect(css).toMatch(/\.task-table-scroll\s*\{[^}]*overflow-x: auto;/s);
+    expect(css).toMatch(/\.task-table thead th\s*\{[^}]*position: sticky;/s);
   });
 
   test("renders validated GitHub links", () => {
@@ -1599,33 +1796,46 @@ describe("local dashboard rendering", () => {
 
     renderFleet(fleet("mini", [], [repository()]), document, NOW);
 
-    const collapsedList = document.querySelector(".completed-work .task-list")!;
+    const collapsedList = document.querySelector(
+      ".completed-work .task-table",
+    )!;
+    const collapsedScroll = document.querySelector(
+      ".completed-work .task-table-scroll",
+    )!;
     const toggle = document.querySelector<HTMLButtonElement>(
       ".completed-tasks-toggle",
     )!;
     expect(collapsedList.querySelectorAll(".task")).toHaveLength(8);
-    expect(collapsedList.classList).not.toContain("task-list-scroll");
-    expect(collapsedList.hasAttribute("tabindex")).toBe(false);
+    expect(collapsedScroll.classList.contains("task-list-scroll")).toBe(false);
+    expect(collapsedScroll.hasAttribute("tabindex")).toBe(false);
     expect(toggle.textContent).toBe("Show all 9");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
 
     toggle.click();
-    const expandedList = document.querySelector(".completed-work .task-list")!;
+    const expandedList = document.querySelector(".completed-work .task-table")!;
+    const expandedScroll = document.querySelector(
+      ".completed-work .task-table-scroll",
+    )!;
     expect(expandedList.querySelectorAll(".task")).toHaveLength(9);
-    expect(expandedList.classList).toContain("task-list-scroll");
-    expect(expandedList.getAttribute("tabindex")).toBe("0");
+    expect(expandedScroll.classList.contains("task-list-scroll")).toBe(true);
+    expect(expandedScroll.getAttribute("tabindex")).toBe("0");
     expect(toggle.textContent).toBe("Show newest 8");
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
 
     renderFleet(fleet("mini", [], [repository()]), document, NOW);
 
-    const refreshedList = document.querySelector(".completed-work .task-list")!;
+    const refreshedList = document.querySelector(
+      ".completed-work .task-table",
+    )!;
+    const refreshedScroll = document.querySelector(
+      ".completed-work .task-table-scroll",
+    )!;
     const refreshedToggle = document.querySelector<HTMLButtonElement>(
       ".completed-tasks-toggle",
     )!;
     expect(refreshedList.querySelectorAll(".task")).toHaveLength(9);
-    expect(refreshedList.classList).toContain("task-list-scroll");
-    expect(refreshedList.getAttribute("tabindex")).toBe("0");
+    expect(refreshedScroll.classList.contains("task-list-scroll")).toBe(true);
+    expect(refreshedScroll.getAttribute("tabindex")).toBe("0");
     expect(refreshedToggle.textContent).toBe("Show newest 8");
   });
 
@@ -2567,9 +2777,10 @@ describe("fleet summary and machine tabs", () => {
       "",
       "Unavailable",
     ]);
-    expect(
-      document.querySelectorAll(".panel-empty .empty").length,
-    ).toBeGreaterThan(0);
+    expect(document.querySelectorAll(".questions-compact")).toHaveLength(1);
+    expect(document.querySelector(".questions-compact")?.textContent).toBe(
+      "Open questions · 0 · None",
+    );
     expect(document.querySelector(".panel-empty .unavailable")).toBeNull();
     expect(summaryCells(document, "macbook")).toEqual([
       "macbook",

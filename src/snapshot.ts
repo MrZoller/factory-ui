@@ -15,6 +15,7 @@ import {
   checkTrustedDriverLiveness,
 } from "./liveness";
 import { readFactoryCosts } from "./readers/costs";
+import { readFactoryFile } from "./readers/file";
 import { readFactoryLogsWithSelection } from "./readers/logs";
 import { readFactoryPlan } from "./readers/plan";
 import { readFactoryQuestions } from "./readers/questions";
@@ -23,6 +24,8 @@ import { readFactoryState } from "./readers/state";
 import { readFactoryWorklog } from "./readers/worklog";
 
 export { MAX_PROJECT_LENGTH, MAX_STATE_BYTES } from "./readers/state";
+
+const MAX_SPEC_BYTES = 256 * 1024;
 
 export async function readRepositoryFactoryData(
   repository: RepositorySource,
@@ -87,7 +90,10 @@ export function unavailableRepositoryFactorySnapshot(
 export async function readRepositoryFactorySnapshot(
   repository: RepositorySource,
 ): Promise<RepositoryFactorySnapshot> {
-  const data = await readRepositoryFactoryData(repository);
+  const [data, spec] = await Promise.all([
+    readRepositoryFactoryData(repository),
+    readFactoryFile(repository.path, "spec", MAX_SPEC_BYTES),
+  ]);
   const state =
     data.state.status === "unavailable" ? undefined : data.state.data;
   const available = state?.project !== undefined && state.phase !== undefined;
@@ -95,6 +101,26 @@ export async function readRepositoryFactorySnapshot(
   const prUrl = createPullRequestUrl(repositoryUrl, state?.pr);
   const branchUrl = createBranchUrl(repositoryUrl, state?.branch);
   const plan = enrichPlanLinks(data.plan, repositoryUrl);
+  const specUrl = createFactoryDocumentUrl(
+    repositoryUrl,
+    "spec.md",
+    spec.status === "available",
+  );
+  const planUrl = createFactoryDocumentUrl(
+    repositoryUrl,
+    "plan.md",
+    data.plan.status !== "unavailable",
+  );
+  const worklogUrl = createFactoryDocumentUrl(
+    repositoryUrl,
+    "worklog.md",
+    data.worklog.status !== "unavailable",
+  );
+  const questionsUrl = createFactoryDocumentUrl(
+    repositoryUrl,
+    "questions.md",
+    data.questions.status !== "unavailable",
+  );
   return {
     ...data,
     plan,
@@ -105,6 +131,10 @@ export async function readRepositoryFactorySnapshot(
     ...(prUrl === undefined ? {} : { prUrl }),
     ...(repositoryUrl === undefined ? {} : { repositoryUrl }),
     ...(branchUrl === undefined ? {} : { branchUrl }),
+    ...(specUrl === undefined ? {} : { specUrl }),
+    ...(planUrl === undefined ? {} : { planUrl }),
+    ...(worklogUrl === undefined ? {} : { worklogUrl }),
+    ...(questionsUrl === undefined ? {} : { questionsUrl }),
   };
 }
 
@@ -116,6 +146,16 @@ function validGithubRepositoryUrl(
 ): string | undefined {
   return value !== undefined && GITHUB_REPOSITORY.test(value)
     ? value
+    : undefined;
+}
+
+function createFactoryDocumentUrl(
+  githubUrl: string | undefined,
+  filename: "spec.md" | "plan.md" | "worklog.md" | "questions.md",
+  readable: boolean,
+): string | undefined {
+  return githubUrl !== undefined && readable
+    ? `${githubUrl}/blob/HEAD/.factory/${filename}`
     : undefined;
 }
 

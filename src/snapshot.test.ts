@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 
+import { createFactoryFixture } from "./test-support";
+
 import {
   createFleetSnapshot,
   readRepositoryFactoryData,
@@ -11,6 +13,54 @@ import {
 } from "./snapshot";
 
 describe("snapshot", () => {
+  test("exposes a GitHub document URL only for each safely readable factory file", async () => {
+    const fixture = createFactoryFixture();
+    try {
+      await Promise.all([
+        fixture.writeState({ project: "factory-ui", phase: "build" }),
+        Bun.write(join(fixture.factoryPath, "spec.md"), "# Spec"),
+        fixture.writePlan("# Plan"),
+        fixture.writeWorklog("- 2026-08-16 UTC - shipped"),
+        fixture.writeQuestions("## Q1 (task T1, open) — Question\nContext"),
+      ]);
+
+      const snapshot = (await readRepositoryFactorySnapshot({
+        name: "factory-ui",
+        path: fixture.root,
+        githubUrl: "https://github.com/example/factory-ui",
+      })) as unknown as Record<string, unknown>;
+
+      const documentUrls = {
+        specUrl:
+          "https://github.com/example/factory-ui/blob/HEAD/.factory/spec.md",
+        planUrl:
+          "https://github.com/example/factory-ui/blob/HEAD/.factory/plan.md",
+        worklogUrl:
+          "https://github.com/example/factory-ui/blob/HEAD/.factory/worklog.md",
+        questionsUrl:
+          "https://github.com/example/factory-ui/blob/HEAD/.factory/questions.md",
+      };
+      expect(snapshot).toMatchObject(documentUrls);
+
+      for (const [key, filename] of Object.entries({
+        specUrl: "spec.md",
+        planUrl: "plan.md",
+        worklogUrl: "worklog.md",
+        questionsUrl: "questions.md",
+      })) {
+        rmSync(join(fixture.factoryPath, filename));
+        const withoutSource = (await readRepositoryFactorySnapshot({
+          name: "factory-ui",
+          path: fixture.root,
+          githubUrl: "https://github.com/example/factory-ui",
+        })) as unknown as Record<string, unknown>;
+        expect(withoutSource[key]).toBeUndefined();
+      }
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   describe("MAX_PROJECT_LENGTH", () => {
     test("is 200", () => {
       expect(MAX_PROJECT_LENGTH).toBe(200);

@@ -2,10 +2,18 @@ import { lstat, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 export type FactoryPathKey =
-  "state" | "plan" | "questions" | "worklog" | "logs" | "routing" | "costs";
+  | "state"
+  | "spec"
+  | "plan"
+  | "questions"
+  | "worklog"
+  | "logs"
+  | "routing"
+  | "costs";
 
 const TARGETS: Record<FactoryPathKey, { path: string; directory: boolean }> = {
   state: { path: "state.json", directory: false },
+  spec: { path: "spec.md", directory: false },
   plan: { path: "plan.md", directory: false },
   questions: { path: "questions.md", directory: false },
   worklog: { path: "worklog.md", directory: false },

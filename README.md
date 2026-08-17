@@ -85,12 +85,14 @@ does not silently expand its read surface.
 ## `.factory` read surface
 
 The service reads only the fixed targets `.factory/state.json`,
-`.factory/plan.md`, `.factory/questions.md`, `.factory/worklog.md`, the bounded
-driver/cycle/shepherd files selected from `.factory/logs/`,
+`.factory/spec.md`, `.factory/plan.md`, `.factory/questions.md`,
+`.factory/worklog.md`, the bounded driver/cycle/shepherd files selected from `.factory/logs/`,
 `.factory/logs/routing.json`, and `.factory/logs/costs.json`. Canonical
 containment, target type, symlink, and opened-descriptor identity checks apply
-before bounded reads. Routing or cost absence and invalidity are independent
-and do not make repository state unavailable.
+before bounded reads. The service reads at most 256 KiB from `spec.md` only to
+determine whether its GitHub document link can be shown; its contents are not
+returned. Routing, cost, or spec absence and invalidity are independent and do
+not make repository state unavailable.
 
 Routing uses schema version 1:
 

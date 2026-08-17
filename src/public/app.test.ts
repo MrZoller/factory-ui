@@ -1063,6 +1063,12 @@ describe("local dashboard rendering", () => {
     );
   });
 
+  test("bounds the expanded completed-task list with internal scrolling", async () => {
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+    expect(css).toMatch(/\.task-list-scroll\s*\{[^}]*max-height: 24rem;/s);
+    expect(css).toMatch(/\.task-list-scroll\s*\{[^}]*overflow-y: auto;/s);
+  });
+
   test("renders validated GitHub links", () => {
     const document = dashboardDocument();
     const task = {

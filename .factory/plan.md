@@ -179,7 +179,7 @@ task.
   - deps: T21
   - pr: 28
 
-- [ ] T29 (trivial) — Apply the T20 freshness rule to the liveness "Checked" line
+- [~] T29 (trivial) — Apply the T20 freshness rule to the liveness "Checked" line
   - acceptance: In `src/public/app.js` and colocated tests: the Driver activity panel no longer renders the `Checked <age>` line when the liveness check is fresh (its `checkedAt` is within the refresh interval of the snapshot's `generatedAt`); when the liveness check is older than that, or `checkedAt` is missing while a state is shown, the panel renders `Liveness checked <age> — may be stale` in the same muted stale style T20 uses; the `Source age` line (age of the newest driver log write) is unchanged; tests cover fresh (line absent), stale (line present with the stale class), and missing `checkedAt` (spec 7, T20).
   - deps: T20
 

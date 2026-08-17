@@ -224,6 +224,73 @@ export interface CostsData {
   tasks: Record<string, CostTask>;
 }
 
+export interface MetricFindings {
+  blocking: number;
+  minor: number;
+}
+
+export interface InternalMetricFindings extends MetricFindings {
+  invalid: number;
+}
+
+export interface ExternalMetricFindings extends MetricFindings {
+  refuted: number;
+}
+
+export interface ShipMetric {
+  schemaVersion: 1;
+  task: string;
+  event: "ship";
+  size: TaskSize;
+  reclassifiedFrom: TaskSize | null;
+  internal: {
+    rounds: number;
+    findings: InternalMetricFindings;
+    fixed: number;
+  } | null;
+}
+
+export interface ExternalReviewMetric {
+  rounds: number;
+  findings: ExternalMetricFindings;
+  fixPushes: number;
+}
+
+export interface MergeMetric {
+  schemaVersion: 1;
+  task: string;
+  event: "merge";
+  pr: number;
+  external: Record<string, ExternalReviewMetric>;
+  ci: { runs: number; reruns: number };
+}
+
+export interface PullRequestMetric {
+  schemaVersion: 1;
+  task: string;
+  event: "pr";
+  by: "factory-git";
+  openedAt: string;
+  mergedAt: string;
+  commits: number;
+  commitsAfterOpen: number;
+  reviews: Record<string, number>;
+  issueComments: Record<string, number>;
+  reactions: Record<string, Record<string, number>>;
+  threads: Record<string, { total: number; resolved: number }>;
+  checkRuns: { total: number; failed: number };
+}
+
+export interface TaskMetrics {
+  ship?: ShipMetric;
+  merge?: MergeMetric;
+  pr?: PullRequestMetric;
+}
+
+export interface MetricsData {
+  tasks: Record<string, TaskMetrics>;
+}
+
 export interface RepositoryFactoryData {
   name: string;
   state: ReaderResult<FactoryStateData>;
@@ -233,6 +300,7 @@ export interface RepositoryFactoryData {
   logs: ReaderResult<LogsData>;
   routing: ReaderResult<RoutingData>;
   costs: ReaderResult<CostsData>;
+  metrics: ReaderResult<MetricsData>;
   liveness: LivenessSnapshot;
 }
 

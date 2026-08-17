@@ -13,6 +13,9 @@ const MAX_ROUTING_MODEL_STRING_LENGTH = 200;
 const MAX_ROUTING_STEPS = 1_000_000;
 const MAX_COST_TASKS = 256;
 const MAX_COST_MODELS_PER_TASK = 64;
+const MAX_METRICS_TASKS = 4096;
+const MAX_METRICS_MAP_ENTRIES = 64;
+const MAX_METRICS_KEY_LENGTH = 128;
 const MAX_WARNING_EXCERPT_CODE_POINTS = 200;
 const COMPLETED_TASK_LIMIT = 8;
 const loadGenerations = new WeakMap();
@@ -480,7 +483,90 @@ function costLabel(counters) {
   };
 }
 
-function renderTask(tableBody, task, cost, routing) {
+function taskMetricDigits(taskId) {
+  return /^T([1-9][0-9]*)$/.exec(taskId ?? "")?.[1];
+}
+
+function compareDecimalDigits(left, right) {
+  return (
+    left.length - right.length || (left > right ? 1 : left < right ? -1 : 0)
+  );
+}
+
+function oldestMetricTaskDigits(metrics) {
+  let oldest;
+  for (const taskId of Object.keys(metrics?.tasks ?? {})) {
+    const digits = taskMetricDigits(taskId);
+    if (digits && (!oldest || compareDecimalDigits(digits, oldest) < 0)) {
+      oldest = digits;
+    }
+  }
+  return oldest;
+}
+
+function findingSummary(findings, classes) {
+  return classes
+    .filter((name) => Number.isSafeInteger(findings?.[name]))
+    .map((name) => `${findings[name]} ${name}`)
+    .join(" · ");
+}
+
+function renderTaskReview(cell, task, metrics, oldestDigits) {
+  const taskMetrics = metrics?.tasks?.[task?.id];
+  if (taskMetrics?.ship) {
+    if (taskMetrics.ship.internal === null) {
+      appendText(cell, "span", "panel unknown", "review-chip review-unknown");
+    } else if (taskMetrics.ship.internal) {
+      const internal = taskMetrics.ship.internal;
+      appendText(
+        cell,
+        "span",
+        `panel ${internal.rounds}r · ${internal.fixed} fixed`,
+        "review-chip review-internal",
+      );
+      appendText(
+        cell,
+        "span",
+        findingSummary(internal.findings, ["blocking", "minor", "invalid"]),
+        "review-detail",
+      );
+    }
+  }
+  for (const [reviewer, review] of Object.entries(
+    taskMetrics?.merge?.external ?? {},
+  ).sort(([left], [right]) => left.localeCompare(right))) {
+    const findings = ["blocking", "minor", "refuted"];
+    const prominent = findings.find((name) => review?.findings?.[name] > 0);
+    const suffix = prominent
+      ? ` · ${review.findings[prominent]} ${prominent}`
+      : "";
+    appendText(
+      cell,
+      "span",
+      `${reviewer} ${review?.rounds ?? 0}r${suffix}`,
+      "review-chip review-external",
+    );
+    appendText(
+      cell,
+      "span",
+      `${findingSummary(review?.findings, findings)} · ${review?.fixPushes ?? 0} fix pushes`,
+      "review-detail",
+    );
+  }
+  const digits = taskMetricDigits(task?.id);
+  if (
+    task?.pr !== undefined &&
+    !taskMetrics?.ship &&
+    !taskMetrics?.merge &&
+    digits &&
+    oldestDigits &&
+    compareDecimalDigits(digits, oldestDigits) > 0
+  ) {
+    appendText(cell, "span", "metrics missing", "review-missing");
+  }
+}
+
+function renderTask(tableBody, task, cost, routing, metrics, oldestDigits) {
   const item = tableBody.ownerDocument.createElement("tr");
   item.className = "task";
   appendText(item, "td", task?.id ?? "?", "task-id");
@@ -531,7 +617,8 @@ function renderTask(tableBody, task, cost, routing) {
     appendText(costCell, "span", label.title, "task-cost-detail");
   }
   item.append(costCell);
-  appendText(item, "td", "", "task-review");
+  const reviewCell = appendText(item, "td", "", "task-review");
+  if (metrics) renderTaskReview(reviewCell, task, metrics, oldestDigits);
   const references = item.ownerDocument.createElement("td");
   references.className = "task-references";
   if (Number.isSafeInteger(task?.pr) && task.pr > 0)
@@ -616,6 +703,8 @@ function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
   const plan = readerData(repository.plan);
   const costs = readerData(repository.costs)?.tasks;
   const routing = readerData(repository.routing);
+  const metrics = readerData(repository.metrics);
+  const oldestDigits = oldestMetricTaskDigits(metrics);
   for (const [title, key, className, spanClass] of groups) {
     const panel = addPanel(
       card,
@@ -647,7 +736,14 @@ function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
           ? tasks.slice(0, COMPLETED_TASK_LIMIT)
           : tasks;
       visible.forEach((task) =>
-        renderTask(body, task, costs?.[task?.id], routing),
+        renderTask(
+          body,
+          task,
+          costs?.[task?.id],
+          routing,
+          ["active", "review", "completed"].includes(key) ? metrics : undefined,
+          oldestDigits,
+        ),
       );
       scroll.classList.toggle("task-list-scroll", expanded);
       if (expanded) scroll.tabIndex = 0;
@@ -672,6 +768,231 @@ function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
       updateToggle();
     }
   }
+}
+
+function metricNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : 0;
+}
+
+function average(total, count) {
+  if (!Number.isFinite(total) || !Number.isFinite(count) || count <= 0) {
+    return "unknown";
+  }
+  const value = total / count;
+  if (!Number.isFinite(value)) return "unknown";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function percentage(value, total) {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) {
+    return "0%";
+  }
+  const result = (value / total) * 100;
+  return Number.isFinite(result) ? `${Math.round(result)}%` : "0%";
+}
+
+function measuredMetrics(metrics, size) {
+  return Object.values(metrics?.tasks ?? {}).filter(
+    (task) =>
+      task?.ship &&
+      task?.merge &&
+      (size === undefined || task.ship.size === size),
+  );
+}
+
+function metricAggregate(tasks) {
+  const internal = {
+    count: 0,
+    rounds: 0,
+    findings: { blocking: 0, minor: 0, invalid: 0 },
+  };
+  const external = {
+    findings: { blocking: 0, minor: 0, refuted: 0 },
+    fixPushes: 0,
+    reviewers: new Map(),
+  };
+  let ciReruns = 0;
+  for (const task of tasks) {
+    if (task.ship.internal) {
+      internal.count += 1;
+      internal.rounds += metricNumber(task.ship.internal.rounds);
+      for (const name of ["blocking", "minor", "invalid"]) {
+        internal.findings[name] += metricNumber(
+          task.ship.internal.findings?.[name],
+        );
+      }
+    }
+    for (const [reviewer, review] of Object.entries(
+      task.merge.external ?? {},
+    )) {
+      const reviewerTotal = external.reviewers.get(reviewer) ?? {
+        rounds: 0,
+        tasks: 0,
+      };
+      reviewerTotal.rounds += metricNumber(review?.rounds);
+      reviewerTotal.tasks += 1;
+      external.reviewers.set(reviewer, reviewerTotal);
+      external.fixPushes += metricNumber(review?.fixPushes);
+      for (const name of ["blocking", "minor", "refuted"]) {
+        external.findings[name] += metricNumber(review?.findings?.[name]);
+      }
+    }
+    ciReruns += metricNumber(task.merge.ci?.reruns);
+  }
+  return { internal, external, ciReruns };
+}
+
+function reactionCount(reactions) {
+  return Object.values(reactions ?? {}).reduce(
+    (total, count) => total + metricNumber(count),
+    0,
+  );
+}
+
+function appendReviewCrossChecks(parent, tasks) {
+  const checks = [];
+  for (const task of tasks) {
+    if (!task.pr) {
+      for (const [reviewer, review] of Object.entries(
+        task.merge.external ?? {},
+      ).sort(([left], [right]) => left.localeCompare(right))) {
+        checks.push({
+          task: task.ship.task ?? task.merge.task ?? "?",
+          reviewer,
+          reported: metricNumber(review?.rounds),
+          mechanical: 0,
+          comparable: false,
+        });
+      }
+      continue;
+    }
+    const reviewers = new Set([
+      ...Object.keys(task.merge.external ?? {}),
+      ...Object.keys(task.pr.reviews ?? {}),
+      ...Object.keys(task.pr.reactions ?? {}),
+    ]);
+    for (const reviewer of [...reviewers].sort()) {
+      const review = task.merge.external?.[reviewer];
+      const mechanical =
+        metricNumber(task.pr?.reviews?.[reviewer]) +
+        reactionCount(task.pr?.reactions?.[reviewer]);
+      checks.push({
+        task: task.ship.task ?? task.merge.task ?? "?",
+        reviewer,
+        reported: metricNumber(review?.rounds),
+        mechanical,
+        comparable: true,
+      });
+    }
+  }
+  if (checks.length === 0) {
+    parent.textContent = "None";
+    return;
+  }
+  for (const check of checks) {
+    const text = check.comparable
+      ? `${check.task} ${check.reviewer}: ${check.reported}r vs ${check.mechanical} mechanical`
+      : `${check.task} ${check.reviewer}: ${check.reported}r vs unknown mechanical`;
+    appendText(
+      parent,
+      "span",
+      text,
+      check.comparable && check.reported !== check.mechanical
+        ? "review-cross-check review-mismatch"
+        : "review-cross-check",
+    );
+  }
+}
+
+function appendReviewAggregateRow(body, label, tasks) {
+  const row = body.ownerDocument.createElement("tr");
+  const aggregate = metricAggregate(tasks);
+  const externalTotal =
+    aggregate.external.findings.blocking +
+    aggregate.external.findings.minor +
+    aggregate.external.findings.refuted;
+  appendText(row, "th", label);
+  row.firstElementChild.scope = "row";
+  appendText(row, "td", `${tasks.length} measured`, "review-measured");
+  appendText(
+    row,
+    "td",
+    `${average(aggregate.internal.rounds, aggregate.internal.count)} rounds · ${average(aggregate.internal.findings.blocking, aggregate.internal.count)} blocking · ${average(aggregate.internal.findings.minor, aggregate.internal.count)} minor · ${average(aggregate.internal.findings.invalid, aggregate.internal.count)} invalid${aggregate.internal.count < tasks.length ? ` · ${aggregate.internal.count}/${tasks.length} known` : ""}`,
+  );
+  const reviewerCell = row.ownerDocument.createElement("td");
+  if (aggregate.external.reviewers.size === 0)
+    reviewerCell.textContent = "None";
+  for (const [reviewer, totals] of aggregate.external.reviewers) {
+    appendText(
+      reviewerCell,
+      "span",
+      `${reviewer} ${average(totals.rounds, totals.tasks)} rounds`,
+      "review-reviewer-average",
+    );
+  }
+  row.append(reviewerCell);
+  appendText(
+    row,
+    "td",
+    `${average(externalTotal, tasks.length)} findings/task · ${average(aggregate.external.findings.blocking, tasks.length)} blocking/task (${percentage(aggregate.external.findings.blocking, externalTotal)}) · ${average(aggregate.external.findings.minor, tasks.length)} minor/task (${percentage(aggregate.external.findings.minor, externalTotal)}) · ${average(aggregate.external.findings.refuted, tasks.length)} refuted/task (${percentage(aggregate.external.findings.refuted, externalTotal)})`,
+  );
+  appendText(
+    row,
+    "td",
+    `${average(aggregate.external.fixPushes, tasks.length)} fix pushes/PR · ${average(aggregate.ciReruns, tasks.length)} CI reruns/PR`,
+  );
+  const crossCheck = row.ownerDocument.createElement("td");
+  appendReviewCrossChecks(crossCheck, tasks);
+  row.append(crossCheck);
+  body.append(row);
+}
+
+function renderReviewStrip(card, repository) {
+  const strip = card.ownerDocument.createElement("section");
+  strip.className = "review-strip panel-span-12";
+  appendText(strip, "h4", "Review");
+  const metrics = readerData(repository.metrics);
+  if (!metrics) {
+    appendText(strip, "p", "Unavailable", "unavailable");
+    card.append(strip);
+    return;
+  }
+  const all = measuredMetrics(metrics);
+  if (all.length === 0) {
+    appendText(strip, "p", "No measured tasks", "empty");
+    card.append(strip);
+    return;
+  }
+  const scroll = strip.ownerDocument.createElement("div");
+  scroll.className = "review-strip-scroll";
+  const table = strip.ownerDocument.createElement("table");
+  const head = strip.ownerDocument.createElement("thead");
+  const headingRow = strip.ownerDocument.createElement("tr");
+  for (const heading of [
+    "Size",
+    "Tasks",
+    "Internal / task",
+    "External rounds / reviewer",
+    "External findings",
+    "Fixes and CI",
+    "Rounds cross-check",
+  ]) {
+    const cell = appendText(headingRow, "th", heading);
+    cell.scope = "col";
+  }
+  head.append(headingRow);
+  const body = strip.ownerDocument.createElement("tbody");
+  appendReviewAggregateRow(body, "overall", all);
+  for (const size of ["trivial", "standard", "major"]) {
+    const tasks = measuredMetrics(metrics, size);
+    appendReviewAggregateRow(body, size, tasks);
+  }
+  table.append(head, body);
+  scroll.append(table);
+  strip.append(scroll);
+  card.append(strip);
 }
 
 function renderQuestions(card, repository) {
@@ -1016,6 +1337,19 @@ export const WARNING_EXPLANATIONS = Object.freeze({
   COSTS_MISSING: "The costs file is missing.",
   COSTS_TOO_LARGE: "The costs file exceeds the safe read limit.",
   COSTS_UNAVAILABLE: "The costs file could not be read safely.",
+  METRICS_INVALID_UTF8: "A metrics line is not valid UTF-8 text.",
+  METRICS_INVALID_JSON: "A metrics line is not valid JSON.",
+  METRICS_UNSUPPORTED_SCHEMA:
+    "A metrics line uses an unsupported schema version.",
+  METRICS_INVALID_EVENT: "A metrics line contains an invalid review event.",
+  METRICS_LINE_TOO_LONG: "A metrics line exceeds the safe parsing limit.",
+  METRICS_TOO_MANY_LINES:
+    "The metrics file has more lines than the reader permits.",
+  METRICS_WARNINGS_TRUNCATED:
+    "Additional metrics warnings were omitted after the safety limit.",
+  METRICS_MISSING: "The metrics file is missing.",
+  METRICS_TOO_LARGE: "The metrics file exceeds the safe read limit.",
+  METRICS_UNAVAILABLE: "The metrics file could not be read safely.",
   REPOSITORY_WARNING: "The repository snapshot is incomplete.",
 });
 
@@ -1053,6 +1387,7 @@ function collectWarnings(repository) {
     ["logs", repository.logs],
     ["routing", repository.routing],
     ["costs", repository.costs],
+    ["metrics", repository.metrics],
   ]) {
     if (!Array.isArray(result?.warnings)) continue;
     for (const warning of result.warnings) {
@@ -1090,6 +1425,7 @@ function warningsShouldOpen(repository, warnings) {
     repository.logs,
     repository.routing,
     repository.costs,
+    repository.metrics,
   ]) {
     if (result?.status === "unavailable") return true;
   }
@@ -1218,6 +1554,7 @@ function renderRepository(repository, machine, documentRoot, now, generatedAt) {
       : "status unavailable",
   );
   card.append(header);
+  renderReviewStrip(card, repository ?? {});
   renderCurrent(card, repository ?? {});
   renderTasks(card, repository ?? {}, disclosure);
   renderQuestions(card, repository ?? {});
@@ -1431,6 +1768,140 @@ function isCostsResult(value) {
   );
 }
 
+function isMetricCounter(value, positive = false) {
+  return Number.isSafeInteger(value) && value >= (positive ? 1 : 0);
+}
+
+function isMetricKey(value, pattern) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= MAX_METRICS_KEY_LENGTH &&
+    (!pattern || pattern.test(value))
+  );
+}
+
+function isMetricMap(value, validateEntry, keyPattern) {
+  return (
+    isRecord(value) &&
+    Object.keys(value).length <= MAX_METRICS_MAP_ENTRIES &&
+    Object.entries(value).every(
+      ([key, entry]) => isMetricKey(key, keyPattern) && validateEntry(entry),
+    )
+  );
+}
+
+function isMetricFindings(value, classes) {
+  return (
+    isRecord(value) && classes.every((name) => isMetricCounter(value[name]))
+  );
+}
+
+function isShipMetric(value, taskId) {
+  return (
+    isRecord(value) &&
+    value.schemaVersion === 1 &&
+    value.task === taskId &&
+    value.event === "ship" &&
+    ["trivial", "standard", "major"].includes(value.size) &&
+    (value.reclassifiedFrom === null ||
+      ["trivial", "standard", "major"].includes(value.reclassifiedFrom)) &&
+    (value.internal === null ||
+      (isRecord(value.internal) &&
+        isMetricCounter(value.internal.rounds) &&
+        isMetricCounter(value.internal.fixed) &&
+        isMetricFindings(value.internal.findings, [
+          "blocking",
+          "minor",
+          "invalid",
+        ])))
+  );
+}
+
+function isMergeMetric(value, taskId) {
+  return (
+    isRecord(value) &&
+    value.schemaVersion === 1 &&
+    value.task === taskId &&
+    value.event === "merge" &&
+    isMetricCounter(value.pr, true) &&
+    isMetricMap(
+      value.external,
+      (review) =>
+        isRecord(review) &&
+        isMetricCounter(review.rounds) &&
+        isMetricCounter(review.fixPushes) &&
+        isMetricFindings(review.findings, ["blocking", "minor", "refuted"]),
+      /^[a-z0-9-]+$/,
+    ) &&
+    isRecord(value.ci) &&
+    isMetricCounter(value.ci.runs) &&
+    isMetricCounter(value.ci.reruns)
+  );
+}
+
+function isMetricCounterMap(value) {
+  return isMetricMap(value, isMetricCounter);
+}
+
+function isPullRequestMetric(value, taskId) {
+  return (
+    isRecord(value) &&
+    value.schemaVersion === 1 &&
+    value.task === taskId &&
+    value.event === "pr" &&
+    value.by === "factory-git" &&
+    isRoutingTimestamp(value.openedAt) &&
+    isRoutingTimestamp(value.mergedAt) &&
+    isMetricCounter(value.commits) &&
+    isMetricCounter(value.commitsAfterOpen) &&
+    isMetricCounterMap(value.reviews) &&
+    isMetricCounterMap(value.issueComments) &&
+    isMetricMap(value.reactions, isMetricCounterMap) &&
+    isMetricMap(
+      value.threads,
+      (thread) =>
+        isRecord(thread) &&
+        isMetricCounter(thread.total) &&
+        isMetricCounter(thread.resolved),
+    ) &&
+    isRecord(value.checkRuns) &&
+    isMetricCounter(value.checkRuns.total) &&
+    isMetricCounter(value.checkRuns.failed)
+  );
+}
+
+function isMetricsData(value) {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.tasks) ||
+    Object.keys(value.tasks).length > MAX_METRICS_TASKS
+  ) {
+    return false;
+  }
+  return Object.entries(value.tasks).every(([taskId, metrics]) => {
+    if (!/^T[1-9][0-9]*$/.test(taskId) || !isRecord(metrics)) return false;
+    const events = [metrics.ship, metrics.merge, metrics.pr].filter(
+      (event) => event !== undefined,
+    );
+    return (
+      events.length > 0 &&
+      (metrics.ship === undefined || isShipMetric(metrics.ship, taskId)) &&
+      (metrics.merge === undefined || isMergeMetric(metrics.merge, taskId)) &&
+      (metrics.pr === undefined || isPullRequestMetric(metrics.pr, taskId))
+    );
+  });
+}
+
+function isMetricsResult(value) {
+  return (
+    isReaderResult(value) &&
+    (value.status === "unavailable"
+      ? value.data === undefined
+      : isMetricsData(value.data))
+  );
+}
+
 function isPeer(value) {
   if (
     !isRecord(value) ||
@@ -1468,6 +1939,7 @@ function isRepository(value) {
     isReaderResult(value.logs) &&
     (value.routing === undefined || isRoutingResult(value.routing)) &&
     (value.costs === undefined || isCostsResult(value.costs)) &&
+    (value.metrics === undefined || isMetricsResult(value.metrics)) &&
     isRecord(value.liveness) &&
     ["RUNNING", "STOPPED", "CANNOT_VERIFY"].includes(value.liveness.state) &&
     isTimestamp(value.liveness.checkedAt)

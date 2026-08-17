@@ -778,6 +778,84 @@ p {
   border-bottom: 1px solid var(--color-border);
 }
 
+.review-strip {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
+.review-strip h4 {
+  margin-bottom: var(--space-3);
+  color: var(--color-info);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.review-strip p {
+  margin: 0;
+}
+
+.review-strip-scroll {
+  overflow-x: auto;
+  overscroll-behavior: contain;
+}
+
+.review-strip table {
+  width: 100%;
+  min-width: 76rem;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.review-strip th,
+.review-strip td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border-subtle);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.review-strip thead th {
+  color: var(--color-muted);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.review-strip tbody th {
+  color: var(--color-text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.review-strip tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.review-reviewer-average,
+.review-cross-check {
+  display: block;
+}
+
+.review-reviewer-average + .review-reviewer-average,
+.review-cross-check + .review-cross-check {
+  margin-top: var(--space-1);
+}
+
+.review-mismatch {
+  padding-inline: var(--space-1);
+  border-left: 3px solid var(--color-danger);
+  color: var(--color-danger);
+  font-weight: 800;
+}
+
 .repository h3,
 .repository p,
 .repository dd,
@@ -1090,6 +1168,53 @@ a:focus-visible {
 
 .task-references {
   font-size: var(--text-sm);
+}
+
+.task-review {
+  min-width: 10rem;
+}
+
+.review-chip,
+.review-missing {
+  display: block;
+  width: fit-content;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.review-chip + .review-detail,
+.review-detail + .review-chip,
+.task-review > * + * {
+  margin-top: var(--space-1);
+}
+
+.review-internal {
+  color: var(--color-accent);
+}
+
+.review-external {
+  color: var(--color-info);
+}
+
+.review-unknown,
+.review-missing,
+.review-detail {
+  color: var(--color-muted);
+}
+
+.review-detail {
+  display: block;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.review-missing {
+  border-style: dashed;
 }
 
 .task-references > * {

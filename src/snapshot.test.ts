@@ -154,6 +154,49 @@ describe("snapshot", () => {
     }
   });
 
+  test("exposes folded per-task review metrics without making state availability depend on metrics", async () => {
+    const fixture = createFactoryFixture();
+    try {
+      await Promise.all([
+        fixture.writeState({ project: "factory-ui", phase: "build" }),
+        fixture.writeMetrics(
+          [
+            JSON.stringify({
+              schemaVersion: 1,
+              task: "T34",
+              event: "ship",
+              size: "standard",
+              reclassifiedFrom: null,
+              internal: null,
+            }),
+            JSON.stringify({
+              schemaVersion: 1,
+              task: "T34",
+              event: "merge",
+              pr: 34,
+              external: {},
+              ci: { runs: 1, reruns: 0 },
+            }),
+          ].join("\n"),
+        ),
+      ]);
+
+      const snapshot = (await readRepositoryFactorySnapshot({
+        name: "factory-ui",
+        path: fixture.root,
+      })) as unknown as { status: string; metrics?: Record<string, unknown> };
+      expect(snapshot.status).toBe("available");
+      expect(snapshot.metrics).toMatchObject({
+        status: "available",
+        data: {
+          tasks: { T34: { ship: { internal: null }, merge: { pr: 34 } } },
+        },
+      });
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   test("carries partial bounded model metadata through the snapshot", async () => {
     const fixture = createFactoryFixture();
     try {

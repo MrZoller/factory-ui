@@ -9,7 +9,8 @@ export type FactoryPathKey =
   | "worklog"
   | "logs"
   | "routing"
-  | "costs";
+  | "costs"
+  | "metrics";
 
 const TARGETS: Record<FactoryPathKey, { path: string; directory: boolean }> = {
   state: { path: "state.json", directory: false },
@@ -20,6 +21,7 @@ const TARGETS: Record<FactoryPathKey, { path: string; directory: boolean }> = {
   logs: { path: "logs", directory: true },
   routing: { path: "logs/routing.json", directory: false },
   costs: { path: "logs/costs.json", directory: false },
+  metrics: { path: "metrics.jsonl", directory: false },
 };
 
 function contains(root: string, target: string): boolean {

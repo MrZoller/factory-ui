@@ -1602,6 +1602,32 @@ describe("local dashboard rendering", () => {
     expect(refreshedToggle.textContent).toBe("Show newest 8");
   });
 
+  test("does not cap non-completed task groups", () => {
+    const document = dashboardDocument();
+    const active = Array.from({ length: 9 }, (_, index) => ({
+      ...richRepository().plan.data.tasks[0],
+      id: `T${index + 1}`,
+      title: `Task ${index + 1}`,
+    }));
+    const repository = richRepository({
+      plan: {
+        ...richRepository().plan,
+        data: {
+          ...richRepository().plan.data,
+          tasks: active,
+          active,
+        },
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    expect(document.querySelectorAll(".active-work .task")).toHaveLength(9);
+    expect(
+      document.querySelector(".active-work .completed-tasks-toggle"),
+    ).toBeNull();
+  });
+
   test("keeps same-named repository disclosure state separate per machine", async () => {
     const document = dashboardDocument();
     const peer = { name: "macbook", origin: "https://macbook.example" };

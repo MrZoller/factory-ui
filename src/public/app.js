@@ -584,7 +584,10 @@ function renderTasks(card, repository, disclosure) {
       key === "completed" && (disclosure.completedExpanded ?? false);
     const renderList = () => {
       list.replaceChildren();
-      const visible = expanded ? tasks : tasks.slice(0, COMPLETED_TASK_LIMIT);
+      const visible =
+        key === "completed" && !expanded
+          ? tasks.slice(0, COMPLETED_TASK_LIMIT)
+          : tasks;
       visible.forEach((task) =>
         renderTask(list, task, costs?.[task?.id], routing),
       );

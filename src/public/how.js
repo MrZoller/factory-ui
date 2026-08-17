@@ -45,7 +45,11 @@ function availableData(result) {
 
 function routingFor(fleet) {
   return fleet?.repositories
-    ?.map((repository) => availableData(repository.routing))
+    ?.map((repository) =>
+      repository.routing?.status === "unavailable"
+        ? undefined
+        : repository.routing?.data,
+    )
     .find(Boolean);
 }
 
@@ -94,6 +98,43 @@ function modelUsage(fleet, modelId) {
   return found ? { usd: total, tokens } : undefined;
 }
 
+function formatTokenLimit(value) {
+  if (!Number.isFinite(value)) return "Unknown";
+  if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(2))}M`;
+  if (value >= 1_000) return `${Number((value / 1_000).toFixed(1))}K`;
+  return value.toLocaleString();
+}
+
+function formatListPrice(value) {
+  return value === null ? "Unpriced" : `$${value.toFixed(2)}`;
+}
+
+function appendModelDetails(item, model, documentRoot) {
+  if (!model) return;
+  item.append(element(documentRoot, "p", model.name, "agent-model-name"));
+  item.append(
+    element(
+      documentRoot,
+      "p",
+      `Context ${formatTokenLimit(model.contextWindow)} · Max output ${formatTokenLimit(model.maxOutputTokens)}`,
+      "agent-model-limits",
+    ),
+  );
+  if (model.source === null) {
+    item.append(element(documentRoot, "p", "Unpriced", "agent-list-prices"));
+    return;
+  }
+  const prices = model.pricePerMillion;
+  item.append(
+    element(
+      documentRoot,
+      "p",
+      `List / M · input ${formatListPrice(prices.input)} · output ${formatListPrice(prices.output)} · cache read ${formatListPrice(prices.cacheRead)} · cache write ${formatListPrice(prices.cacheWrite)}`,
+      "agent-list-prices",
+    ),
+  );
+}
+
 function renderRole(documentRoot, role, routing, fleet) {
   const item = element(documentRoot, "li", undefined, "agent-node");
   item.dataset.role = role.id;
@@ -114,6 +155,11 @@ function renderRole(documentRoot, role, routing, fleet) {
     element(documentRoot, "span", `/${route.model}`, "routing-model"),
   );
   item.append(routeLine);
+  appendModelDetails(
+    item,
+    routing.models?.[`${route.provider}/${route.model}`],
+    documentRoot,
+  );
   if (route.steps !== null && route.steps !== undefined) {
     item.append(
       element(documentRoot, "p", `steps ≤ ${route.steps}`, "routing-steps"),

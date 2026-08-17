@@ -253,6 +253,39 @@ function costCounters(usd: unknown, tokenCount = 0) {
   };
 }
 
+function tokenCounters(usd: number, tokens: Partial<Record<string, number>>) {
+  return {
+    ...costCounters(usd),
+    tokens: {
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      ...tokens,
+    },
+  };
+}
+
+function routingModel(overrides: Record<string, unknown> = {}) {
+  return {
+    source: "models.dev",
+    pricesAsOf: "2026-08-16",
+    name: "GPT 5.6",
+    family: "gpt",
+    releaseDate: "2026-08-01",
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    pricePerMillion: {
+      input: 1,
+      output: 4,
+      cacheRead: 0.5,
+      cacheWrite: 2,
+    },
+    ...overrides,
+  };
+}
+
 function validCostTask(usd = 1.23, tokenCount = 123) {
   return {
     ...costCounters(usd, tokenCount),
@@ -482,7 +515,9 @@ describe("local dashboard rendering", () => {
     renderFleet(fleet("mini", [], [repository]), document, NOW);
 
     const active = document.querySelector(".active-work .task")!;
-    expect(active.querySelector(".task-cost")?.textContent).toBe("$1.23");
+    expect(active.querySelector(".task-cost")?.textContent).toBe(
+      "$1.23 metered",
+    );
     expect(active.querySelector<HTMLElement>(".task-cost")?.title).toBe(
       "123 tokens",
     );
@@ -505,6 +540,229 @@ describe("local dashboard rendering", () => {
     expect(
       summaryRow(document, "mini")?.querySelector(".cost-total")?.textContent,
     ).toBe("$1.23");
+  });
+
+  test("prices only subscription by-model usage and keeps list notional separate from metered spend", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      routing: {
+        ...richRepository().routing,
+        data: {
+          ...richRepository().routing.data,
+          models: {
+            "openai/gpt-5.6": routingModel(),
+            "openai/partial": routingModel({
+              name: "Partial",
+              pricePerMillion: {
+                input: 2,
+                output: null,
+                cacheRead: null,
+                cacheWrite: null,
+              },
+            }),
+          },
+        },
+      },
+      costs: costs({
+        T8: {
+          ...tokenCounters(7.5, { input: 3_000_000 }),
+          byModel: {
+            "openai/gpt-5.6": tokenCounters(0, {
+              input: 2_000_000,
+              output: 500_000,
+              cacheRead: 1_000_000,
+              cacheWrite: 250_000,
+            }),
+            "openai/partial": tokenCounters(0, {
+              input: 500_000,
+              output: 1_000_000,
+            }),
+            "openai/metered": tokenCounters(99, { input: 9_000_000 }),
+            "openai/empty": tokenCounters(0, {}),
+          },
+          firstAt: "2026-08-16T11:00:00.000Z",
+          lastAt: "2026-08-16T11:59:00.000Z",
+        },
+      }),
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const task = document.querySelector(".active-work .task")!;
+    expect(task.querySelector(".task-cost")?.textContent).toBe("$7.50 metered");
+    const taskNotional = task.querySelector<HTMLElement>(".task-notional")!;
+    expect(taskNotional.textContent).toBe("~$6.00 at list (partial)");
+    expect(taskNotional.title).toBe(
+      "notional: subscription lane priced at models.dev list price as of 2026-08-16; not billed",
+    );
+    const repositoryTotal = document.querySelector(
+      ".repository-summary .cost-total",
+    )!;
+    expect(repositoryTotal.childNodes[0]?.textContent).toBe("$7.50 metered");
+    expect(repositoryTotal.querySelector(".notional-total")?.textContent).toBe(
+      "~$6.00 at list (partial)",
+    );
+    const machineTotal = summaryRow(document, "mini")!.querySelector(
+      ".cost-total",
+    )!;
+    expect(machineTotal.childNodes[0]?.textContent).toBe("$7.50 metered");
+    expect(machineTotal.querySelector(".notional-total")?.textContent).toBe(
+      "~$6.00 at list (partial)",
+    );
+    expect(document.body.textContent).not.toContain("$106.50");
+  });
+
+  test("omits notional labels when eligible usage is absent or entirely unpriced", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      routing: {
+        ...richRepository().routing,
+        data: {
+          ...richRepository().routing.data,
+          models: {
+            "openai/unpriced": routingModel({
+              source: null,
+              pricePerMillion: {
+                input: null,
+                output: null,
+                cacheRead: null,
+                cacheWrite: null,
+              },
+            }),
+          },
+        },
+      },
+      costs: costs({
+        T8: {
+          ...tokenCounters(0, { input: 10 }),
+          byModel: {
+            "openai/unpriced": tokenCounters(0, { input: 10 }),
+            "openai/metered": tokenCounters(2, { input: 10 }),
+          },
+          firstAt: "2026-08-16T11:00:00.000Z",
+          lastAt: "2026-08-16T11:59:00.000Z",
+        },
+      }),
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    expect(document.querySelector(".task-notional")).toBeNull();
+    expect(document.querySelector(".notional-total")).toBeNull();
+    expect(document.querySelector(".task-cost")?.textContent).toBe("sub");
+  });
+
+  test("flags a list estimate partial when any price component is unavailable", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      routing: {
+        ...richRepository().routing,
+        data: {
+          ...richRepository().routing.data,
+          models: {
+            "openai/input-only": routingModel({
+              pricePerMillion: {
+                input: 2,
+                output: null,
+                cacheRead: null,
+                cacheWrite: null,
+              },
+            }),
+          },
+        },
+      },
+      costs: costs({
+        T8: {
+          ...tokenCounters(0, { input: 1_500_000 }),
+          byModel: {
+            "openai/input-only": tokenCounters(0, { input: 1_500_000 }),
+          },
+          firstAt: "2026-08-16T11:00:00.000Z",
+          lastAt: "2026-08-16T11:59:00.000Z",
+        },
+      }),
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    expect(document.querySelector(".task-cost")?.textContent).toBe("sub");
+    expect(document.querySelector(".task-notional")?.textContent).toBe(
+      "~$3.00 at list (partial)",
+    );
+    expect(document.querySelector(".notional-total")?.textContent).toBe(
+      "~$3.00 at list (partial)",
+    );
+  });
+
+  test("never reprices metered model usage at list", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      routing: {
+        ...richRepository().routing,
+        data: {
+          ...richRepository().routing.data,
+          models: { "openai/gpt-5.6": routingModel() },
+        },
+      },
+      costs: costs({
+        T8: {
+          ...tokenCounters(4.5, { input: 3_000_000 }),
+          byModel: {
+            "openai/gpt-5.6": tokenCounters(4.5, { input: 3_000_000 }),
+          },
+          firstAt: "2026-08-16T11:00:00.000Z",
+          lastAt: "2026-08-16T11:59:00.000Z",
+        },
+      }),
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    expect(document.querySelector(".task-cost")?.textContent).toBe(
+      "$4.50 metered",
+    );
+    expect(document.querySelector(".task-notional")).toBeNull();
+    expect(document.querySelector(".notional-total")).toBeNull();
+  });
+
+  test("omits non-finite notional arithmetic instead of rendering Infinity", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      routing: {
+        ...richRepository().routing,
+        data: {
+          ...richRepository().routing.data,
+          models: {
+            "openai/gpt-5.6": routingModel({
+              pricePerMillion: {
+                input: Number.MAX_VALUE,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+              },
+            }),
+          },
+        },
+      },
+      costs: costs({
+        T8: {
+          ...tokenCounters(0, { input: Number.MAX_VALUE }),
+          byModel: {
+            "openai/gpt-5.6": tokenCounters(0, {
+              input: Number.MAX_VALUE,
+            }),
+          },
+          firstAt: "2026-08-16T11:00:00.000Z",
+          lastAt: "2026-08-16T11:59:00.000Z",
+        },
+      }),
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    expect(document.querySelector(".task-notional")).toBeNull();
+    expect(document.querySelector(".notional-total")).toBeNull();
+    expect(document.body.textContent).not.toContain("Infinity");
   });
 
   test("renders unavailable costs in repository and fleet summaries", () => {
@@ -589,6 +847,49 @@ describe("local dashboard rendering", () => {
       "Invalid fleet response",
     );
     expect(document.body.textContent).not.toContain("$1.23");
+  });
+
+  test("validates optional routing model metadata in fleet responses", async () => {
+    const validDocument = dashboardDocument();
+    const validRepository = richRepository();
+    (
+      validRepository.routing.data as typeof validRepository.routing.data & {
+        models: Record<string, unknown>;
+      }
+    ).models = {
+      "openai/gpt-5.6": routingModel(),
+    };
+    expect(
+      await loadFleet(validDocument, async () =>
+        jsonResponse(fleet("mini", [], [validRepository])),
+      ),
+    ).toBe(true);
+
+    const invalidDocument = dashboardDocument();
+    const invalidRepository = richRepository();
+    (
+      invalidRepository.routing
+        .data as typeof invalidRepository.routing.data & {
+        models: Record<string, unknown>;
+      }
+    ).models = {
+      "openai/gpt-5.6": routingModel({
+        pricePerMillion: {
+          input: -1,
+          output: 2,
+          cacheRead: null,
+          cacheWrite: null,
+        },
+      }),
+    };
+    expect(
+      await loadFleet(invalidDocument, async () =>
+        jsonResponse(fleet("peer", [], [invalidRepository])),
+      ),
+    ).toBe(false);
+    expect(invalidDocument.querySelector("#error")?.textContent).toBe(
+      "Invalid fleet response",
+    );
   });
 
   test("keeps hostile costs from a peer response inert", () => {

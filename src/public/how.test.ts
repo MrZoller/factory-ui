@@ -57,6 +57,25 @@ function counters(usd: number) {
   };
 }
 
+function model(name: string, overrides: Record<string, unknown> = {}) {
+  return {
+    source: "models.dev",
+    pricesAsOf: "2026-08-16",
+    name,
+    family: "gpt",
+    releaseDate: "2026-08-01",
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    pricePerMillion: {
+      input: 1.25,
+      output: 10,
+      cacheRead: 0.25,
+      cacheWrite: null,
+    },
+    ...overrides,
+  };
+}
+
 function fleet(overrides: Record<string, unknown> = {}) {
   const agents = Object.fromEntries(
     ROLES.filter(({ id }) => id !== "driver" && id !== "small_model").map(
@@ -88,6 +107,24 @@ function fleet(overrides: Record<string, unknown> = {}) {
             model: "openai/gpt-5.6",
             smallModel: "opencode/gpt-5-mini",
             agents,
+            models: {
+              "openai/gpt-5.6": model("GPT 5.6"),
+              "opencode/gpt-5-mini": model("GPT 5 Mini", {
+                source: null,
+                pricePerMillion: {
+                  input: null,
+                  output: null,
+                  cacheRead: null,
+                  cacheWrite: null,
+                },
+              }),
+              ...Object.fromEntries(
+                Object.values(agents).map((route) => [
+                  `${route.provider}/${route.model}`,
+                  model(`${route.model} display name`),
+                ]),
+              ),
+            },
           },
         },
         costs: {
@@ -174,6 +211,20 @@ describe("how factory works page", () => {
     expect(
       document.querySelector('[data-role="driver"] .agent-cost')?.textContent,
     ).toBe("$1.25 metered");
+    const driver = document.querySelector('[data-role="driver"]')!;
+    expect(driver.querySelector(".agent-model-name")?.textContent).toBe(
+      "GPT 5.6",
+    );
+    expect(driver.querySelector(".agent-model-limits")?.textContent).toBe(
+      "Context 1.05M · Max output 128K",
+    );
+    expect(driver.querySelector(".agent-list-prices")?.textContent).toBe(
+      "List / M · input $1.25 · output $10.00 · cache read $0.25 · cache write Unpriced",
+    );
+    expect(
+      document.querySelector('[data-role="small_model"] .agent-list-prices')
+        ?.textContent,
+    ).toBe("Unpriced");
   });
 
   test("selects machines from the hash, supports keyboard tabs, and renders unavailable machines", () => {
@@ -221,12 +272,19 @@ describe("how factory works page", () => {
       model: hostile,
       steps: 3,
     };
+    (repository.routing.data.models as Record<string, unknown>)[
+      `${hostile}/${hostile}`
+    ] = model(hostile, { family: hostile });
     renderHow([{ identity: "mini", fleet: data }], document);
 
     const route = document.querySelector(
       '[data-role="architect"] .agent-route',
     )!;
     expect(route.textContent).toContain(hostile);
+    expect(
+      document.querySelector('[data-role="architect"] .agent-model-name')
+        ?.textContent,
+    ).toBe(hostile);
     expect(route.querySelector(".provider-other")).not.toBeNull();
     expect(
       document.querySelectorAll("img, script, [onerror], [onclick]"),

@@ -313,6 +313,9 @@ export function renderHow(machines, documentRoot = document) {
   );
   const diagramScrollLeft = selectedDiagram?.scrollLeft ?? 0;
   const restoreTabFocus = tabsRoot.contains(documentRoot.activeElement);
+  const restoreOperatorsFocus =
+    selectedDiagram?.querySelector(".operators-lane") ===
+    documentRoot.activeElement;
   const views = machines.map((machine, index) => {
     const tab = element(
       documentRoot,
@@ -379,6 +382,8 @@ export function renderHow(machines, documentRoot = document) {
     views[selectedIndex]?.panel.querySelector(".pipeline-diagram");
   if (nextDiagram) nextDiagram.scrollLeft = diagramScrollLeft;
   if (restoreTabFocus) views[selectedIndex]?.tab.focus();
+  else if (restoreOperatorsFocus)
+    nextDiagram?.querySelector(".operators-lane")?.focus();
   const windowRoot = documentRoot.defaultView;
   const previousHandler = hashHandlers.get(documentRoot);
   if (previousHandler)

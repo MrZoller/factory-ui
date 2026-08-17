@@ -2923,6 +2923,46 @@ describe("fleet summary and machine tabs", () => {
     expect(strip.textContent).not.toContain("steps ≤");
   });
 
+  test("keeps slash-colliding provider and model pairs in distinct routing lanes", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            routing: {
+              status: "available",
+              data: {
+                schemaVersion: 1,
+                recordedAt: "2026-08-16T11:59:00Z",
+                model: "openai/default",
+                smallModel: "opencode/small",
+                agents: {
+                  first: { provider: "a/b", model: "c", steps: null },
+                  second: { provider: "a", model: "b/c", steps: null },
+                  third: { provider: "a/b", model: "c", steps: null },
+                },
+              },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const rows = routingRows(document.querySelector(".routing-strip")!);
+    expect(rows).toHaveLength(2);
+    expect(
+      rows.map((row) => routingRowCells(row).map((cell) => cell.textContent)),
+    ).toEqual([
+      ["a/b/c", "first · third"],
+      ["a/b/c", "second"],
+    ]);
+  });
+
   test("renders a single routing lane and leaves the empty override case unchanged", () => {
     const document = dashboardDocument();
     const routing = (agents: Record<string, unknown>) => ({

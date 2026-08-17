@@ -1520,7 +1520,7 @@ function renderRoutingStrip(fleet, documentRoot) {
   for (const [name, agent] of Object.entries(routing.agents ?? {})) {
     const provider = agent?.provider ?? "other";
     const model = agent?.model ?? "Unknown";
-    const key = `${provider}/${model}`;
+    const key = JSON.stringify([provider, model]);
     const group = groups.get(key);
     if (group) group.agents.push({ name, steps: agent?.steps });
     else

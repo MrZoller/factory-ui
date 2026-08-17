@@ -366,7 +366,7 @@ describe("how factory works page", () => {
     ).toBe("sub");
   });
 
-  test("preserves selected diagram scroll and tab focus across rerenders", () => {
+  test("preserves selected diagram scroll, tab focus, and Operators lane focus across rerenders", () => {
     const document = howDocument("#machine=remote");
     const machines = [
       { identity: "mini", fleet: fleet() },
@@ -390,5 +390,19 @@ describe("how factory works page", () => {
         ".how-machine-panel:not([hidden]) .pipeline-diagram",
       )?.scrollLeft,
     ).toBe(187);
+
+    const operatorsLane = document.querySelector<HTMLElement>(
+      ".how-machine-panel:not([hidden]) .operators-lane",
+    )!;
+    operatorsLane.focus();
+
+    renderHow(machines, document);
+
+    expect(document.activeElement?.getAttribute("aria-label")).toBe(
+      "Operators",
+    );
+    expect(document.activeElement?.closest(".how-machine-panel")?.hidden).toBe(
+      false,
+    );
   });
 });

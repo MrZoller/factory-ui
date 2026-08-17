@@ -68,9 +68,11 @@ network.
   `- YYYY-MM-DD HH:MM UTC - `. Clock times use zero-padded 24-hour UTC time.
 - Logs: at most 256 directory entries are considered; narration is capped at
   64 KiB, 100 lines, and 2,000 bytes per line.
-- Agent routing: `.factory/logs/routing.json` is capped at 16 KiB, 64 agents,
+- Agent routing: `.factory/logs/routing.json` is capped at 256 KiB, 64 agents,
   128 characters per agent name, and 1,024 characters per model/provider
   string; an agent's optional step cap is an integer from 0 through 1,000,000.
+  Optional model metadata is capped at 64 entries and 200 characters per
+  string.
 - Task costs: `.factory/logs/costs.json` is capped at 64 KiB, 256 tasks, and 64
   models per task. Cost strings are capped at 1,024 characters.
 - Liveness: the fixed, shell-free `lsof` probe has a two-second timeout and
@@ -104,6 +106,23 @@ Routing uses schema version 1:
   "smallModel": "opencode/gpt-5-mini",
   "agents": {
     "builder": { "provider": "openai", "model": "gpt-5.6", "steps": 25 }
+  },
+  "models": {
+    "openai/gpt-5.6": {
+      "source": "models.dev",
+      "pricesAsOf": "2026-08-16",
+      "name": "GPT 5.6",
+      "family": "gpt",
+      "releaseDate": "2026-08-01",
+      "contextWindow": 1050000,
+      "maxOutputTokens": 128000,
+      "pricePerMillion": {
+        "input": 1.25,
+        "output": 10,
+        "cacheRead": 0.125,
+        "cacheWrite": null
+      }
+    }
   }
 }
 ```
@@ -112,7 +131,10 @@ Routing uses schema version 1:
 `provider/model` identifiers. Each agent has bounded non-empty `provider` and
 `model` strings and an integer or null `steps`; unknown keys are ignored. A
 missing, oversized, malformed, unsupported-version, or otherwise invalid file
-is reported as routing `Unavailable` with a warning.
+is reported as routing `Unavailable` with a warning. The optional `models` map
+is additive: malformed entries are omitted with partial status, model metadata
+strings are bounded, token limits are non-negative safe integers, and prices
+are finite non-negative numbers or null.
 
 Costs use schema version 1:
 

@@ -354,16 +354,44 @@ p {
 
 .cost-total,
 .cost-unattributed,
-.task-cost {
+.task-cost,
+.task-notional,
+.notional-total {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .task-cost {
-  justify-self: end;
   color: var(--color-text);
   font-size: var(--text-sm);
   font-weight: 700;
+}
+
+.task-cost-group {
+  display: flex;
+  justify-self: end;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.task-cost-separator {
+  color: var(--color-muted);
+}
+
+.task-notional,
+.notional-total {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+.task-notional {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.notional-total {
+  display: block;
+  margin-top: var(--space-1);
 }
 
 .task-cost-detail {
@@ -505,11 +533,24 @@ p {
   font-size: var(--text-sm);
 }
 
-.agent-cost {
+.agent-cost,
+.agent-model-name,
+.agent-model-limits,
+.agent-list-prices {
   margin-top: var(--space-2);
   color: var(--color-muted);
   font-size: var(--text-xs);
+}
+
+.agent-cost,
+.agent-model-limits,
+.agent-list-prices {
   font-variant-numeric: tabular-nums;
+}
+
+.agent-model-name {
+  color: var(--color-text);
+  font-weight: 700;
 }
 
 .approval-gate,

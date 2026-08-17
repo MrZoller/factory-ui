@@ -6,8 +6,10 @@ const MAX_FLEET_RESPONSE_BYTES = 32 * 1024 * 1024;
 const MAX_REPOSITORIES = 32;
 const MAX_PEERS = 32;
 const MAX_ROUTING_AGENTS = 64;
+const MAX_ROUTING_MODELS = 64;
 const MAX_AGENT_NAME_LENGTH = 128;
 const MAX_ROUTING_STRING_LENGTH = 1024;
+const MAX_ROUTING_MODEL_STRING_LENGTH = 200;
 const MAX_ROUTING_STEPS = 1_000_000;
 const MAX_COST_TASKS = 256;
 const MAX_COST_MODELS_PER_TASK = 64;
@@ -387,6 +389,49 @@ function formatUsd(usd) {
   return `$${usd.toFixed(2)}`;
 }
 
+const NOTIONAL_COMPONENTS = ["input", "output", "cacheRead", "cacheWrite"];
+
+function taskNotional(counters, routing) {
+  if (!isRecord(counters?.byModel)) return null;
+  let usd = 0;
+  let priced = false;
+  let partial = false;
+  const pricesAsOf = new Set();
+  for (const [modelId, modelCounters] of Object.entries(counters.byModel)) {
+    if (!isCostCounters(modelCounters) || modelCounters.usd !== 0) continue;
+    if (tokenTotal(modelCounters) === 0) continue;
+    const model = routing?.models?.[modelId];
+    if (!model || model.source === null) {
+      partial = true;
+      continue;
+    }
+    for (const component of NOTIONAL_COMPONENTS) {
+      const tokenCount = modelCounters.tokens[component];
+      const price = model.pricePerMillion[component];
+      if (price === null) {
+        partial = true;
+        continue;
+      }
+      if (tokenCount === 0) continue;
+      const componentUsd = (tokenCount * price) / 1_000_000;
+      if (!Number.isFinite(componentUsd)) return undefined;
+      usd += componentUsd;
+      if (!Number.isFinite(usd)) return undefined;
+      priced = true;
+      pricesAsOf.add(model.pricesAsOf);
+    }
+  }
+  return priced ? { usd, partial, pricesAsOf: [...pricesAsOf].sort() } : null;
+}
+
+function notionalLabel(notional) {
+  if (!notional) return null;
+  return {
+    text: `~${formatUsd(notional.usd)} at list${notional.partial ? " (partial)" : ""}`,
+    title: `notional: subscription lane priced at models.dev list price as of ${notional.pricesAsOf.join(", ")}; not billed`,
+  };
+}
+
 function costLabel(counters) {
   if (!isCostCounters(counters)) return null;
   const tokens = tokenTotal(counters);
@@ -396,7 +441,7 @@ function costLabel(counters) {
   };
 }
 
-function renderTask(panel, task, cost) {
+function renderTask(panel, task, cost, routing) {
   const item = panel.ownerDocument.createElement("li");
   item.className = "task";
   appendText(item, "span", task?.id ?? "?", "task-id");
@@ -404,8 +449,27 @@ function renderTask(panel, task, cost) {
   appendText(item, "span", task?.size ?? "unknown", "task-size");
   const label = costLabel(cost);
   if (label) {
-    const costNode = appendText(item, "span", label.text, "task-cost");
+    const costGroup = item.ownerDocument.createElement("span");
+    costGroup.className = "task-cost-group";
+    const costNode = appendText(
+      costGroup,
+      "span",
+      cost.usd > 0 ? `${formatUsd(cost.usd)} metered` : label.text,
+      "task-cost",
+    );
     costNode.title = label.title;
+    const notional = notionalLabel(taskNotional(cost, routing));
+    if (notional) {
+      appendText(costGroup, "span", "·", "task-cost-separator");
+      const notionalNode = appendText(
+        costGroup,
+        "span",
+        notional.text,
+        "task-notional",
+      );
+      notionalNode.title = notional.title;
+    }
+    item.append(costGroup);
     appendText(item, "span", label.title, "task-cost-detail");
   }
   if (Array.isArray(task?.dependencies) && task.dependencies.length > 0) {
@@ -438,6 +502,7 @@ function renderTask(panel, task, cost) {
 function renderTasks(card, repository) {
   const plan = readerData(repository.plan);
   const costs = readerData(repository.costs)?.tasks;
+  const routing = readerData(repository.routing);
   for (const [title, key, className, spanClass] of TASK_GROUPS) {
     const panel = addPanel(
       card,
@@ -459,7 +524,7 @@ function renderTasks(card, repository) {
     }
     const list = panel.ownerDocument.createElement("ul");
     list.className = "task-list";
-    tasks.forEach((task) => renderTask(list, task, costs?.[task?.id]));
+    tasks.forEach((task) => renderTask(list, task, costs?.[task?.id], routing));
     panel.append(list);
   }
 }
@@ -759,6 +824,9 @@ export const WARNING_EXPLANATIONS = Object.freeze({
   ROUTING_TOO_MANY_AGENTS:
     "The routing file has more agents than are retained.",
   ROUTING_INVALID_AGENT: "An agent routing entry has an invalid value.",
+  ROUTING_TOO_MANY_MODELS:
+    "The routing file has more model metadata entries than are retained.",
+  ROUTING_INVALID_MODEL: "A routing model metadata entry has an invalid value.",
   ROUTING_MISSING: "The routing file is missing.",
   ROUTING_TOO_LARGE: "The routing file exceeds the safe read limit.",
   ROUTING_UNAVAILABLE: "The routing file could not be read safely.",
@@ -914,7 +982,8 @@ function renderRoutingStrip(fleet, documentRoot) {
   strip.className = "routing-strip";
   appendText(strip, "h3", "Routing");
   const routing = fleet?.repositories?.find(
-    (repository) => repository.routing?.status === "available",
+    (repository) =>
+      repository.routing && repository.routing.status !== "unavailable",
   )?.routing.data;
   if (!routing) {
     appendText(strip, "p", "Unavailable", "unavailable");
@@ -1036,6 +1105,47 @@ function isRoutingTimestamp(value) {
   return timestamp.toISOString() === normalized;
 }
 
+function isBoundedRoutingModelString(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= MAX_ROUTING_MODEL_STRING_LENGTH
+  );
+}
+
+function isRoutingModel(value) {
+  return (
+    isRecord(value) &&
+    (value.source === "models.dev" || value.source === null) &&
+    [value.pricesAsOf, value.name, value.family, value.releaseDate].every(
+      isBoundedRoutingModelString,
+    ) &&
+    [value.contextWindow, value.maxOutputTokens].every(
+      (limit) => Number.isSafeInteger(limit) && limit >= 0,
+    ) &&
+    isRecord(value.pricePerMillion) &&
+    NOTIONAL_COMPONENTS.every(
+      (component) =>
+        value.pricePerMillion[component] === null ||
+        (typeof value.pricePerMillion[component] === "number" &&
+          Number.isFinite(value.pricePerMillion[component]) &&
+          value.pricePerMillion[component] >= 0),
+    )
+  );
+}
+
+function isRoutingModels(value) {
+  if (!isRecord(value) || Object.keys(value).length > MAX_ROUTING_MODELS) {
+    return false;
+  }
+  return Object.entries(value).every(
+    ([id, model]) =>
+      isBoundedRoutingModelString(id) &&
+      isRoutingModelId(id) &&
+      isRoutingModel(model),
+  );
+}
+
 function isRoutingData(value) {
   if (
     !isRecord(value) ||
@@ -1043,7 +1153,8 @@ function isRoutingData(value) {
     !isRoutingTimestamp(value.recordedAt) ||
     !isRoutingModelId(value.model) ||
     !isRoutingModelId(value.smallModel) ||
-    !isRecord(value.agents)
+    !isRecord(value.agents) ||
+    (value.models !== undefined && !isRoutingModels(value.models))
   ) {
     return false;
   }
@@ -1280,6 +1391,30 @@ function meteredTotal(repositories) {
   return formatUsd(total);
 }
 
+function notionalTotal(repositories) {
+  if (repositories.length === 0) return undefined;
+  let usd = 0;
+  let partial = false;
+  const pricesAsOf = new Set();
+  let priced = false;
+  for (const repository of repositories) {
+    const tasks = repositoryCostData(repository);
+    if (!tasks) return undefined;
+    const routing = readerData(repository.routing);
+    for (const counters of Object.values(tasks)) {
+      const notional = taskNotional(counters, routing);
+      if (notional === undefined) return undefined;
+      if (notional === null) continue;
+      usd += notional.usd;
+      if (!Number.isFinite(usd)) return undefined;
+      priced = true;
+      partial ||= notional.partial;
+      notional.pricesAsOf.forEach((date) => pricesAsOf.add(date));
+    }
+  }
+  return priced ? { usd, partial, pricesAsOf: [...pricesAsOf].sort() } : null;
+}
+
 function aggregateCurrent(repositories, key, format) {
   if (repositories.length === 0) return "Unknown";
   const concrete = [];
@@ -1337,6 +1472,7 @@ function summarizeMachine(name, fleet, now, intervalMilliseconds = 30_000) {
         ? displayAge(fleet.generatedAt, now)
         : "",
     cost: meteredTotal(repositories),
+    notional: notionalLabel(notionalTotal(repositories)),
   };
 }
 
@@ -1358,6 +1494,22 @@ function renderSummaryRow(row, summary) {
   );
   const holdCell = documentRoot.createElement("td");
   if (summary.hold) appendText(holdCell, "span", "HELD", "badge held-badge");
+  const costCell = textElement(
+    documentRoot,
+    "td",
+    summary.cost,
+    "cost-total metered-total",
+  );
+  if (summary.notional) {
+    costCell.textContent = `${summary.cost} metered`;
+    const notional = appendText(
+      costCell,
+      "span",
+      summary.notional.text,
+      "notional-total",
+    );
+    notional.title = summary.notional.title;
+  }
   row.replaceChildren(
     textElement(documentRoot, "th", summary.name),
     livenessCell,
@@ -1371,7 +1523,7 @@ function renderSummaryRow(row, summary) {
       summary.age,
       `age${summary.age && summary.age !== "Unavailable" ? " stale" : ""}`,
     ),
-    textElement(documentRoot, "td", summary.cost, "cost-total"),
+    costCell,
   );
   row.firstElementChild.scope = "row";
 }
@@ -1412,6 +1564,7 @@ function summarizeRepository(repository, now) {
   const questions = readerData(repository.questions)?.open;
   const costTasks = repositoryCostData(repository);
   const unattributed = costLabel(costTasks?.unattributed);
+  const notional = notionalLabel(notionalTotal([repository]));
   return {
     name: repository.name ?? "Unknown repository",
     availability:
@@ -1428,6 +1581,7 @@ function summarizeRepository(repository, now) {
     questions: Array.isArray(questions) ? String(questions.length) : "Unknown",
     age: worklogAge(repository, now),
     cost: meteredTotal([repository]),
+    notional,
     unattributed: unattributed?.text ?? (costTasks ? "None" : "Unavailable"),
     unattributedTitle: unattributed?.title,
   };
@@ -1459,6 +1613,22 @@ function renderRepositorySummaryRow(row, summary) {
   );
   if (summary.unattributedTitle)
     unattributedCell.title = summary.unattributedTitle;
+  const costCell = textElement(
+    documentRoot,
+    "td",
+    summary.cost,
+    "cost-total metered-total",
+  );
+  if (summary.notional) {
+    costCell.textContent = `${summary.cost} metered`;
+    const notional = appendText(
+      costCell,
+      "span",
+      summary.notional.text,
+      "notional-total",
+    );
+    notional.title = summary.notional.title;
+  }
   row.replaceChildren(
     textElement(documentRoot, "th", summary.name),
     availabilityCell,
@@ -1468,7 +1638,7 @@ function renderRepositorySummaryRow(row, summary) {
     holdCell,
     textElement(documentRoot, "td", summary.questions),
     textElement(documentRoot, "td", summary.age, "age"),
-    textElement(documentRoot, "td", summary.cost, "cost-total"),
+    costCell,
     unattributedCell,
   );
   row.firstElementChild.scope = "row";

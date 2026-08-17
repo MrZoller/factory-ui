@@ -1383,6 +1383,144 @@ describe("local dashboard rendering", () => {
     );
   });
 
+  test("keeps worklog and warnings disclosure choices across a refreshed snapshot", () => {
+    const document = dashboardDocument();
+    const entries = Array.from({ length: 7 }, (_, index) => ({
+      date: "2026-08-16",
+      time: `0${index}:00`,
+      text: `- 2026-08-16 0${index}:00 UTC - Entry ${index}.`,
+    }));
+    const first = richRepository({
+      worklog: { status: "available", data: { entries }, warnings: [] },
+      logs: {
+        status: "available",
+        data: richRepository().logs.data,
+        warnings: [],
+      },
+      plan: {
+        status: "partial",
+        data: richRepository().plan.data,
+        warnings: [{ code: "PLAN_MALFORMED_TASK", message: "bad", line: 1 }],
+      },
+    });
+    renderFleet(fleet("mini", [], [first]), document, NOW);
+
+    const worklog = document.querySelector(".worklog-panel")!;
+    worklog.querySelector<HTMLButtonElement>(".worklog-toggle")!.click();
+    const raw = worklog.querySelector<HTMLDetailsElement>(".worklog-raw")!;
+    raw.open = true;
+    raw.dispatchEvent(new document.defaultView!.Event("toggle"));
+    const warnings = document.querySelector<HTMLDetailsElement>(
+      ".warnings-panel details",
+    )!;
+    warnings.open = true;
+    warnings.dispatchEvent(new document.defaultView!.Event("toggle"));
+    warnings.open = false;
+    warnings.dispatchEvent(new document.defaultView!.Event("toggle"));
+
+    const second = richRepository({
+      worklog: { status: "available", data: { entries }, warnings: [] },
+      logs: {
+        status: "partial",
+        data: richRepository().logs.data,
+        warnings: [{ code: "LOG_TRUNCATED", message: "old lines omitted" }],
+      },
+    });
+    renderFleet(fleet("mini", [], [second]), document, NOW);
+
+    const refreshedWorklog = document.querySelector(".worklog-panel")!;
+    const toggle =
+      refreshedWorklog.querySelector<HTMLButtonElement>(".worklog-toggle")!;
+    expect(toggle.textContent).toBe("Show newest 6");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(refreshedWorklog.querySelectorAll(".worklog-entry")).toHaveLength(7);
+    expect(
+      refreshedWorklog.querySelector<HTMLDetailsElement>(".worklog-raw")?.open,
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLDetailsElement>(".warnings-panel details")
+        ?.open,
+    ).toBe(false);
+  });
+
+  test("keeps worklog disclosure state separate for each repository", () => {
+    const document = dashboardDocument();
+    const entries = Array.from({ length: 7 }, (_, index) => ({
+      date: "2026-08-16",
+      time: `0${index}:00`,
+      text: `- 2026-08-16 0${index}:00 UTC - Entry ${index}.`,
+    }));
+    const alpha = richRepository({
+      name: "alpha",
+      worklog: { status: "available", data: { entries }, warnings: [] },
+    });
+    const beta = richRepository({
+      name: "beta",
+      worklog: { status: "available", data: { entries }, warnings: [] },
+    });
+    renderFleet(fleet("mini", [], [alpha, beta]), document, NOW);
+    document
+      .querySelector<HTMLButtonElement>(".repository .worklog-toggle")!
+      .click();
+
+    renderFleet(fleet("mini", [], [alpha, beta]), document, NOW);
+
+    const toggles = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".worklog-toggle"),
+    );
+    expect(toggles.map((toggle) => toggle.textContent)).toEqual([
+      "Show newest 6",
+      "Show all 7",
+    ]);
+    expect(
+      toggles.map((toggle) => toggle.getAttribute("aria-expanded")),
+    ).toEqual(["true", "false"]);
+  });
+
+  test("drops raw-entry disclosure state when an entry leaves the reader window", () => {
+    const document = dashboardDocument();
+    const oldEntry = {
+      date: "2026-08-15",
+      time: "09:00",
+      text: "- 2026-08-15 09:00 UTC - Old entry.",
+    };
+    const currentEntries = [
+      oldEntry,
+      ...Array.from({ length: 6 }, (_, index) => ({
+        date: "2026-08-16",
+        time: `0${index}:00`,
+        text: `- 2026-08-16 0${index}:00 UTC - Entry ${index}.`,
+      })),
+    ];
+    const repository = (entries: typeof currentEntries) =>
+      richRepository({
+        worklog: { status: "available", data: { entries }, warnings: [] },
+      });
+    renderFleet(fleet("mini", [], [repository(currentEntries)]), document, NOW);
+    document.querySelector<HTMLButtonElement>(".worklog-toggle")!.click();
+    const oldRaw = Array.from(
+      document.querySelectorAll<HTMLDetailsElement>(".worklog-raw"),
+    ).find((details) =>
+      details.parentElement?.textContent?.includes("Old entry"),
+    )!;
+    oldRaw.open = true;
+    oldRaw.dispatchEvent(new document.defaultView!.Event("toggle"));
+
+    renderFleet(
+      fleet("mini", [], [repository(currentEntries.slice(1))]),
+      document,
+      NOW,
+    );
+    renderFleet(fleet("mini", [], [repository(currentEntries)]), document, NOW);
+
+    const restoredOldRaw = Array.from(
+      document.querySelectorAll<HTMLDetailsElement>(".worklog-raw"),
+    ).find((details) =>
+      details.parentElement?.textContent?.includes("Old entry"),
+    );
+    expect(restoredOldRaw?.open).toBe(false);
+  });
+
   test("renders worklog event chips, sentence bodies, raw fallbacks, and safe inline highlights", () => {
     const document = dashboardDocument();
     const sha = "0123456789abcdef0123456789abcdef01234567";

@@ -207,7 +207,7 @@ task.
   - deps: T28
   - pr: 33
 
-- [R] T35 (trivial) — Completed tasks newest first, collapsed past the newest 8
+- [x] T35 (trivial) — Completed tasks newest first, collapsed past the newest 8
   - acceptance: In `src/public/app.js`, `src/public/styles.css`, and colocated tests: the Completed task list renders newest first — ordered by the task's `pr` metrics line `mergedAt` when the metrics reader (T34) supplies it, else by task id descending (reverse plan order) — while every other task group keeps plan order; the list shows the newest 8 with a text-only "Show all N" toggle for the rest (state kept across refreshes via the T36 disclosure store), and when expanded the list scrolls inside the panel within a max-height (~24rem, `overflow-y: auto`, keyboard-focusable region) so the Completed panel can never stretch the repository grid — collapsed state has no inner scroll; tests cover mergedAt ordering, id-descending fallback, mixed (some tasks with mergedAt, some without — mergedAt-known tasks first by time, then the rest by id), the 8/N cap and toggle, the expanded-state scroll class present / collapsed-state absent, and that other groups are unaffected (spec 7; T27, T34).
   - deps: T27, T36
   - pr: 34

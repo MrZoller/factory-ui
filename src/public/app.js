@@ -1064,13 +1064,7 @@ function renderRoutingStrip(fleet, documentRoot) {
   return strip;
 }
 
-function renderRepository(
-  repository,
-  machine,
-  documentRoot,
-  now,
-  generatedAt,
-) {
+function renderRepository(repository, machine, documentRoot, now, generatedAt) {
   const disclosure = disclosureState(documentRoot, machine, repository.name);
   const card = documentRoot.createElement("article");
   card.className = "repository";

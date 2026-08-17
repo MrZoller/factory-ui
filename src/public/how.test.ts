@@ -10,9 +10,15 @@ interface Role {
   phase: string;
 }
 
+interface Operator {
+  id: string;
+}
+
 interface HowModule {
   PIPELINE: PipelineStage[];
   ROLES: Role[];
+  OPERATORS: Operator[];
+  OPERATOR_EDGES: { id: string }[];
   renderHow: (machines: unknown[], documentRoot?: Document) => void;
 }
 
@@ -32,11 +38,12 @@ async function browserModule(path: string): Promise<HowModule> {
     .replaceAll("export async function ", "async function ")
     .replaceAll("export function ", "function ");
   return new Function(
-    `${source}\nreturn { PIPELINE, ROLES, renderHow };`,
+    `${source}\nreturn { PIPELINE, ROLES, OPERATORS, OPERATOR_EDGES, renderHow };`,
   )() as HowModule;
 }
 
-const { PIPELINE, ROLES, renderHow } = await browserModule("./how.js");
+const { PIPELINE, ROLES, OPERATORS, OPERATOR_EDGES, renderHow } =
+  await browserModule("./how.js");
 
 function howDocument(hash = ""): Document {
   const window = new Window({ url: `https://dashboard.test/how${hash}` });
@@ -150,6 +157,37 @@ function fleet(overrides: Record<string, unknown> = {}) {
 }
 
 describe("how factory works page", () => {
+  test("renders the keyboard-reachable operator lane and both paths", () => {
+    const document = howDocument();
+    renderHow([{ identity: "<hostile-machine>", fleet: fleet() }], document);
+
+    const lane = document.querySelector<HTMLElement>(".operators-lane")!;
+    expect(lane.tabIndex).toBe(0);
+    expect(
+      Array.from(
+        lane.querySelectorAll<HTMLElement>(".operator-node"),
+        (node) => node.dataset.operator,
+      ),
+    ).toEqual(OPERATORS.map(({ id }) => id));
+    expect(lane.textContent).toContain("Approves spec and plan");
+    expect(lane.textContent).toContain("coordinate peer operator sessions");
+    expect(lane.textContent).toContain("one fresh opencode session per task");
+    expect(
+      Array.from(
+        lane.querySelectorAll<HTMLElement>(".operator-edge"),
+        (edge) => edge.dataset.edge,
+      ),
+    ).toEqual(OPERATOR_EDGES.map(({ id }) => id));
+    expect(lane.querySelector("[data-edge=direct]")?.classList).toContain(
+      "operator-edge-alternative",
+    );
+    expect(lane.textContent).toContain(
+      "Everything below runs identically either way.",
+    );
+    expect(document.querySelector("script")).toBeNull();
+    expect(document.body.textContent).toContain("<hostile-machine>");
+  });
+
   test("renders the complete guarded pipeline and live role routing overlay", () => {
     const document = howDocument();
     renderHow([{ identity: "mini", fleet: fleet() }], document);

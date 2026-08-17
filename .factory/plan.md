@@ -194,11 +194,12 @@ task.
   - deps: T23, T24
   - pr: 31
 
-- [~] T33 (standard) — Partial cost totals: sum what is available and say so, instead of Unavailable when any repository lacks costs
+- [x] T33 (standard) — Partial cost totals: sum what is available and say so, instead of Unavailable when any repository lacks costs
   - acceptance: In `src/public/app.js` and colocated tests: the machine-row and fleet-level metered totals sum the repositories whose costs reader is available and render `$<sum>` when every repository contributed, `$<sum> (k of n repos)` with the non-contributing repository names in the tooltip when only some did, and `Unavailable` only when none did (or a sum is non-finite); the same rule applies to any notional total added by T32; tests cover all-available, partial, none, and the non-finite guard (spec 7; T23).
   - deps: T23
+  - pr: 32
 
-- [ ] T36 (trivial) — Disclosure state survives refresh: worklog show-all, entry details, warnings panel
+- [~] T36 (standard) — Disclosure state survives refresh: worklog show-all, entry details, warnings panel
   - acceptance: In `src/public/app.js` and colocated tests: a per-document, per-repository UI-state store (keyed by machine + repository name, kept for the page's lifetime, never persisted or sent anywhere) records every user-operated disclosure — the worklog "Show all N / Show newest k" toggle, each worklog entry's `<details>` open state (keyed by the entry's date+time stamp), and the warnings panel's `<details>` open state — and every re-render (auto-refresh, manual refresh, peer fan-out re-install) restores it instead of resetting; a state whose key no longer exists after a refresh (an entry that scrolled out of the 20-entry window) is dropped silently; the T20/T21/T27/T28 defaults apply only when no user choice is recorded; tests drive `renderFleet` twice with the same fixture and assert the toggle label, aria-expanded, and details open state carry over, that a changed default (warnings switching to error-state auto-open) does not override a recorded user choice, and that keys are per repository (two repos' toggles independent) (spec 7; T19, T27, T28).
   - deps: T28
 

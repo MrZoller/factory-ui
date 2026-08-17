@@ -19,6 +19,20 @@ const tabControllers = new WeakMap();
 const machineViews = new WeakMap();
 const loadStates = new WeakMap();
 const dashboardControllers = new WeakMap();
+const disclosureStates = new WeakMap();
+
+function disclosureState(documentRoot, machine, repository) {
+  let machines = disclosureStates.get(documentRoot);
+  if (!machines) disclosureStates.set(documentRoot, (machines = new Map()));
+  let repositories = machines.get(machine);
+  if (!repositories) machines.set(machine, (repositories = new Map()));
+  let state = repositories.get(repository);
+  if (!state) {
+    state = { worklogEntries: new Map() };
+    repositories.set(repository, state);
+  }
+  return state;
+}
 
 function textElement(documentRoot, tag, text, className) {
   const element = documentRoot.createElement(tag);
@@ -577,7 +591,7 @@ function renderQuestions(card, repository) {
   }
 }
 
-function renderWorklog(card, repository) {
+function renderWorklog(card, repository, disclosure) {
   const panel = addPanel(
     card,
     "Recent worklog",
@@ -598,7 +612,12 @@ function renderWorklog(card, repository) {
   }
   const newestFirst = entries.slice().reverse();
   const visibleCount = 6;
-  let expanded = false;
+  let expanded = disclosure.worklogExpanded ?? false;
+  const entryKey = (entry) => `${entry?.date ?? ""}\u0000${entry?.time ?? ""}`;
+  const currentKeys = new Set(newestFirst.map(entryKey));
+  for (const key of disclosure.worklogEntries.keys()) {
+    if (!currentKeys.has(key)) disclosure.worklogEntries.delete(key);
+  }
   const list = panel.ownerDocument.createElement("div");
   list.className = "worklog-list";
   panel.append(list);
@@ -666,6 +685,11 @@ function renderWorklog(card, repository) {
       }
       const details = item.ownerDocument.createElement("details");
       details.className = "worklog-raw";
+      const key = entryKey(entry);
+      details.open = disclosure.worklogEntries.get(key) ?? false;
+      details.addEventListener("toggle", () => {
+        disclosure.worklogEntries.set(key, details.open);
+      });
       appendText(details, "summary", "Raw entry");
       appendText(details, "pre", parsed.raw, "verbatim");
       item.append(details);
@@ -684,13 +708,17 @@ function renderWorklog(card, repository) {
     toggle.type = "button";
     toggle.addEventListener("click", () => {
       expanded = !expanded;
+      disclosure.worklogExpanded = expanded;
       toggle.textContent = expanded
         ? `Show newest ${visibleCount}`
         : `Show all ${newestFirst.length}`;
       toggle.setAttribute("aria-expanded", String(expanded));
       renderEntries();
     });
-    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.textContent = expanded
+      ? `Show newest ${visibleCount}`
+      : `Show all ${newestFirst.length}`;
   }
 }
 
@@ -936,14 +964,18 @@ function warningsShouldOpen(repository, warnings) {
   );
 }
 
-function renderWarnings(card, repository) {
+function renderWarnings(card, repository, disclosure) {
   const warnings = collectWarnings(repository);
   if (warnings.length === 0) return;
   const documentRoot = card.ownerDocument;
   const panel = documentRoot.createElement("section");
   panel.className = "panel warnings-panel panel-span-4";
   const details = documentRoot.createElement("details");
-  details.open = warningsShouldOpen(repository, warnings);
+  details.open =
+    disclosure.warningsOpen ?? warningsShouldOpen(repository, warnings);
+  details.addEventListener("toggle", () => {
+    disclosure.warningsOpen = details.open;
+  });
   const summary = documentRoot.createElement("summary");
   appendText(
     summary,
@@ -1032,7 +1064,8 @@ function renderRoutingStrip(fleet, documentRoot) {
   return strip;
 }
 
-function renderRepository(repository, documentRoot, now, generatedAt) {
+function renderRepository(repository, machine, documentRoot, now, generatedAt) {
+  const disclosure = disclosureState(documentRoot, machine, repository.name);
   const card = documentRoot.createElement("article");
   card.className = "repository";
   const header = documentRoot.createElement("header");
@@ -1049,9 +1082,9 @@ function renderRepository(repository, documentRoot, now, generatedAt) {
   renderCurrent(card, repository ?? {});
   renderTasks(card, repository ?? {});
   renderQuestions(card, repository ?? {});
-  renderWorklog(card, repository ?? {});
+  renderWorklog(card, repository ?? {}, disclosure);
   renderLogs(card, repository ?? {}, now, generatedAt);
-  renderWarnings(card, repository ?? {});
+  renderWarnings(card, repository ?? {}, disclosure);
   return card;
 }
 
@@ -1729,6 +1762,7 @@ function createRepositorySummary(documentRoot) {
 
 function createRepositoryView(
   repository,
+  machine,
   machineIndex,
   index,
   documentRoot,
@@ -1755,7 +1789,9 @@ function createRepositoryView(
   panel.setAttribute("role", "tabpanel");
   panel.setAttribute("aria-labelledby", tabId);
   panel.hidden = true;
-  panel.append(renderRepository(repository, documentRoot, now, generatedAt));
+  panel.append(
+    renderRepository(repository, machine, documentRoot, now, generatedAt),
+  );
   return { identity: repository.name, row, tab, panel };
 }
 
@@ -1815,6 +1851,7 @@ function updateMachineView(view, summary, fleet, now, unreachable = false) {
   view.repositories = fleet.repositories.map((repository, index) =>
     createRepositoryView(
       repository,
+      view.identity,
       view.index,
       index,
       documentRoot,

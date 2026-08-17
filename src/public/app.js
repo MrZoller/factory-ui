@@ -426,9 +426,19 @@ function taskNotional(counters, routing) {
 
 function notionalLabel(notional) {
   if (!notional) return null;
+  const contributors = notional.contributors ?? 1;
+  const repositories = notional.repositories ?? 1;
+  const missingNames = notional.missingNames ?? [];
+  const coverage =
+    contributors < repositories
+      ? ` (${contributors} of ${repositories} repos)`
+      : "";
+  const missing = missingNames.length
+    ? `; unavailable repositories: ${missingNames.join(", ")}`
+    : "";
   return {
-    text: `~${formatUsd(notional.usd)} at list${notional.partial ? " (partial)" : ""}`,
-    title: `notional: subscription lane priced at models.dev list price as of ${notional.pricesAsOf.join(", ")}; not billed`,
+    text: `~${formatUsd(notional.usd)} at list${notional.partial ? " (partial)" : ""}${coverage}`,
+    title: `notional: subscription lane priced at models.dev list price as of ${notional.pricesAsOf.join(", ")}; not billed${missing}`,
   };
 }
 
@@ -1376,19 +1386,40 @@ function repositoryCostData(repository) {
 }
 
 function meteredTotal(repositories) {
-  if (repositories.length === 0) return "Unavailable";
+  if (repositories.length === 0) return { text: "Unavailable" };
   let total = 0;
+  let contributors = 0;
+  const missingNames = [];
   for (const repository of repositories) {
     const tasks = repositoryCostData(repository);
-    if (!tasks) return "Unavailable";
+    if (!tasks) {
+      missingNames.push(repository.name ?? "Unknown repository");
+      continue;
+    }
+    contributors += 1;
     for (const counters of Object.values(tasks)) {
       if (isCostCounters(counters)) {
         total += counters.usd;
-        if (!Number.isFinite(total)) return "Unavailable";
+        if (!Number.isFinite(total)) return { text: "Unavailable" };
       }
     }
   }
-  return formatUsd(total);
+  if (contributors === 0) {
+    return {
+      text: "Unavailable",
+      title: `Unavailable repositories: ${missingNames.join(", ")}`,
+    };
+  }
+  const coverage =
+    contributors < repositories.length
+      ? ` (${contributors} of ${repositories.length} repos)`
+      : "";
+  return {
+    text: `${formatUsd(total)}${coverage}`,
+    title: missingNames.length
+      ? `Unavailable repositories: ${missingNames.join(", ")}`
+      : undefined,
+  };
 }
 
 function notionalTotal(repositories) {
@@ -1397,9 +1428,15 @@ function notionalTotal(repositories) {
   let partial = false;
   const pricesAsOf = new Set();
   let priced = false;
+  let contributors = 0;
+  const missingNames = [];
   for (const repository of repositories) {
     const tasks = repositoryCostData(repository);
-    if (!tasks) return undefined;
+    if (!tasks) {
+      missingNames.push(repository.name ?? "Unknown repository");
+      continue;
+    }
+    contributors += 1;
     const routing = readerData(repository.routing);
     for (const counters of Object.values(tasks)) {
       const notional = taskNotional(counters, routing);
@@ -1412,7 +1449,17 @@ function notionalTotal(repositories) {
       notional.pricesAsOf.forEach((date) => pricesAsOf.add(date));
     }
   }
-  return priced ? { usd, partial, pricesAsOf: [...pricesAsOf].sort() } : null;
+  if (contributors === 0) return undefined;
+  return priced
+    ? {
+        usd,
+        partial,
+        pricesAsOf: [...pricesAsOf].sort(),
+        contributors,
+        repositories: repositories.length,
+        missingNames,
+      }
+    : null;
 }
 
 function aggregateCurrent(repositories, key, format) {
@@ -1455,6 +1502,7 @@ function summarizeMachine(name, fleet, now, intervalMilliseconds = 30_000) {
     repositories.length > 0 && questionLists.every(Array.isArray)
       ? String(questionLists.reduce((total, open) => total + open.length, 0))
       : "Unknown";
+  const cost = meteredTotal(repositories);
   return {
     name,
     liveness,
@@ -1471,7 +1519,8 @@ function summarizeMachine(name, fleet, now, intervalMilliseconds = 30_000) {
       intervalMilliseconds
         ? displayAge(fleet.generatedAt, now)
         : "",
-    cost: meteredTotal(repositories),
+    cost: cost.text,
+    costTitle: cost.title,
     notional: notionalLabel(notionalTotal(repositories)),
   };
 }
@@ -1500,6 +1549,7 @@ function renderSummaryRow(row, summary) {
     summary.cost,
     "cost-total metered-total",
   );
+  if (summary.costTitle) costCell.title = summary.costTitle;
   if (summary.notional) {
     costCell.textContent = `${summary.cost} metered`;
     const notional = appendText(
@@ -1565,6 +1615,7 @@ function summarizeRepository(repository, now) {
   const costTasks = repositoryCostData(repository);
   const unattributed = costLabel(costTasks?.unattributed);
   const notional = notionalLabel(notionalTotal([repository]));
+  const cost = meteredTotal([repository]);
   return {
     name: repository.name ?? "Unknown repository",
     availability:
@@ -1580,7 +1631,8 @@ function summarizeRepository(repository, now) {
     hold: state?.hold === true,
     questions: Array.isArray(questions) ? String(questions.length) : "Unknown",
     age: worklogAge(repository, now),
-    cost: meteredTotal([repository]),
+    cost: cost.text,
+    costTitle: cost.title,
     notional,
     unattributed: unattributed?.text ?? (costTasks ? "None" : "Unavailable"),
     unattributedTitle: unattributed?.title,
@@ -1619,6 +1671,7 @@ function renderRepositorySummaryRow(row, summary) {
     summary.cost,
     "cost-total metered-total",
   );
+  if (summary.costTitle) costCell.title = summary.costTitle;
   if (summary.notional) {
     costCell.textContent = `${summary.cost} metered`;
     const notional = appendText(

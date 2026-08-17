@@ -189,12 +189,12 @@ task.
   - deps: T17
   - pr: 30
 
-- [R] T32 (standard) — Price subscription-lane usage at list, clearly notional, and show model details
+- [x] T32 (standard) — Price subscription-lane usage at list, clearly notional, and show model details
   - acceptance: In `src/readers/routing.ts`, `src/contracts.ts`, `src/snapshot.ts`, `src/public/app.js`, `src/public/styles.css`, and colocated tests: the routing reader accepts the optional additive `models."<provider>/<model>"` map (schemaVersion 1) with `{source: "models.dev"|null, pricesAsOf, name, family, releaseDate, contextWindow, maxOutputTokens, pricePerMillion{input,output,cacheRead,cacheWrite}}`, bounded (≤ 64 entries, strings ≤ 200 chars, prices finite non-negative numbers or null), unknown keys ignored, malformed entries dropped with a warning and never a parse failure; the API exposes it as `routing.data.models`; the client computes, per task and per model, a NOTIONAL figure = input×input + output×output + cacheRead×cacheRead + cacheWrite×cacheWrite (per-million prices; missing price component → that component contributes nothing and the figure is flagged partial) ONLY for byModel entries whose `usd` is 0 and tokens are non-zero (subscription lanes) — never for metered entries, whose `usd` is already real; the task cost label becomes `$m metered · ~$n at list` (tilde + "at list", muted secondary style, tooltip "notional: subscription lane priced at models.dev list price as of <pricesAsOf>; not billed") with the notional omitted when no priced subscription usage exists or all components are unpriced; repository/machine totals show metered and notional as two separate figures, never summed into one; the /how page agent nodes show name, context window (formatted `1.05M`), max output, and list prices per M for their model, and `Unpriced` when `source` is null; hostile model-map strings stay literal; tests cover reader bounds and malformed entries, the notional formula incl. partial pricing, metered-vs-subscription selection, label omission cases, totals kept separate, and the /how details (spec 7, 8; T23, T24).
   - deps: T23, T24
   - pr: 31
 
-- [ ] T33 (trivial) — Partial cost totals: sum what is available and say so, instead of Unavailable when any repository lacks costs
+- [~] T33 (standard) — Partial cost totals: sum what is available and say so, instead of Unavailable when any repository lacks costs
   - acceptance: In `src/public/app.js` and colocated tests: the machine-row and fleet-level metered totals sum the repositories whose costs reader is available and render `$<sum>` when every repository contributed, `$<sum> (k of n repos)` with the non-contributing repository names in the tooltip when only some did, and `Unavailable` only when none did (or a sum is non-finite); the same rule applies to any notional total added by T32; tests cover all-available, partial, none, and the non-finite guard (spec 7; T23).
   - deps: T23
 

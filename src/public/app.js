@@ -385,8 +385,19 @@ const TASK_GROUPS = [
   ["In review", "review", "review-work", "panel-span-4"],
   ["Next runnable", "nextRunnable", "runnable-work", "panel-span-4"],
   ["Blocked", "blocked", "blocked-work", "panel-span-4"],
-  ["Completed", "completed", "completed-work", "panel-span-6"],
+  ["Completed", "completed", "completed-work", "panel-span-12"],
 ];
+
+const SIZE_LEGEND =
+  "trivial: small, skips size gates · standard: one session, merges when clean · major: PR held for review";
+
+const SIZE_DESCRIPTIONS = {
+  trivial: "small, skips size gates",
+  standard: "one session, merges when clean",
+  major: "PR held for review",
+};
+
+const TASK_COLUMNS = ["Task", "Title", "Size", "Cost", "Review", "Refs"];
 
 function tokenTotal(counters) {
   const tokens = counters?.tokens;
@@ -466,12 +477,29 @@ function costLabel(counters) {
   };
 }
 
-function renderTask(panel, task, cost, routing) {
-  const item = panel.ownerDocument.createElement("li");
+function renderTask(tableBody, task, cost, routing) {
+  const item = tableBody.ownerDocument.createElement("tr");
   item.className = "task";
-  appendText(item, "span", task?.id ?? "?", "task-id");
-  appendText(item, "span", task?.title ?? "Untitled task", "task-title");
-  appendText(item, "span", task?.size ?? "unknown", "task-size");
+  appendText(item, "td", task?.id ?? "?", "task-id");
+  const titleCell = appendText(
+    item,
+    "td",
+    task?.title ?? "Untitled task",
+    "task-title",
+  );
+  if (Array.isArray(task?.dependencies) && task.dependencies.length > 0) {
+    appendText(
+      titleCell,
+      "span",
+      `deps: ${task.dependencies.join(", ")}`,
+      "task-deps",
+    );
+  }
+  const size = task?.size ?? "unknown";
+  const sizeCell = appendText(item, "td", size, "task-size task-numeric");
+  sizeCell.title = SIZE_DESCRIPTIONS[size] ?? SIZE_LEGEND;
+  const costCell = item.ownerDocument.createElement("td");
+  costCell.className = "task-cost-cell task-numeric";
   const label = costLabel(cost);
   if (label) {
     const costGroup = item.ownerDocument.createElement("span");
@@ -494,18 +522,12 @@ function renderTask(panel, task, cost, routing) {
       );
       notionalNode.title = notional.title;
     }
-    item.append(costGroup);
-    appendText(item, "span", label.title, "task-cost-detail");
+    costCell.append(costGroup);
+    appendText(costCell, "span", label.title, "task-cost-detail");
   }
-  if (Array.isArray(task?.dependencies) && task.dependencies.length > 0) {
-    appendText(
-      item,
-      "span",
-      `deps: ${task.dependencies.join(", ")}`,
-      "task-deps",
-    );
-  }
-  const references = item.ownerDocument.createElement("span");
+  item.append(costCell);
+  appendText(item, "td", "", "task-review");
+  const references = item.ownerDocument.createElement("td");
   references.className = "task-references";
   if (Number.isSafeInteger(task?.pr) && task.pr > 0)
     appendExternalOrText(references, `PR #${task.pr}`, task.prUrl, "pull");
@@ -520,8 +542,31 @@ function renderTask(panel, task, cost, routing) {
         );
     });
   }
-  if (references.childNodes.length > 0) item.append(references);
-  panel.append(item);
+  item.append(references);
+  tableBody.append(item);
+}
+
+function createTaskTable(panel, title, count) {
+  const scroll = panel.ownerDocument.createElement("div");
+  scroll.className = "task-table-scroll";
+  const table = panel.ownerDocument.createElement("table");
+  table.className = "task-list task-table";
+  appendText(table, "caption", `${title} · ${count}`);
+  const head = table.ownerDocument.createElement("thead");
+  const headerRow = table.ownerDocument.createElement("tr");
+  for (const column of TASK_COLUMNS) {
+    const header = appendText(headerRow, "th", column);
+    header.scope = "col";
+    if (column === "Size") header.title = SIZE_LEGEND;
+    if (column === "Size" || column === "Cost")
+      header.className = "task-numeric";
+  }
+  head.append(headerRow);
+  const body = table.ownerDocument.createElement("tbody");
+  table.append(head, body);
+  scroll.append(table);
+  panel.append(scroll);
+  return { body, scroll };
 }
 
 function taskIdDigits(task) {
@@ -582,30 +627,28 @@ function renderTasks(card, repository, disclosure) {
     const planTasks = Array.isArray(plan?.[key]) ? plan[key] : [];
     const tasks =
       key === "completed" ? completedTasks(repository, planTasks) : planTasks;
+    const { body, scroll } = createTaskTable(panel, title, tasks.length);
     if (tasks.length === 0) {
       panel.classList.add("panel-empty");
       appendText(panel, "p", "None", "empty");
       continue;
     }
-    const list = panel.ownerDocument.createElement("ul");
-    list.className = "task-list";
     let expanded =
       key === "completed" && (disclosure.completedExpanded ?? false);
     const renderList = () => {
-      list.replaceChildren();
+      body.replaceChildren();
       const visible =
         key === "completed" && !expanded
           ? tasks.slice(0, COMPLETED_TASK_LIMIT)
           : tasks;
       visible.forEach((task) =>
-        renderTask(list, task, costs?.[task?.id], routing),
+        renderTask(body, task, costs?.[task?.id], routing),
       );
-      list.classList.toggle("task-list-scroll", expanded);
-      if (expanded) list.tabIndex = 0;
-      else list.removeAttribute("tabindex");
+      scroll.classList.toggle("task-list-scroll", expanded);
+      if (expanded) scroll.tabIndex = 0;
+      else scroll.removeAttribute("tabindex");
     };
     renderList();
-    panel.append(list);
     if (key === "completed" && tasks.length > COMPLETED_TASK_LIMIT) {
       const toggle = appendText(panel, "button", "", "completed-tasks-toggle");
       toggle.type = "button";
@@ -627,6 +670,22 @@ function renderTasks(card, repository, disclosure) {
 }
 
 function renderQuestions(card, repository) {
+  const open = readerData(repository.questions)?.open;
+  if (Array.isArray(open) && open.length === 0) {
+    const compact = card.ownerDocument.createElement("section");
+    compact.className = "questions-compact panel-span-6";
+    const heading = compact.ownerDocument.createElement("h4");
+    appendExternalOrText(
+      heading,
+      "Open questions",
+      repository.questionsUrl,
+      "questions",
+    );
+    heading.append(compact.ownerDocument.createTextNode(" · 0 · None"));
+    compact.append(heading);
+    card.append(compact);
+    return;
+  }
   const panel = addPanel(
     card,
     "Open questions",
@@ -635,14 +694,8 @@ function renderQuestions(card, repository) {
     repository.questionsUrl,
     "questions",
   );
-  const open = readerData(repository.questions)?.open;
   if (!open) {
     appendText(panel, "p", "Unavailable", "unavailable");
-    return;
-  }
-  if (!Array.isArray(open) || open.length === 0) {
-    panel.classList.add("panel-empty");
-    appendText(panel, "p", "None", "empty");
     return;
   }
   for (const question of open) {

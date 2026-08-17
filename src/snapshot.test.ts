@@ -154,6 +154,59 @@ describe("snapshot", () => {
     }
   });
 
+  test("carries partial bounded model metadata through the snapshot", async () => {
+    const fixture = createFactoryFixture();
+    try {
+      await Promise.all([
+        fixture.writeState({ project: "factory-ui", phase: "build" }),
+        fixture.writeRouting({
+          schemaVersion: 1,
+          recordedAt: "2026-08-16T00:00:00Z",
+          model: "openai/gpt-5.6",
+          smallModel: "opencode/gpt-5-mini",
+          agents: {},
+          models: {
+            "openai/gpt-5.6": {
+              source: "models.dev",
+              pricesAsOf: "2026-08-16",
+              name: "GPT 5.6",
+              family: "gpt",
+              releaseDate: "2026-08-01",
+              contextWindow: 1_050_000,
+              maxOutputTokens: 128_000,
+              pricePerMillion: {
+                input: 1.25,
+                output: 10,
+                cacheRead: null,
+                cacheWrite: null,
+              },
+            },
+            malformed: { source: "models.dev" },
+          },
+        }),
+      ]);
+
+      const result = await readRepositoryFactorySnapshot({
+        name: "factory-ui",
+        path: fixture.root,
+      });
+      expect(result.status).toBe("available");
+      expect(result.routing).toMatchObject({
+        status: "partial",
+        data: {
+          models: {
+            "openai/gpt-5.6": {
+              pricePerMillion: { input: 1.25, cacheRead: null },
+            },
+          },
+        },
+        warnings: [{ code: "ROUTING_INVALID_MODEL" }],
+      });
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   test("carries a reader warning line excerpt through the repository snapshot", async () => {
     const root = mkdtempSync(
       join(process.cwd(), "tmp-factory-warning-excerpt-"),

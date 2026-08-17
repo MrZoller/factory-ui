@@ -7,6 +7,8 @@ import {
   MAX_AGENT_NAME_LENGTH,
   MAX_ROUTING_AGENTS,
   MAX_ROUTING_BYTES,
+  MAX_ROUTING_MODELS,
+  MAX_ROUTING_MODEL_STRING_LENGTH,
   MAX_ROUTING_STEPS,
   MAX_ROUTING_STRING_LENGTH,
   parseFactoryRouting,
@@ -41,11 +43,139 @@ describe("routing reader", () => {
   });
 
   test("exports fixed bounds", () => {
-    expect(MAX_ROUTING_BYTES).toBe(16 * 1024);
+    expect(MAX_ROUTING_BYTES).toBe(256 * 1024);
     expect(MAX_ROUTING_AGENTS).toBe(64);
+    expect(MAX_ROUTING_MODELS).toBe(64);
+    expect(MAX_ROUTING_MODEL_STRING_LENGTH).toBe(200);
     expect(MAX_AGENT_NAME_LENGTH).toBe(128);
     expect(MAX_ROUTING_STRING_LENGTH).toBe(1024);
     expect(MAX_ROUTING_STEPS).toBe(1_000_000);
+  });
+
+  test("accepts optional bounded model metadata without changing the old schema", () => {
+    const legacy = parseFactoryRouting(encode(validRouting));
+    expect(legacy.status).toBe("available");
+    if (legacy.status === "available") {
+      expect(legacy.data.models).toBeUndefined();
+    }
+    const result = parseFactoryRouting(
+      encode({
+        ...validRouting,
+        models: {
+          "openai/gpt-5.6": {
+            source: "models.dev",
+            pricesAsOf: "2026-08-16",
+            name: "GPT 5.6",
+            family: "gpt",
+            releaseDate: "2026-08-01",
+            contextWindow: 1_050_000,
+            maxOutputTokens: 128_000,
+            pricePerMillion: {
+              input: 1.25,
+              output: 10,
+              cacheRead: 0,
+              cacheWrite: null,
+            },
+            future: "ignored",
+          },
+        },
+      }),
+    );
+    expect(result).toMatchObject({
+      status: "available",
+      data: {
+        models: {
+          "openai/gpt-5.6": {
+            source: "models.dev",
+            contextWindow: 1_050_000,
+            pricePerMillion: { input: 1.25, cacheWrite: null },
+          },
+        },
+      },
+      warnings: [],
+    });
+  });
+
+  test("drops malformed model entries with partial status and bounded work", () => {
+    const models = Object.fromEntries(
+      Array.from({ length: MAX_ROUTING_MODELS + 1 }, (_, index) => [
+        `provider/model-${index}`,
+        {
+          source: index === 1 ? "unknown" : null,
+          pricesAsOf: "2026-08-16",
+          name:
+            index === 2
+              ? "x".repeat(MAX_ROUTING_MODEL_STRING_LENGTH + 1)
+              : "Model",
+          family: "family",
+          releaseDate: "2026-08-01",
+          contextWindow: 1000,
+          maxOutputTokens: 100,
+          pricePerMillion: {
+            input: index === 3 ? -1 : null,
+            output: 2,
+            cacheRead: null,
+            cacheWrite: 0,
+          },
+        },
+      ]),
+    );
+    const result = parseFactoryRouting(encode({ ...validRouting, models }));
+    expect(result.status).toBe("partial");
+    if (result.status === "partial") {
+      expect(Object.keys(result.data.models ?? {})).toHaveLength(61);
+      expect(result.warnings.map((warning) => warning.code)).toEqual([
+        "ROUTING_TOO_MANY_MODELS",
+        "ROUTING_INVALID_MODEL",
+        "ROUTING_INVALID_MODEL",
+        "ROUTING_INVALID_MODEL",
+      ]);
+    }
+  });
+
+  test("drops non-finite model prices", () => {
+    const text = JSON.stringify({
+      ...validRouting,
+      models: {
+        "provider/model": {
+          source: "models.dev",
+          pricesAsOf: "2026-08-16",
+          name: "Model",
+          family: "family",
+          releaseDate: "2026-08-01",
+          contextWindow: 1000,
+          maxOutputTokens: 100,
+          pricePerMillion: {
+            input: null,
+            output: 2,
+            cacheRead: null,
+            cacheWrite: 0,
+          },
+        },
+      },
+    }).replace('"input":null', '"input":1e309');
+    const result = parseFactoryRouting(new TextEncoder().encode(text));
+    expect(result).toMatchObject({
+      status: "partial",
+      data: { models: {} },
+      warnings: [{ code: "ROUTING_INVALID_MODEL" }],
+    });
+  });
+
+  test("uses a null-prototype model map for hostile model ids", () => {
+    const model =
+      '{"source":null,"pricesAsOf":"2026-08-16","name":"Model","family":"family","releaseDate":"2026-08-01","contextWindow":1,"maxOutputTokens":1,"pricePerMillion":{"input":null,"output":null,"cacheRead":null,"cacheWrite":null}}';
+    const result = parseFactoryRouting(
+      new TextEncoder().encode(
+        `{"schemaVersion":1,"recordedAt":"2026-08-16T05:47:57Z","model":"openai/gpt-5.6","smallModel":"opencode/gpt-5-mini","agents":{},"models":{"__proto__/model":${model},"constructor/model":${model}}}`,
+      ),
+    );
+    expect(result.status).toBe("available");
+    if (result.status === "available") {
+      expect(Object.getPrototypeOf(result.data.models)).toBeNull();
+      expect(result.data.models?.["__proto__/model"]?.source).toBeNull();
+      expect(result.data.models?.["constructor/model"]?.source).toBeNull();
+    }
   });
 
   test("parses schema version 1 and ignores unknown keys at every level", () => {
@@ -215,7 +345,7 @@ describe("routing reader", () => {
     });
   });
 
-  test("accepts a routing file at exactly the 16 KiB boundary", async () => {
+  test("accepts a routing file at exactly the 256 KiB boundary", async () => {
     const item = fixture();
     const encoded = encode({ ...validRouting, padding: "" });
     const padding = "x".repeat(MAX_ROUTING_BYTES - encoded.byteLength);

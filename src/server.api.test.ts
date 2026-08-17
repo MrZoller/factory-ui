@@ -92,6 +92,23 @@ describe("versioned read-only API", () => {
         agents: {
           builder: { provider: "openai", model: "gpt-5.6", steps: 25 },
         },
+        models: {
+          "openai/gpt-5.6": {
+            source: "models.dev",
+            pricesAsOf: "2026-08-16",
+            name: "GPT 5.6",
+            family: "gpt",
+            releaseDate: "2026-08-01",
+            contextWindow: 1_050_000,
+            maxOutputTokens: 128_000,
+            pricePerMillion: {
+              input: 1.25,
+              output: 10,
+              cacheRead: 0.125,
+              cacheWrite: null,
+            },
+          },
+        },
       }),
     ]);
     fixture.writeDriverLog(
@@ -167,6 +184,23 @@ describe("versioned read-only API", () => {
         smallModel: "opencode/gpt-5-mini",
         agents: {
           builder: { provider: "openai", model: "gpt-5.6", steps: 25 },
+        },
+        models: {
+          "openai/gpt-5.6": {
+            source: "models.dev",
+            pricesAsOf: "2026-08-16",
+            name: "GPT 5.6",
+            family: "gpt",
+            releaseDate: "2026-08-01",
+            contextWindow: 1_050_000,
+            maxOutputTokens: 128_000,
+            pricePerMillion: {
+              input: 1.25,
+              output: 10,
+              cacheRead: 0.125,
+              cacheWrite: null,
+            },
+          },
         },
       },
       warnings: [],

@@ -169,12 +169,31 @@ export interface RoutingAgent {
   steps: number | null;
 }
 
+export interface RoutingModelPrices {
+  input: number | null;
+  output: number | null;
+  cacheRead: number | null;
+  cacheWrite: number | null;
+}
+
+export interface RoutingModel {
+  source: "models.dev" | null;
+  pricesAsOf: string;
+  name: string;
+  family: string;
+  releaseDate: string;
+  contextWindow: number;
+  maxOutputTokens: number;
+  pricePerMillion: RoutingModelPrices;
+}
+
 export interface RoutingData {
   schemaVersion: 1;
   recordedAt: string;
   model: string;
   smallModel: string;
   agents: Record<string, RoutingAgent>;
+  models?: Record<string, RoutingModel>;
 }
 
 export interface CostTokens {

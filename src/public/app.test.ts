@@ -781,55 +781,174 @@ describe("local dashboard rendering", () => {
     ).toBe("Unavailable");
   });
 
-  test("does not present a partial machine cost as a total", () => {
+  test("sums all available costs in the machine summary", () => {
     const document = dashboardDocument();
-    renderFleet(
-      fleet(
-        "mini",
-        [],
-        [
-          richRepository({ costs: costs({ T8: costCounters(1.23, 123) }) }),
-          richRepository({
-            costs: {
-              status: "unavailable",
-              warnings: [
-                { code: "COSTS_MISSING", message: "costs unavailable" },
-              ],
-            },
-          }),
-        ],
-      ),
-      document,
-      NOW,
-    );
-
-    expect(
-      summaryRow(document, "mini")?.querySelector(".cost-total")?.textContent,
-    ).toBe("Unavailable");
-    expect(
-      Array.from(
-        document.querySelectorAll(".warnings-panel .warning-code"),
-      ).some((code) => code.textContent === "COSTS_MISSING"),
-    ).toBe(true);
-  });
-
-  test("does not render overflowing aggregate USD totals as Infinity", () => {
-    const document = dashboardDocument();
-    const repository = richRepository({
+    const alpha = richRepository({
+      name: "alpha",
+      routing: {
+        ...richRepository().routing,
+        data: {
+          ...richRepository().routing.data,
+          models: { "openai/gpt-5.6": routingModel() },
+        },
+      },
       costs: costs({
-        T1: validCostTask(Number.MAX_VALUE),
-        T2: validCostTask(Number.MAX_VALUE),
+        T8: {
+          ...tokenCounters(1, { input: 1_000_000 }),
+          byModel: {
+            "openai/gpt-5.6": tokenCounters(0, { input: 1_000_000 }),
+          },
+        },
+      }),
+    });
+    const beta = richRepository({
+      name: "beta",
+      routing: {
+        ...richRepository().routing,
+        data: {
+          ...richRepository().routing.data,
+          models: { "openai/gpt-5.6": routingModel() },
+        },
+      },
+      costs: costs({
+        T8: {
+          ...tokenCounters(2, { input: 2_000_000 }),
+          byModel: {
+            "openai/gpt-5.6": tokenCounters(0, { input: 2_000_000 }),
+          },
+        },
       }),
     });
 
-    renderFleet(fleet("mini", [], [repository]), document, NOW);
+    renderFleet(fleet("mini", [], [alpha, beta]), document, NOW);
 
-    expect(
-      document.querySelector(".repository-summary .cost-total")?.textContent,
-    ).toBe("Unavailable");
-    expect(
-      summaryRow(document, "mini")?.querySelector(".cost-total")?.textContent,
-    ).toBe("Unavailable");
+    const total = summaryRow(document, "mini")!.querySelector(".cost-total")!;
+    expect(total.childNodes[0]?.textContent).toBe("$3.00 metered");
+    expect(total.querySelector(".notional-total")?.textContent).toBe(
+      "~$3.00 at list",
+    );
+  });
+
+  test("labels partial machine metered and notional totals", () => {
+    const document = dashboardDocument();
+    const alpha = richRepository({
+      name: "alpha",
+      routing: {
+        ...richRepository().routing,
+        data: {
+          ...richRepository().routing.data,
+          models: { "openai/gpt-5.6": routingModel() },
+        },
+      },
+      costs: costs({
+        T8: {
+          ...tokenCounters(1, { input: 1_000_000 }),
+          byModel: {
+            "openai/gpt-5.6": tokenCounters(0, { input: 1_000_000 }),
+          },
+        },
+      }),
+    });
+    const beta = richRepository({
+      name: "beta",
+      costs: {
+        status: "unavailable",
+        warnings: [{ code: "COSTS_MISSING", message: "costs unavailable" }],
+      },
+    });
+    const gamma = richRepository({
+      name: "gamma",
+      routing: {
+        ...richRepository().routing,
+        data: {
+          ...richRepository().routing.data,
+          models: { "openai/gpt-5.6": routingModel() },
+        },
+      },
+      costs: costs({
+        T8: {
+          ...tokenCounters(2, { input: 2_000_000 }),
+          byModel: {
+            "openai/gpt-5.6": tokenCounters(0, { input: 2_000_000 }),
+          },
+        },
+      }),
+    });
+    renderFleet(fleet("mini", [], [alpha, beta, gamma]), document, NOW);
+
+    const total = summaryRow(document, "mini")!.querySelector(".cost-total")!;
+    expect(total.childNodes[0]?.textContent).toBe(
+      "$3.00 (2 of 3 repos) metered",
+    );
+    expect(total.title).toContain("beta");
+    const notional = total.querySelector<HTMLElement>(".notional-total")!;
+    expect(notional.textContent).toBe("~$3.00 at list (2 of 3 repos)");
+    expect(notional.title).toContain("beta");
+  });
+
+  test("renders machine totals as unavailable when no repository has costs", () => {
+    const document = dashboardDocument();
+    const alpha = richRepository({
+      name: "alpha",
+      costs: {
+        status: "unavailable",
+        warnings: [{ code: "COSTS_MISSING", message: "costs unavailable" }],
+      },
+    });
+    const beta = richRepository({
+      name: "beta",
+      costs: {
+        status: "unavailable",
+        warnings: [{ code: "COSTS_MISSING", message: "costs unavailable" }],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [alpha, beta]), document, NOW);
+
+    const total = summaryRow(document, "mini")!.querySelector(".cost-total")!;
+    expect(total.textContent).toBe("Unavailable");
+    expect(total.querySelector(".notional-total")).toBeNull();
+  });
+
+  test("guards non-finite machine metered and notional aggregates", () => {
+    const document = dashboardDocument();
+    const alpha = richRepository({
+      name: "alpha",
+      routing: {
+        ...richRepository().routing,
+        data: {
+          ...richRepository().routing.data,
+          models: {
+            "openai/gpt-5.6": routingModel({
+              pricePerMillion: {
+                input: Number.MAX_VALUE,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+              },
+            }),
+          },
+        },
+      },
+      costs: costs({
+        T8: {
+          ...tokenCounters(Number.MAX_VALUE, { input: 1_000_000 }),
+          byModel: {
+            "openai/gpt-5.6": tokenCounters(0, { input: 1_000_000 }),
+          },
+        },
+      }),
+    });
+    const beta = richRepository({
+      ...alpha,
+      name: "beta",
+    });
+
+    renderFleet(fleet("mini", [], [alpha, beta]), document, NOW);
+
+    const total = summaryRow(document, "mini")!.querySelector(".cost-total")!;
+    expect(total.textContent).toBe("Unavailable");
+    expect(total.querySelector(".notional-total")).toBeNull();
     expect(document.body.textContent).not.toContain("Infinity");
   });
 

@@ -401,8 +401,9 @@ describe("how factory works page", () => {
     expect(document.activeElement?.getAttribute("aria-label")).toBe(
       "Operators",
     );
-    expect(document.activeElement?.closest(".how-machine-panel")?.hidden).toBe(
-      false,
-    );
+    expect(
+      document.activeElement?.closest<HTMLElement>(".how-machine-panel")
+        ?.hidden,
+    ).toBe(false);
   });
 });

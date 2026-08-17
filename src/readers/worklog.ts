@@ -27,6 +27,7 @@ export const WORKLOG_WARNING_CODES = [
 
 const WORKLOG_ENTRY =
   /^- (\d{4}-\d{2}-\d{2})(?: ((?:[01]\d|2[0-3]):[0-5]\d))? UTC - (.+)$/;
+const LEGACY_WORKLOG_HEADING = /^## (\d{4}-\d{2}-\d{2})(?: — | - )(.+)$/;
 
 interface SourceLine {
   value: string;
@@ -107,31 +108,61 @@ export function parseFactoryWorklog(text: string): ReaderResult<WorklogData> {
   if (text.trim().length === 0) {
     addWarning(warnings, "WORKLOG_EMPTY", "worklog.md is empty");
   }
-  const boundaries = lines
-    .map((line, index) => ({ line, index }))
-    .filter(({ line }) => line.value.startsWith("- "));
   const entries: WorklogEntry[] = [];
-  for (let boundary = 0; boundary < boundaries.length; boundary += 1) {
-    const current = boundaries[boundary]!;
-    const match = WORKLOG_ENTRY.exec(current.line.value);
-    if (!match || !validDate(match[1]!)) {
+  let active:
+    | {
+        line: SourceLine;
+        date: string;
+        time?: string;
+        kind: "stamp" | "heading";
+      }
+    | undefined;
+  const closeActive = (end: number): void => {
+    if (active === undefined) return;
+    const entry: WorklogEntry = {
+      date: active.date,
+      text: text.slice(active.line.start, end),
+    };
+    if (active.time !== undefined) entry.time = active.time;
+    entries.push(entry);
+    active = undefined;
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    const stamped = WORKLOG_ENTRY.exec(line.value);
+    const validStamp = stamped !== null && validDate(stamped[1]!);
+    const heading = LEGACY_WORKLOG_HEADING.exec(line.value);
+    const validHeading =
+      heading !== null &&
+      validDate(heading[1]!) &&
+      heading[2]!.trim().length > 0;
+
+    if (validStamp || validHeading) {
+      closeActive(line.start);
+      active = validStamp
+        ? {
+            line,
+            date: stamped[1]!,
+            ...(stamped[2] === undefined ? {} : { time: stamped[2] }),
+            kind: "stamp",
+          }
+        : { line, date: heading![1]!, kind: "heading" };
+      continue;
+    }
+
+    if (line.value.startsWith("- ") && active?.kind !== "heading") {
+      closeActive(line.start);
       addWarning(
         warnings,
         "WORKLOG_MALFORMED_ENTRY",
         "a worklog entry is malformed",
-        current.index + 1,
-        current.line.value,
+        index + 1,
+        line.value,
       );
-      continue;
     }
-    const nextStart = boundaries[boundary + 1]?.line.start ?? text.length;
-    const entry: WorklogEntry = {
-      date: match[1]!,
-      text: text.slice(current.line.start, nextStart),
-    };
-    if (match[2] !== undefined) entry.time = match[2];
-    entries.push(entry);
   }
+  closeActive(text.length);
 
   const data = { entries: entries.slice(-MAX_WORKLOG_ENTRIES) };
   return warnings.length === 0

@@ -1586,6 +1586,51 @@ describe("local dashboard rendering", () => {
     );
   });
 
+  test("renders legacy heading worklog entries through the normal headline, chip, and body path", () => {
+    const document = dashboardDocument();
+    const hostile = '<img src=x onerror="globalThis.headingPwned=1">';
+    const repository = richRepository({
+      repositoryUrl: undefined,
+      worklog: {
+        status: "available",
+        data: {
+          entries: [
+            {
+              date: "2026-08-16",
+              text: `## 2026-08-16 — T27 opened PR #12. ${hostile}\n\nThe follow-up paragraph is still body text.`,
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const panel = document.querySelector(".worklog-panel")!;
+    const entry = panel.querySelector(".worklog-entry")!;
+    expect(panel.querySelector(".worklog-date")?.textContent).toBe(
+      "2026-08-16",
+    );
+    expect(entry.querySelector(".worklog-time")?.textContent).toBe(
+      "Time unavailable",
+    );
+    expect(entry.querySelector(".worklog-task-chip")?.textContent).toBe("T27");
+    expect(entry.querySelector(".worklog-event-chip")?.textContent).toBe(
+      "opened PR",
+    );
+    expect(entry.querySelector(".worklog-summary")?.textContent).toBe(
+      `T27 opened PR #12. ${hostile}`,
+    );
+    expect(entry.querySelector(".worklog-body")?.textContent).toBe(
+      "The follow-up paragraph is still body text.",
+    );
+    expect(entry.querySelectorAll("img, script, [onerror]")).toHaveLength(0);
+    expect(
+      (globalThis as Record<string, unknown>).headingPwned,
+    ).toBeUndefined();
+  });
+
   test("keeps worklog and warnings disclosure choices across a refreshed snapshot", () => {
     const document = dashboardDocument();
     const entries = Array.from({ length: 7 }, (_, index) => ({
@@ -2595,6 +2640,91 @@ describe("actionable warnings", () => {
     expect(rows[0]?.querySelector(".warning-explanation")?.textContent).toBe(
       WARNING_EXPLANATIONS.PLAN_MISSING_DEPS,
     );
+  });
+
+  test("collapses only fourth-and-later same-source warning codes into one rendered row", () => {
+    const renderWarnings = (warnings: Array<Record<string, unknown>>) => {
+      const document = dashboardDocument();
+      renderFleet(
+        fleet(
+          "mini",
+          [],
+          [
+            richRepository({
+              worklog: {
+                status: "partial",
+                data: { entries: [] },
+                warnings,
+              },
+              logs: {
+                status: "available",
+                data: richRepository().logs.data,
+                warnings: [],
+              },
+            }),
+          ],
+        ),
+        document,
+        NOW,
+      );
+      return document.querySelector(".warnings-panel")!;
+    };
+    const malformed = (line: number, excerpt = `- malformed ${line}`) => ({
+      code: "WORKLOG_MALFORMED_ENTRY",
+      message: "bad worklog entry",
+      line,
+      excerpt,
+    });
+
+    const three = renderWarnings([malformed(2), malformed(5), malformed(8)]);
+    expect(three.querySelector("summary")?.textContent).toBe(
+      "Warnings · 3 · from this snapshot",
+    );
+    expect(three.querySelectorAll(".warning-row")).toHaveLength(3);
+    expect(
+      Array.from(
+        three.querySelectorAll(".warning-line"),
+        (line) => line.textContent,
+      ),
+    ).toEqual(["line 2", "line 5", "line 8"]);
+
+    const four = renderWarnings([
+      malformed(2, '<img src=x onerror="globalThis.warningPwned=1">'),
+      malformed(5),
+      malformed(8),
+      malformed(13),
+      { code: "WARNINGS_TRUNCATED", message: "omitted" },
+    ]);
+    expect(four.querySelector("summary")?.textContent).toBe(
+      "Warnings · 2 · from this snapshot",
+    );
+    const rows = Array.from(four.querySelectorAll<HTMLElement>(".warning-row"));
+    expect(rows).toHaveLength(2);
+    const collapsed = rows.find(
+      (row) =>
+        row.querySelector(".warning-code")?.textContent ===
+        "WORKLOG_MALFORMED_ENTRY",
+    )!;
+    expect(collapsed.querySelector(".warning-count")?.textContent).toBe("×4");
+    expect(collapsed.querySelector(".warning-line")?.textContent).toBe(
+      "lines 2, 5, 8 +1 more",
+    );
+    expect(collapsed.querySelector(".warning-excerpt")?.textContent).toBe(
+      '<img src=x onerror="globalThis.warningPwned=1">',
+    );
+    expect(
+      rows
+        .find(
+          (row) =>
+            row.querySelector(".warning-code")?.textContent ===
+            "WARNINGS_TRUNCATED",
+        )
+        ?.querySelector(".warning-count"),
+    ).toBeNull();
+    expect(four.querySelectorAll("img, script, [onerror]")).toHaveLength(0);
+    expect(
+      (globalThis as Record<string, unknown>).warningPwned,
+    ).toBeUndefined();
   });
 
   test("opens only for non-hygiene warnings, unavailable sources, truncation, or top-level warnings", () => {

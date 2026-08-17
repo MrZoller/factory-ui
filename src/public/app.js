@@ -385,6 +385,9 @@ const TASK_GROUPS = [
   ["In review", "review", "review-work", "panel-span-4"],
   ["Next runnable", "nextRunnable", "runnable-work", "panel-span-4"],
   ["Blocked", "blocked", "blocked-work", "panel-span-4"],
+];
+
+const COMPLETED_TASK_GROUP = [
   ["Completed", "completed", "completed-work", "panel-span-12"],
 ];
 
@@ -609,11 +612,11 @@ function completedTasks(repository, tasks) {
   });
 }
 
-function renderTasks(card, repository, disclosure) {
+function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
   const plan = readerData(repository.plan);
   const costs = readerData(repository.costs)?.tasks;
   const routing = readerData(repository.routing);
-  for (const [title, key, className, spanClass] of TASK_GROUPS) {
+  for (const [title, key, className, spanClass] of groups) {
     const panel = addPanel(
       card,
       title,
@@ -1221,6 +1224,7 @@ function renderRepository(repository, machine, documentRoot, now, generatedAt) {
   renderWorklog(card, repository ?? {}, disclosure);
   renderLogs(card, repository ?? {}, now, generatedAt);
   renderWarnings(card, repository ?? {}, disclosure);
+  renderTasks(card, repository ?? {}, disclosure, COMPLETED_TASK_GROUP);
   return card;
 }
 

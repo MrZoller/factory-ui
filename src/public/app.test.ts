@@ -456,6 +456,9 @@ describe("local dashboard rendering", () => {
       "Driver activity": "panel-span-4",
       "Warnings · 1 · from this snapshot": "panel-span-4",
     });
+    expect(card.lastElementChild?.querySelector("h4")?.textContent).toBe(
+      "Completed",
+    );
     const task = card.querySelector(".task")!;
     expect(
       ["task-id", "task-title", "task-size"].every((name) =>

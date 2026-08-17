@@ -2802,7 +2802,25 @@ describe("actionable warnings", () => {
 });
 
 describe("fleet summary and machine tabs", () => {
-  test("renders routing once per machine from the first repository where it is available", () => {
+  function routingRows(strip: Element): HTMLElement[] {
+    const definitionRows = Array.from(
+      strip.querySelectorAll<HTMLElement>("dl > div"),
+    );
+    if (definitionRows.length > 0) return definitionRows;
+    return Array.from(
+      strip.querySelectorAll<HTMLElement>('[role="row"]'),
+    ).filter((row) => row.querySelector('[role="cell"]') !== null);
+  }
+
+  function routingRowCells(row: HTMLElement): HTMLElement[] {
+    const definitionCells = Array.from(row.children).filter((child) =>
+      child.matches("dt, dd"),
+    ) as HTMLElement[];
+    if (definitionCells.length > 0) return definitionCells;
+    return Array.from(row.querySelectorAll<HTMLElement>('[role="cell"]'));
+  }
+
+  test("groups routing overrides by first-seen model with ordered bold agents and optional caps", () => {
     const document = dashboardDocument();
     const unavailableRouting = {
       status: "unavailable",
@@ -2822,6 +2840,7 @@ describe("fleet summary and machine tabs", () => {
           agents: {
             build: { provider: "openai", model: "gpt", steps: 20 },
             plan: { provider: "opencode", model: "mini", steps: null },
+            verify: { provider: "openai", model: "gpt", steps: null },
             review: {
               provider: "amazon-bedrock",
               model: "claude",
@@ -2861,8 +2880,38 @@ describe("fleet summary and machine tabs", () => {
 
     const strip = document.querySelector(".routing-strip")!;
     expect(document.querySelectorAll(".routing-strip")).toHaveLength(1);
-    expect(strip.textContent).toContain("Default openai/default");
+    expect(strip.querySelector(".routing-defaults")?.textContent).toBe(
+      "default openai/default · small opencode/small",
+    );
     expect(strip.textContent).not.toContain("ignored");
+    const rows = routingRows(strip);
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "openai/gptbuild ≤ 20 · verify",
+      "opencode/miniplan",
+      "amazon-bedrock/claudereview ≤ 5",
+      "local/modelcustom",
+    ]);
+    expect(
+      rows.map((row) => routingRowCells(row).map((cell) => cell.textContent)),
+    ).toEqual([
+      ["openai/gpt", "build ≤ 20 · verify"],
+      ["opencode/mini", "plan"],
+      ["amazon-bedrock/claude", "review ≤ 5"],
+      ["local/model", "custom"],
+    ]);
+    expect(
+      rows.map((row) =>
+        Array.from(
+          row.querySelectorAll("strong"),
+          (agent) => agent.textContent,
+        ),
+      ),
+    ).toEqual([["build", "verify"], ["plan"], ["review"], ["custom"]]);
+    expect(rows[0]?.querySelector(".routing-steps")?.textContent).toBe("≤ 20");
+    expect(rows[0]?.querySelector(".routing-steps")?.classList).toContain(
+      "muted",
+    );
+    expect(rows[1]?.querySelector(".routing-steps")).toBeNull();
     expect(strip.querySelector(".provider-openai")?.textContent).toBe("openai");
     expect(strip.querySelector(".provider-opencode")?.textContent).toBe(
       "opencode",
@@ -2871,7 +2920,56 @@ describe("fleet summary and machine tabs", () => {
       "amazon-bedrock",
     );
     expect(strip.querySelector(".provider-other")?.textContent).toBe("local");
-    expect(strip.textContent).toContain("steps ≤ 20");
+    expect(strip.textContent).not.toContain("steps ≤");
+  });
+
+  test("renders a single routing lane and leaves the empty override case unchanged", () => {
+    const document = dashboardDocument();
+    const routing = (agents: Record<string, unknown>) => ({
+      status: "available",
+      data: {
+        schemaVersion: 1,
+        recordedAt: "2026-08-16T11:59:00Z",
+        model: "openai/default",
+        smallModel: "opencode/small",
+        agents,
+      },
+      warnings: [],
+    });
+
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            routing: routing({
+              builder: { provider: "openai", model: "gpt", steps: null },
+            }),
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+    expect(routingRows(document.querySelector(".routing-strip")!)).toHaveLength(
+      1,
+    );
+    expect(document.querySelector(".routing-strip strong")?.textContent).toBe(
+      "builder",
+    );
+
+    renderFleet(
+      fleet("mini", [], [richRepository({ routing: routing({}) })]),
+      document,
+      NOW,
+    );
+    expect(document.querySelector(".routing-strip .empty")?.textContent).toBe(
+      "No agent overrides",
+    );
+    expect(routingRows(document.querySelector(".routing-strip")!)).toHaveLength(
+      0,
+    );
   });
 
   test("renders routing unavailable when no repository has routing", () => {

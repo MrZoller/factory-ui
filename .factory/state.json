@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T40",
+  "branch": "factory/t40-routing-by-model",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-17T05:31:16Z"
+  "updated": "2026-08-17T05:37:35Z"
 }

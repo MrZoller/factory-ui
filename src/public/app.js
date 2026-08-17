@@ -1510,26 +1510,52 @@ function renderRoutingStrip(fleet, documentRoot) {
   appendText(
     strip,
     "p",
-    `Default ${routing.model} · Small ${routing.smallModel}`,
+    `default ${routing.model} · small ${routing.smallModel}`,
     "routing-defaults",
   );
-  const list = documentRoot.createElement("ul");
+  const list = documentRoot.createElement("dl");
   list.className = "routing-agents";
+
+  const groups = new Map();
   for (const [name, agent] of Object.entries(routing.agents ?? {})) {
-    const item = documentRoot.createElement("li");
-    appendText(item, "span", name, "routing-agent");
-    appendText(item, "span", "→", "routing-arrow");
+    const provider = agent?.provider ?? "other";
+    const model = agent?.model ?? "Unknown";
+    const key = `${provider}/${model}`;
+    const group = groups.get(key);
+    if (group) group.agents.push({ name, steps: agent?.steps });
+    else
+      groups.set(key, {
+        provider,
+        model,
+        agents: [{ name, steps: agent?.steps }],
+      });
+  }
+
+  for (const group of groups.values()) {
+    const row = documentRoot.createElement("div");
+    row.className = "routing-row";
+    const model = documentRoot.createElement("dt");
+    model.className = "routing-model-cell";
     appendText(
-      item,
+      model,
       "span",
-      agent?.provider ?? "other",
-      `routing-provider provider-${providerCategory(agent?.provider)}`,
+      group.provider,
+      `routing-provider provider-${providerCategory(group.provider)}`,
     );
-    appendText(item, "span", `/${agent?.model ?? "Unknown"}`, "routing-model");
-    if (agent?.steps !== null && agent?.steps !== undefined) {
-      appendText(item, "span", `steps ≤ ${agent.steps}`, "routing-steps");
+    appendText(model, "span", `/${group.model}`, "routing-model");
+
+    const agents = documentRoot.createElement("dd");
+    agents.className = "routing-agent-cell";
+    for (const [index, agent] of group.agents.entries()) {
+      if (index > 0) appendText(agents, "span", " · ", "routing-separator");
+      appendText(agents, "strong", agent.name, "routing-agent");
+      if (agent.steps !== null && agent.steps !== undefined) {
+        agents.append(documentRoot.createTextNode(" "));
+        appendText(agents, "span", `≤ ${agent.steps}`, "routing-steps muted");
+      }
     }
-    list.append(item);
+    row.append(model, agents);
+    list.append(row);
   }
   if (list.childElementCount === 0) {
     appendText(strip, "p", "No agent overrides", "empty");

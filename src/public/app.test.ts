@@ -312,11 +312,26 @@ describe("driver liveness freshness", () => {
 
   test("hides a fresh liveness check while retaining source age", () => {
     const document = dashboardDocument();
-    renderFleet(fleet("mini", [], [richRepository()]), document, NOW);
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({
+            liveness: {
+              state: "RUNNING",
+              checkedAt: "2026-08-16T12:00:01.000Z",
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
 
     const panel = activityPanel(document);
-    expect(panel.textContent).not.toContain("Liveness checked");
-    expect(panel.querySelector(".age.stale")).toBeNull();
+    expect(panel.textContent).not.toContain("Checked");
+    expect(panel.querySelector("p.age")).toBeNull();
     expect(panel.textContent).toContain("Source age1m ago");
   });
 

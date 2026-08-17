@@ -608,8 +608,7 @@ function renderLogs(card, repository, now, generatedAt) {
     loadStates.get(panel.ownerDocument)?.refreshIntervalMilliseconds ?? 30_000;
   const checkIsFresh =
     Number.isFinite(checkAgeAtSnapshot) &&
-    checkAgeAtSnapshot >= 0 &&
-    checkAgeAtSnapshot <= refreshIntervalMilliseconds;
+    Math.abs(checkAgeAtSnapshot) <= refreshIntervalMilliseconds;
   if (!checkIsFresh) {
     appendText(
       panel,

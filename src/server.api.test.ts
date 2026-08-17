@@ -235,6 +235,9 @@ describe("versioned read-only API", () => {
   - acceptance: Fixes #0
   - pr: 0
   - deps: none`),
+      Bun.write(`${fixture.factoryPath}/spec.md`, "# Spec"),
+      fixture.writeWorklog("- 2026-08-16 UTC - shipped"),
+      fixture.writeQuestions("## Q1 (task T1, open) — Question\nContext"),
     ]);
 
     const handler = createRequestHandler(
@@ -254,6 +257,10 @@ describe("versioned read-only API", () => {
 
     expect(body.repositoryUrl).toBeUndefined();
     expect(body.branchUrl).toBeUndefined();
+    expect(body.specUrl).toBeUndefined();
+    expect(body.planUrl).toBeUndefined();
+    expect(body.worklogUrl).toBeUndefined();
+    expect(body.questionsUrl).toBeUndefined();
     expect(task.prUrl).toBeUndefined();
     expect(task.issueUrls).toBeUndefined();
   });

@@ -169,7 +169,7 @@ task.
   - deps: T21
   - pr: 27
 
-- [ ] T31 (trivial) — parked review minors (batch)
+- [~] T31 (trivial) — parked review minors (batch)
   - Extend `WORKLOG_EVENT_PATTERNS` review-wait matching to recognize canonical verdict-pending and in-flight wording so those worklog entries receive the `review wait` chip rather than `other` (PR #27 review).
   - Use own-property warning-explanation lookups so a future or hostile prototype-named warning code renders the generic unknown-code explanation (PR #28 review).
   - Clear stale worklog-entry disclosure keys when an empty or unavailable worklog snapshot intervenes, so a later same-key entry does not inherit an obsolete open state (PR #33 review).

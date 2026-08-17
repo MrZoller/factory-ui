@@ -843,6 +843,31 @@ a:focus-visible {
   list-style: none;
 }
 
+.task-list-scroll {
+  max-height: 24rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.completed-tasks-toggle {
+  width: fit-content;
+  margin-top: var(--space-3);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-link);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.completed-tasks-toggle:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 0.2rem;
+}
+
 .warnings-panel details,
 .warnings-panel summary {
   min-width: 0;

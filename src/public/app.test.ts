@@ -1477,6 +1477,125 @@ describe("local dashboard rendering", () => {
     ).toEqual(["true", "false"]);
   });
 
+  test("orders completed tasks by valid merged time, then task id, without changing other plan groups", () => {
+    const document = dashboardDocument();
+    const task = (id: string) => ({
+      ...richRepository().plan.data.tasks[0],
+      id,
+      title: `Task ${id}`,
+    });
+    const completed = [task("T12"), task("T2"), task("T20"), task("T9")];
+    const active = [task("T8"), task("T7")];
+    const repository = (metrics: unknown) =>
+      richRepository({
+        plan: {
+          ...richRepository().plan,
+          data: {
+            ...richRepository().plan.data,
+            tasks: [...active, ...completed],
+            active,
+            completed,
+          },
+        },
+        metrics,
+      });
+
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          repository({
+            status: "available",
+            data: {
+              tasks: {
+                T2: { pr: { mergedAt: "2026-08-14T10:00:00.000Z" } },
+                T9: { pr: { mergedAt: "2026-08-15T10:00:00.000Z" } },
+                T12: { pr: { mergedAt: "not a date" } },
+              },
+            },
+            warnings: [],
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    expect(
+      Array.from(
+        document.querySelectorAll(".completed-work .task-id"),
+        (id) => id.textContent,
+      ),
+    ).toEqual(["T9", "T2", "T20", "T12"]);
+    expect(
+      Array.from(
+        document.querySelectorAll(".active-work .task-id"),
+        (id) => id.textContent,
+      ),
+    ).toEqual(["T8", "T7"]);
+
+    renderFleet(fleet("mini", [], [repository(undefined)]), document, NOW);
+
+    expect(
+      Array.from(
+        document.querySelectorAll(".completed-work .task-id"),
+        (id) => id.textContent,
+      ),
+    ).toEqual(["T20", "T12", "T9", "T2"]);
+  });
+
+  test("caps completed tasks at eight and keeps its expanded scroll disclosure across rerenders", () => {
+    const document = dashboardDocument();
+    const completed = Array.from({ length: 9 }, (_, index) => ({
+      ...richRepository().plan.data.tasks[0],
+      id: `T${index + 1}`,
+      title: `Task ${index + 1}`,
+    }));
+    const repository = () =>
+      richRepository({
+        plan: {
+          ...richRepository().plan,
+          data: {
+            ...richRepository().plan.data,
+            tasks: completed,
+            completed,
+          },
+        },
+      });
+
+    renderFleet(fleet("mini", [], [repository()]), document, NOW);
+
+    const collapsedList = document.querySelector(".completed-work .task-list")!;
+    const toggle = document.querySelector<HTMLButtonElement>(
+      ".completed-tasks-toggle",
+    )!;
+    expect(collapsedList.querySelectorAll(".task")).toHaveLength(8);
+    expect(collapsedList.classList).not.toContain("task-list-scroll");
+    expect(collapsedList.hasAttribute("tabindex")).toBe(false);
+    expect(toggle.textContent).toBe("Show all 9");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    toggle.click();
+    const expandedList = document.querySelector(".completed-work .task-list")!;
+    expect(expandedList.querySelectorAll(".task")).toHaveLength(9);
+    expect(expandedList.classList).toContain("task-list-scroll");
+    expect(expandedList.getAttribute("tabindex")).toBe("0");
+    expect(toggle.textContent).toBe("Show newest 8");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    renderFleet(fleet("mini", [], [repository()]), document, NOW);
+
+    const refreshedList = document.querySelector(".completed-work .task-list")!;
+    const refreshedToggle = document.querySelector<HTMLButtonElement>(
+      ".completed-tasks-toggle",
+    )!;
+    expect(refreshedList.querySelectorAll(".task")).toHaveLength(9);
+    expect(refreshedList.classList).toContain("task-list-scroll");
+    expect(refreshedList.getAttribute("tabindex")).toBe("0");
+    expect(refreshedToggle.textContent).toBe("Show newest 8");
+  });
+
   test("keeps same-named repository disclosure state separate per machine", async () => {
     const document = dashboardDocument();
     const peer = { name: "macbook", origin: "https://macbook.example" };

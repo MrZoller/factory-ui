@@ -14,6 +14,7 @@ const MAX_ROUTING_STEPS = 1_000_000;
 const MAX_COST_TASKS = 256;
 const MAX_COST_MODELS_PER_TASK = 64;
 const MAX_WARNING_EXCERPT_CODE_POINTS = 200;
+const COMPLETED_TASK_LIMIT = 8;
 const loadGenerations = new WeakMap();
 const tabControllers = new WeakMap();
 const machineViews = new WeakMap();
@@ -523,7 +524,36 @@ function renderTask(panel, task, cost, routing) {
   panel.append(item);
 }
 
-function renderTasks(card, repository) {
+function taskIdNumber(task) {
+  const match = /^T([1-9][0-9]*)$/.exec(task?.id ?? "");
+  if (!match) return -1;
+  const number = Number(match[1]);
+  return Number.isSafeInteger(number) ? number : -1;
+}
+
+function mergedAtTime(repository, task) {
+  const value = readerData(repository.metrics)?.tasks?.[task?.id]?.pr?.mergedAt;
+  if (typeof value !== "string") return undefined;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : undefined;
+}
+
+function completedTasks(repository, tasks) {
+  return [...tasks].sort((left, right) => {
+    const leftMergedAt = mergedAtTime(repository, left);
+    const rightMergedAt = mergedAtTime(repository, right);
+    if (leftMergedAt !== undefined && rightMergedAt !== undefined) {
+      if (leftMergedAt !== rightMergedAt) return rightMergedAt - leftMergedAt;
+    } else if (leftMergedAt !== undefined) {
+      return -1;
+    } else if (rightMergedAt !== undefined) {
+      return 1;
+    }
+    return taskIdNumber(right) - taskIdNumber(left);
+  });
+}
+
+function renderTasks(card, repository, disclosure) {
   const plan = readerData(repository.plan);
   const costs = readerData(repository.costs)?.tasks;
   const routing = readerData(repository.routing);
@@ -540,7 +570,9 @@ function renderTasks(card, repository) {
       appendText(panel, "p", "Unavailable", "unavailable");
       continue;
     }
-    const tasks = Array.isArray(plan?.[key]) ? plan[key] : [];
+    const planTasks = Array.isArray(plan?.[key]) ? plan[key] : [];
+    const tasks =
+      key === "completed" ? completedTasks(repository, planTasks) : planTasks;
     if (tasks.length === 0) {
       panel.classList.add("panel-empty");
       appendText(panel, "p", "None", "empty");
@@ -548,8 +580,37 @@ function renderTasks(card, repository) {
     }
     const list = panel.ownerDocument.createElement("ul");
     list.className = "task-list";
-    tasks.forEach((task) => renderTask(list, task, costs?.[task?.id], routing));
+    let expanded =
+      key === "completed" && (disclosure.completedExpanded ?? false);
+    const renderList = () => {
+      list.replaceChildren();
+      const visible = expanded ? tasks : tasks.slice(0, COMPLETED_TASK_LIMIT);
+      visible.forEach((task) =>
+        renderTask(list, task, costs?.[task?.id], routing),
+      );
+      list.classList.toggle("task-list-scroll", expanded);
+      if (expanded) list.tabIndex = 0;
+      else list.removeAttribute("tabindex");
+    };
+    renderList();
     panel.append(list);
+    if (key === "completed" && tasks.length > COMPLETED_TASK_LIMIT) {
+      const toggle = appendText(panel, "button", "", "completed-tasks-toggle");
+      toggle.type = "button";
+      const updateToggle = () => {
+        toggle.textContent = expanded
+          ? `Show newest ${COMPLETED_TASK_LIMIT}`
+          : `Show all ${tasks.length}`;
+        toggle.setAttribute("aria-expanded", String(expanded));
+      };
+      toggle.addEventListener("click", () => {
+        expanded = !expanded;
+        disclosure.completedExpanded = expanded;
+        updateToggle();
+        renderList();
+      });
+      updateToggle();
+    }
   }
 }
 
@@ -1080,7 +1141,7 @@ function renderRepository(repository, machine, documentRoot, now, generatedAt) {
   );
   card.append(header);
   renderCurrent(card, repository ?? {});
-  renderTasks(card, repository ?? {});
+  renderTasks(card, repository ?? {}, disclosure);
   renderQuestions(card, repository ?? {});
   renderWorklog(card, repository ?? {}, disclosure);
   renderLogs(card, repository ?? {}, now, generatedAt);

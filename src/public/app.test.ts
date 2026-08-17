@@ -330,7 +330,7 @@ describe("driver liveness freshness", () => {
     );
 
     const panel = activityPanel(document);
-    expect(panel.textContent).not.toContain("Checked");
+    expect(panel.textContent).not.toContain("Liveness checked");
     expect(panel.querySelector("p.age")).toBeNull();
     expect(panel.textContent).toContain("Source age1m ago");
   });

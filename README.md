@@ -75,6 +75,9 @@ network.
   string.
 - Task costs: `.factory/logs/costs.json` is capped at 64 KiB, 256 tasks, and 64
   models per task. Cost strings are capped at 1,024 characters.
+- Review metrics: `.factory/metrics.jsonl` is capped at 256 KiB, 4,096 lines,
+  and 8 KiB per line. Metric maps contain at most 64 entries and their keys
+  are capped at 128 characters.
 - Liveness: the fixed, shell-free `lsof` probe has a two-second timeout and
   bounded output. Missing `lsof`, timeout, failure, malformed output, or an
   ambiguous result is `CANNOT_VERIFY`, never evidence that the driver stopped.
@@ -89,12 +92,13 @@ does not silently expand its read surface.
 The service reads only the fixed targets `.factory/state.json`,
 `.factory/spec.md`, `.factory/plan.md`, `.factory/questions.md`,
 `.factory/worklog.md`, the bounded driver/cycle/shepherd files selected from `.factory/logs/`,
-`.factory/logs/routing.json`, and `.factory/logs/costs.json`. Canonical
+`.factory/logs/routing.json`, `.factory/logs/costs.json`, and
+`.factory/metrics.jsonl`. Canonical
 containment, target type, symlink, and opened-descriptor identity checks apply
 before bounded reads. The service reads at most 256 KiB from `spec.md` only to
 determine whether its GitHub document link can be shown; its contents are not
-returned. Routing, cost, or spec absence and invalidity are independent and do
-not make repository state unavailable.
+returned. Routing, cost, metrics, or spec absence and invalidity are
+independent and do not make repository state unavailable.
 
 Routing uses schema version 1:
 
@@ -182,6 +186,35 @@ keys are `provider/model` identifiers. Every counter is a finite,
 non-negative number. Unknown keys are ignored. A missing, oversized,
 malformed, unsupported-version, or otherwise invalid file is reported as
 costs `Unavailable` with a warning.
+
+Review metrics are newline-delimited schema-version-1 JSON events. Each line
+has a `task` (`T1` or greater) and an `event`: `ship` records task size,
+optional reclassification, and nullable internal panel rounds/findings/fixes;
+`merge` records its positive PR number, per-reviewer external
+rounds/findings/fix pushes, and CI runs/reruns. A `pr` event comes from
+`factory-git` and records UTC open/merge times, commit counts, per-login
+reviews, comments, reactions and threads, plus check-run totals. All counters
+are non-negative safe integers. External reviewer ids use `[a-z0-9-]+`; login
+and other map keys are bounded.
+
+The event-specific fields are:
+
+- `ship`: `size`, `reclassifiedFrom`, and `internal: null` or
+  `{rounds, findings: {blocking, minor, invalid}, fixed}`.
+- `merge`: `pr`, `external` keyed by `[a-z0-9-]+` reviewer id with
+  `{rounds, findings: {blocking, minor, refuted}, fixPushes}`, and
+  `ci: {runs, reruns}`.
+- `pr`: `by: "factory-git"`, `openedAt`, `mergedAt`, `commits`,
+  `commitsAfterOpen`, count maps `reviews` and `issueComments`, nested count
+  map `reactions`, `threads` entries `{total, resolved}`, and
+  `checkRuns: {total, failed}`.
+
+Malformed, invalid-UTF-8, oversized, or unsupported individual lines are
+dropped with bounded line-number/excerpt warnings, leaving the source
+`Partial`; they never invalidate other lines. For each task and event kind,
+the API exposes the latest valid line in file order, folded under
+`metrics.data.tasks.<task>`. A missing or unreadable file reports metrics as
+`Unavailable` without changing repository availability.
 
 ## Three-machine runbook
 

@@ -497,7 +497,9 @@ function renderTask(tableBody, task, cost, routing) {
   }
   const size = task?.size ?? "unknown";
   const sizeCell = appendText(item, "td", size, "task-size task-numeric");
-  sizeCell.title = SIZE_DESCRIPTIONS[size] ?? SIZE_LEGEND;
+  sizeCell.title = Object.hasOwn(SIZE_DESCRIPTIONS, size)
+    ? SIZE_DESCRIPTIONS[size]
+    : SIZE_LEGEND;
   const costCell = item.ownerDocument.createElement("td");
   costCell.className = "task-cost-cell task-numeric";
   const label = costLabel(cost);

@@ -627,6 +627,30 @@ describe("local dashboard rendering", () => {
     ]);
   });
 
+  test("renders a prototype-named task size with the fallback legend", () => {
+    const document = dashboardDocument();
+    const task = {
+      ...richRepository().plan.data.tasks[0],
+      size: "constructor",
+    };
+    const repository = richRepository({
+      plan: {
+        ...richRepository().plan,
+        data: { ...richRepository().plan.data, tasks: [task], active: [task] },
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const size = document.querySelector<HTMLElement>(
+      ".active-work .task-size",
+    )!;
+    expect(size.textContent).toBe("constructor");
+    expect(size.title).toBe(
+      "trivial: small, skips size gates · standard: one session, merges when clean · major: PR held for review",
+    );
+  });
+
   test("uses a compact empty questions strip but full panels for questions and unavailable data", () => {
     const emptyDocument = dashboardDocument();
     renderFleet(

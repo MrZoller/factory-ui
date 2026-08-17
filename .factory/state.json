@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T30",
+  "branch": "factory/t30-link-factory-documents",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-17T00:42:41Z"
+  "updated": "2026-08-17T00:43:40Z"
 }

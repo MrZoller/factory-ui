@@ -14,6 +14,34 @@ export const PIPELINE = [
   { id: "merge", label: "Merge", detail: "Squash, record, and continue" },
 ];
 
+export const OPERATORS = [
+  {
+    id: "human",
+    label: "Human",
+    detail:
+      "Approves spec and plan, answers questions, or drives the engine directly",
+  },
+  {
+    id: "operator",
+    label: "Claude Code operator session",
+    detail:
+      "Uses opencode-factory's factory skill to start and watch runs, relay questions and answers, review held majors as the human's representative, and coordinate peer operator sessions on shared surfaces",
+  },
+  {
+    id: "engine",
+    label: "bin/factory",
+    detail: "One process per run · one fresh opencode session per task",
+  },
+];
+
+export const OPERATOR_EDGES = [
+  {
+    id: "assisted",
+    label: "Human → Claude Code operator session → bin/factory",
+  },
+  { id: "direct", label: "Human ⇢ bin/factory · direct", alternative: true },
+];
+
 export const ROLES = [
   { id: "architect", label: "architect", phase: "spec" },
   { id: "mapper", label: "mapper", phase: "spec" },
@@ -181,9 +209,46 @@ function renderRole(documentRoot, role, routing, fleet) {
   return item;
 }
 
+function renderOperators(documentRoot) {
+  const lane = element(documentRoot, "section", undefined, "operators-lane");
+  lane.tabIndex = 0;
+  lane.setAttribute("aria-label", "Operators");
+  const title = element(documentRoot, "h3", "Operators");
+  const nodes = element(documentRoot, "ol", undefined, "operator-nodes");
+  for (const operator of OPERATORS) {
+    const node = element(documentRoot, "li", undefined, "operator-node");
+    node.dataset.operator = operator.id;
+    node.append(
+      element(documentRoot, "h4", operator.label),
+      element(documentRoot, "p", operator.detail),
+    );
+    nodes.append(node);
+  }
+  const edges = element(documentRoot, "div", undefined, "operator-edges");
+  for (const edge of OPERATOR_EDGES) {
+    const line = element(documentRoot, "p", edge.label, "operator-edge");
+    line.dataset.edge = edge.id;
+    if (edge.alternative) line.classList.add("operator-edge-alternative");
+    edges.append(line);
+  }
+  lane.append(
+    title,
+    nodes,
+    edges,
+    element(
+      documentRoot,
+      "p",
+      "Everything below runs identically either way.",
+      "operator-caption",
+    ),
+  );
+  return lane;
+}
+
 function renderPipeline(documentRoot, fleet) {
   const routing = routingFor(fleet);
   const diagram = element(documentRoot, "div", undefined, "pipeline-diagram");
+  diagram.append(renderOperators(documentRoot));
   for (const [index, phase] of PIPELINE.entries()) {
     const stage = element(documentRoot, "section", undefined, "pipeline-stage");
     stage.dataset.phase = phase.id;

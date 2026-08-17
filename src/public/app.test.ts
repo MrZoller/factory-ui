@@ -822,7 +822,9 @@ describe("local dashboard rendering", () => {
 
     renderFleet(fleet("mini", [], [alpha, beta]), document, NOW);
 
-    const total = summaryRow(document, "mini")!.querySelector(".cost-total")!;
+    const total = summaryRow(document, "mini")!.querySelector<HTMLElement>(
+      ".cost-total",
+    )!;
     expect(total.childNodes[0]?.textContent).toBe("$3.00 metered");
     expect(total.querySelector(".notional-total")?.textContent).toBe(
       "~$3.00 at list",
@@ -876,7 +878,9 @@ describe("local dashboard rendering", () => {
     });
     renderFleet(fleet("mini", [], [alpha, beta, gamma]), document, NOW);
 
-    const total = summaryRow(document, "mini")!.querySelector(".cost-total")!;
+    const total = summaryRow(document, "mini")!.querySelector<HTMLElement>(
+      ".cost-total",
+    )!;
     expect(total.childNodes[0]?.textContent).toBe(
       "$3.00 (2 of 3 repos) metered",
     );

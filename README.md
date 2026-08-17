@@ -66,6 +66,8 @@ network.
   the newest 20 entries.
 - Worklog entries may start with either `- YYYY-MM-DD UTC - ` or
   `- YYYY-MM-DD HH:MM UTC - `. Clock times use zero-padded 24-hour UTC time.
+  The reader also tolerates legacy `## YYYY-MM-DD — <title>` headings (and the
+  equivalent `-` separator); stamped bullets remain the protocol form.
 - Logs: at most 256 directory entries are considered; narration is capped at
   64 KiB, 100 lines, and 2,000 bytes per line.
 - Agent routing: `.factory/logs/routing.json` is capped at 256 KiB, 64 agents,

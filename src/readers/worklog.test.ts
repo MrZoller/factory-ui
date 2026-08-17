@@ -343,6 +343,106 @@ that span several lines`;
       });
     });
 
+    describe("legacy heading entries", () => {
+      test("parses real-shaped legacy headings with bullet and paragraph bodies before stamped entries", () => {
+        const worklog = `## 2026-08-12 — T38 shipped the dashboard.
+- panel: 2 rounds; findings 0 blocking / 1 minor / 0 invalid.
+
+The dashboard is now available to operators.
+## 2026-08-13 - T39 parked review minors.
+- Follow-up: preserve keyboard focus.
+
+- 2026-08-14 UTC - T40 opened PR #39.`;
+
+        const result = parseFactoryWorklog(worklog);
+
+        expect(result.status).toBe("available");
+        expect(result.warnings).toEqual([]);
+        if (result.status === "available") {
+          expect(result.data.entries).toEqual([
+            {
+              date: "2026-08-12",
+              text: `## 2026-08-12 — T38 shipped the dashboard.
+- panel: 2 rounds; findings 0 blocking / 1 minor / 0 invalid.
+
+The dashboard is now available to operators.
+`,
+            },
+            {
+              date: "2026-08-13",
+              text: `## 2026-08-13 - T39 parked review minors.
+- Follow-up: preserve keyboard focus.
+
+`,
+            },
+            {
+              date: "2026-08-14",
+              text: "- 2026-08-14 UTC - T40 opened PR #39.",
+            },
+          ]);
+        }
+      });
+
+      test("applies the newest-twenty bound across heading and stamped entries", () => {
+        const headings = Array.from(
+          { length: 12 },
+          (_, index) => `## 2026-08-16 — Heading ${index + 1}`,
+        );
+        const stamped = Array.from(
+          { length: 12 },
+          (_, index) =>
+            `- 2026-08-17 ${String(index).padStart(2, "0")}:00 UTC - Stamped ${index + 1}`,
+        );
+
+        const result = parseFactoryWorklog(
+          [...headings, ...stamped].join("\n"),
+        );
+
+        expect(result.status).toBe("available");
+        if (result.status === "available") {
+          expect(result.data.entries).toHaveLength(MAX_WORKLOG_ENTRIES);
+          expect(result.data.entries[0]!.text).toBe(
+            "## 2026-08-16 — Heading 5\n",
+          );
+          expect(result.data.entries.at(-1)?.text).toBe(
+            "- 2026-08-17 11:00 UTC - Stamped 12",
+          );
+        }
+      });
+
+      test("keeps malformed top-level bullets outside headings as warnings while preserving hostile heading text verbatim", () => {
+        const hostile = '<img src=x onerror="globalThis.pwned=1">';
+        const worklog = `- not a stamped entry
+## 2026-08-16 — ${hostile}
+- body bullet is text, not a malformed boundary
+## 2026-02-30 — Invalid date is not a boundary
+## 2026-08-17 —
+- 2026-08-18 UTC - Valid stamped entry`;
+
+        const result = parseFactoryWorklog(worklog);
+
+        expect(result.status).toBe("partial");
+        expect(result.warnings).toEqual([
+          expect.objectContaining({
+            code: "WORKLOG_MALFORMED_ENTRY",
+            line: 1,
+          }),
+        ]);
+        if (result.status === "partial") {
+          expect(result.data.entries).toHaveLength(2);
+          expect(result.data.entries[0]).toEqual({
+            date: "2026-08-16",
+            text: `## 2026-08-16 — ${hostile}
+- body bullet is text, not a malformed boundary
+## 2026-02-30 — Invalid date is not a boundary
+## 2026-08-17 —
+`,
+          });
+          expect(result.data.entries[1]?.date).toBe("2026-08-18");
+        }
+      });
+    });
+
     describe("time field parsing", () => {
       test("parses entry with time as HH:MM format", () => {
         const worklog = `- 2026-08-16 14:30 UTC - Started work on T1`;

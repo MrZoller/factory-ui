@@ -239,12 +239,31 @@ function worklogContent(entry) {
     time === undefined || /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time);
   if (!validDate || !validTime) return { raw, content: raw, malformed: true };
   const prefix = `- ${date}${time ? ` ${time}` : ""} UTC - `;
-  if (!raw.startsWith(prefix)) return { raw, content: raw, malformed: true };
-  return {
-    raw,
-    content: raw.slice(prefix.length),
-    malformed: false,
-  };
+  if (raw.startsWith(prefix)) {
+    return {
+      raw,
+      content: raw.slice(prefix.length),
+      malformed: false,
+      heading: false,
+    };
+  }
+  if (time === undefined) {
+    const heading = new RegExp(
+      `^## ${date}(?: — | - )([^\\r\\n]+)(?:\\r?\\n|$)`,
+    ).exec(raw);
+    if (heading && heading[1].trim().length > 0) {
+      const body = raw.slice(heading[0].length).trim();
+      return {
+        raw,
+        content: `${heading[1]}${body ? `\n${body}` : ""}`,
+        headline: heading[1],
+        body,
+        malformed: false,
+        heading: true,
+      };
+    }
+  }
+  return { raw, content: raw, malformed: true };
 }
 
 function splitFirstSentence(text) {
@@ -1091,7 +1110,9 @@ function renderWorklog(card, repository, disclosure) {
       const parsed = worklogContent(entry);
       const sentence = parsed.malformed
         ? { headline: parsed.raw, remainder: "" }
-        : splitFirstSentence(parsed.content);
+        : parsed.heading
+          ? { headline: parsed.headline, remainder: parsed.body }
+          : splitFirstSentence(parsed.content);
       const item = panel.ownerDocument.createElement("article");
       item.className = "worklog-entry";
       const headline = item.ownerDocument.createElement("div");
@@ -1406,11 +1427,46 @@ function collectWarnings(repository) {
     if (existing) existing.count += 1;
     else grouped.set(key, { ...warning, count: 1 });
   }
-  return [...grouped.values()].sort(
+  const exactRows = [...grouped.values()];
+  const repeatGroups = new Map();
+  for (const warning of exactRows) {
+    if (warning.code === "WARNINGS_TRUNCATED") continue;
+    const key = `${warning.source}\u0000${warning.code}`;
+    const group = repeatGroups.get(key);
+    if (group) group.push(warning);
+    else repeatGroups.set(key, [warning]);
+  }
+  const collapsedKeys = new Set(
+    [...repeatGroups.entries()]
+      .filter(([, group]) => group.length > 3)
+      .map(([key]) => key),
+  );
+  const collapsed = [];
+  for (const warning of exactRows) {
+    const key = `${warning.source}\u0000${warning.code}`;
+    if (!collapsedKeys.has(key)) {
+      collapsed.push(warning);
+      continue;
+    }
+    if (collapsed.some((row) => row.repeatKey === key)) continue;
+    const group = repeatGroups.get(key);
+    collapsed.push({
+      ...group[0],
+      line: undefined,
+      lines: group
+        .map((row) => row.line)
+        .filter((line) => line !== undefined)
+        .slice(0, 3),
+      moreLines: group.length - 3,
+      count: group.reduce((total, row) => total + row.count, 0),
+      repeatKey: key,
+    });
+  }
+  return collapsed.sort(
     (left, right) =>
       left.source.localeCompare(right.source) ||
-      (left.line ?? Number.MAX_SAFE_INTEGER) -
-        (right.line ?? Number.MAX_SAFE_INTEGER) ||
+      (left.lines?.[0] ?? left.line ?? Number.MAX_SAFE_INTEGER) -
+        (right.lines?.[0] ?? right.line ?? Number.MAX_SAFE_INTEGER) ||
       left.code.localeCompare(right.code),
   );
 }
@@ -1465,7 +1521,14 @@ function renderWarnings(card, repository, disclosure) {
     item.className = "warning-row";
     appendText(item, "span", warning.source, "warning-source");
     appendText(item, "code", warning.code, "warning-code");
-    if (warning.line !== undefined) {
+    if (warning.lines !== undefined) {
+      appendText(
+        item,
+        "span",
+        `lines ${warning.lines.join(", ")} +${warning.moreLines} more`,
+        "warning-line",
+      );
+    } else if (warning.line !== undefined) {
       appendText(item, "span", `line ${warning.line}`, "warning-line");
     }
     if (warning.count > 1) {

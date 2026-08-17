@@ -169,11 +169,12 @@ task.
   - deps: T21
   - pr: 27
 
-- [!] T31 (trivial) — parked review minors (batch)
+- [ ] T31 (trivial) — parked review minors (batch)
   - Extend `WORKLOG_EVENT_PATTERNS` review-wait matching to recognize canonical verdict-pending and in-flight wording so those worklog entries receive the `review wait` chip rather than `other` (PR #27 review).
   - Use own-property warning-explanation lookups so a future or hostile prototype-named warning code renders the generic unknown-code explanation (PR #28 review).
   - Clear stale worklog-entry disclosure keys when an empty or unavailable worklog snapshot intervenes, so a later same-key entry does not inherit an obsolete open state (PR #33 review).
   - Do not persist an automatic warnings-panel default as a user disclosure choice; preserve only an actual user toggle (PR #33 review).
+  - Sort valid task IDs above `Number.MAX_SAFE_INTEGER` by their decimal value in the completed-task fallback so newest high-numbered tasks are not hidden (PR #34 review).
   - deps: none
 
 - [x] T28 (standard) — Make the warnings panel actionable: grouped, located, explained, and explicitly current-as-of-snapshot

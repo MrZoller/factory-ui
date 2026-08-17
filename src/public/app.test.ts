@@ -1865,6 +1865,218 @@ describe("local dashboard rendering", () => {
     ).toBeNull();
   });
 
+  test("renders review chips with unknown distinct from zero and marks newer PR tasks missing metrics", () => {
+    const document = dashboardDocument();
+    const [active, review, completed, missing] = [
+      "T34",
+      "T35",
+      "T36",
+      "T37",
+    ].map((id) => ({
+      ...richRepository().plan.data.tasks[0],
+      id,
+      pr: Number(id.slice(1)),
+    }));
+    const repository = richRepository({
+      plan: {
+        ...richRepository().plan,
+        data: {
+          ...richRepository().plan.data,
+          tasks: [active, review, completed, missing],
+          active: [active, missing],
+          review: [review],
+          completed: [completed],
+        },
+      },
+      metrics: {
+        status: "available",
+        data: {
+          tasks: {
+            T34: { ship: { internal: null } },
+            T35: {
+              ship: {
+                internal: {
+                  rounds: 0,
+                  fixed: 0,
+                  findings: { blocking: 0, minor: 0, invalid: 0 },
+                },
+              },
+              merge: {
+                external: {
+                  codex: {
+                    rounds: 1,
+                    fixPushes: 0,
+                    findings: { blocking: 0, minor: 2, refuted: 0 },
+                  },
+                },
+              },
+            },
+            T36: {
+              ship: {
+                internal: {
+                  rounds: 2,
+                  fixed: 3,
+                  findings: { blocking: 1, minor: 2, invalid: 0 },
+                },
+              },
+            },
+          },
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    expect(
+      document.querySelector(".active-work .task-review")?.textContent,
+    ).toContain("unknown");
+    expect(
+      document.querySelector(".review-work .task-review")?.textContent,
+    ).toContain("panel 0r · 0 fixed");
+    expect(
+      document.querySelector(".review-work .task-review")?.textContent,
+    ).toContain("codex 1r · 2 minor");
+    expect(
+      document.querySelector(".completed-work .task-review")?.textContent,
+    ).toContain("panel 2r · 3 fixed");
+    expect(
+      document.querySelectorAll(".active-work .task-review")[1]?.textContent,
+    ).toContain("metrics missing");
+  });
+
+  test("aggregates review metrics by size and highlights, without correcting, mechanical round mismatches", () => {
+    const document = dashboardDocument();
+    const task = (id: string, size: string) => ({
+      ...richRepository().plan.data.tasks[0],
+      id,
+      size,
+      pr: Number(id.slice(1)),
+    });
+    const standard = task("T34", "standard");
+    const major = task("T35", "major");
+    const metrics = {
+      status: "available",
+      data: {
+        tasks: {
+          T34: {
+            ship: {
+              task: "T34",
+              size: "standard",
+              internal: {
+                rounds: 2,
+                fixed: 3,
+                findings: { blocking: 1, minor: 2, invalid: 1 },
+              },
+            },
+            merge: {
+              task: "T34",
+              external: {
+                codex: {
+                  rounds: 3,
+                  fixPushes: 2,
+                  findings: { blocking: 1, minor: 2, refuted: 1 },
+                },
+              },
+              ci: { runs: 3, reruns: 2 },
+            },
+            pr: {
+              reviews: { codex: 1, mechanicalonly: 1 },
+              issueComments: { codex: 1 },
+              reactions: { codex: { eyes: 1 } },
+            },
+          },
+          T35: {
+            ship: {
+              task: "T35",
+              size: "major",
+              internal: {
+                rounds: 4,
+                fixed: 1,
+                findings: { blocking: 0, minor: 1, invalid: 0 },
+              },
+            },
+            merge: {
+              task: "T35",
+              external: {
+                claude: {
+                  rounds: 2,
+                  fixPushes: 1,
+                  findings: { blocking: 0, minor: 1, refuted: 0 },
+                },
+              },
+              ci: { runs: 1, reruns: 0 },
+            },
+            pr: { reviews: { claude: 2 }, issueComments: {}, reactions: {} },
+          },
+        },
+      },
+      warnings: [],
+    };
+    const repository = richRepository({
+      plan: {
+        ...richRepository().plan,
+        data: {
+          ...richRepository().plan.data,
+          tasks: [standard, major],
+          active: [standard],
+          completed: [major],
+        },
+      },
+      metrics,
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const strip = document.querySelector(".review-strip")!;
+    expect(strip.textContent).toContain("standard");
+    expect(strip.textContent).toContain("major");
+    expect(strip.textContent).toContain("2 measured");
+    expect(strip.textContent).toContain("codex");
+    expect(strip.textContent).toContain("claude");
+    expect(strip.textContent).toContain("50%");
+    expect(strip.querySelector(".review-mismatch")?.textContent).toContain(
+      "codex",
+    );
+    expect(strip.textContent).toContain(
+      "T34 mechanicalonly: 0r vs 1 mechanical",
+    );
+  });
+
+  test("keeps hostile reviewer identifiers and metric strings literal and inert", () => {
+    const document = dashboardDocument();
+    const hostile =
+      '<img src=x onerror="globalThis.pwned=1"><script>globalThis.pwned=2</script>';
+    const repository = richRepository({
+      metrics: {
+        status: "available",
+        data: {
+          tasks: {
+            T8: {
+              ship: { internal: null },
+              merge: {
+                external: {
+                  [hostile]: {
+                    rounds: 1,
+                    fixPushes: 0,
+                    findings: { blocking: 0, minor: 1, refuted: 0 },
+                  },
+                },
+              },
+            },
+          },
+        },
+        warnings: [],
+      },
+    });
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+    expect(document.body.textContent).toContain(hostile);
+    expect(
+      document.querySelectorAll("img, script, [onerror], [onclick]"),
+    ).toHaveLength(0);
+    expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
+  });
+
   test("keeps same-named repository disclosure state separate per machine", async () => {
     const document = dashboardDocument();
     const peer = { name: "macbook", origin: "https://macbook.example" };

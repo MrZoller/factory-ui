@@ -218,7 +218,7 @@ task.
   - deps: T35
   - pr: 36
 
-- [ ] T38 (trivial) — "How it works": add the operator lane — human, Claude Code operator session, engine — above the pipeline
+- [~] T38 (trivial) — "How it works": add the operator lane — human, Claude Code operator session, engine — above the pipeline
   - acceptance: In `src/public/how.js` (or wherever T24's static structure lives), `src/public/styles.css`, and colocated tests: the diagram gains a top "Operators" lane, static data like the rest of the structure, with three nodes and their edges — Human (approves spec/plan, answers questions, can drive the engine directly), Claude Code operator session (the `factory` skill from opencode-factory `claude-skills/factory`: starts and watches runs, relays questions and answers, reviews held majors as the human's representative, coordinates with peer operator sessions on shared surfaces), and the engine `bin/factory` (one process per run, one fresh opencode session per task) — with the direct human→engine path drawn as an alternative (dashed) edge and a one-line caption stating that everything below runs identically either way; the lane uses the same visual language, is keyboard-reachable, and reads correctly at the 1200/800 collapses; text-only, no external assets; tests assert the three nodes, both edges, the caption, and hostile-string inertness for any live text reused there (spec 3, 7; T24).
   - deps: T24
 

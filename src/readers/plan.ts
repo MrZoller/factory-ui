@@ -7,6 +7,7 @@ import {
   type TaskStatus,
 } from "../contracts";
 import { readFactoryFile } from "./file";
+import { readerWarning } from "./warnings";
 
 export const MAX_PLAN_BYTES = 256 * 1024;
 export const MAX_PLAN_LINES = 4096;
@@ -15,6 +16,29 @@ export const MAX_PLAN_TASKS = 256;
 export const MAX_TASK_DEPENDENCIES = 32;
 export const MAX_TASK_ISSUES = 32;
 export const MAX_PLAN_WARNINGS = 32;
+
+export const PLAN_WARNING_CODES = [
+  "WARNINGS_TRUNCATED",
+  "PLAN_TOO_MANY_LINES",
+  "PLAN_LINE_TOO_LONG",
+  "PLAN_MALFORMED_TASK",
+  "PLAN_TOO_MANY_TASKS",
+  "PLAN_MALFORMED_PR",
+  "PLAN_MALFORMED_ISSUE",
+  "PLAN_TOO_MANY_ISSUES",
+  "PLAN_MALFORMED_DEPS",
+  "PLAN_DUPLICATE_DEP",
+  "PLAN_TOO_MANY_DEPS",
+  "PLAN_MISSING_DEPS",
+  "PLAN_DUPLICATE_TASK",
+  "PLAN_SELF_DEP",
+  "PLAN_UNKNOWN_DEP",
+  "PLAN_AMBIGUOUS_DEP",
+  "PLAN_INVALID_UTF8",
+  "PLAN_MISSING",
+  "PLAN_TOO_LARGE",
+  "PLAN_UNAVAILABLE",
+] as const;
 
 const TASK_LINE =
   /^- \[([ ~Rx!])\] (T[1-9][0-9]*) \((trivial|standard|major)\) — (.+)$/;
@@ -61,12 +85,13 @@ function planWarning(
   code: string,
   message: string,
   line?: number,
+  sourceLine?: string,
 ): ReaderWarning {
-  return line === undefined ? { code, message } : { code, message, line };
+  return readerWarning(code, message, line, sourceLine);
 }
 
 export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
-  const lines = text.split("\n");
+  const lines = text.split("\n").map((line) => line.replace(/\r$/, ""));
   if (lines.length > MAX_PLAN_LINES) {
     return {
       status: "unavailable",
@@ -75,16 +100,19 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
       ],
     };
   }
-  if (
-    lines.some((line) => line.replace(/\r$/, "").length > MAX_PLAN_LINE_LENGTH)
-  ) {
+  const overlongLine = lines.findIndex(
+    (line) => line.length > MAX_PLAN_LINE_LENGTH,
+  );
+  if (overlongLine !== -1) {
     return {
       status: "unavailable",
       warnings: [
-        {
-          code: "PLAN_LINE_TOO_LONG",
-          message: "plan.md contains an oversized line",
-        },
+        planWarning(
+          "PLAN_LINE_TOO_LONG",
+          "plan.md contains an oversized line",
+          overlongLine + 1,
+          lines[overlongLine],
+        ),
       ],
     };
   }
@@ -94,7 +122,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
   const fencedLines = new Set<number>();
   let fence: { marker: string; length: number } | null = null;
   for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]?.replace(/\r$/, "") ?? "";
+    const line = lines[index] ?? "";
     const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (fence === null && match?.[1]) {
       fence = { marker: match[1][0] ?? "", length: match[1].length };
@@ -109,7 +137,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
   }
   for (let index = 0; index < lines.length; index += 1) {
     if (fencedLines.has(index)) continue;
-    const line = lines[index]?.replace(/\r$/, "") ?? "";
+    const line = lines[index] ?? "";
     const match = TASK_LINE.exec(line);
     if (!match) {
       if (line.startsWith("- [")) {
@@ -119,6 +147,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
             "PLAN_MALFORMED_TASK",
             "a top-level task line is malformed",
             index + 1,
+            line,
           ),
         );
       }
@@ -158,7 +187,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
     const seenIssues = new Set<number>();
     for (let child = index + 1; child < lines.length; child += 1) {
       if (fencedLines.has(child)) continue;
-      const childLine = lines[child]?.replace(/\r$/, "") ?? "";
+      const childLine = lines[child] ?? "";
       if (TASK_LINE.test(childLine) || childLine.startsWith("- [")) break;
       const prMatch = PR_LINE.exec(childLine);
       if (prMatch) {
@@ -174,6 +203,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
               "PLAN_MALFORMED_PR",
               "task PR metadata is malformed or duplicated",
               child + 1,
+              childLine,
             ),
           );
         } else {
@@ -195,6 +225,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
                 "PLAN_MALFORMED_ISSUE",
                 "task issue metadata is malformed",
                 child + 1,
+                childLine,
               ),
             );
           } else if (!seenIssues.has(issue)) {
@@ -207,6 +238,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
                   "PLAN_TOO_MANY_ISSUES",
                   "task has too many issue references",
                   child + 1,
+                  childLine,
                 ),
               );
           }
@@ -223,6 +255,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
             "PLAN_MALFORMED_DEPS",
             "task dependencies are malformed or duplicated",
             child + 1,
+            childLine,
           ),
         );
         continue;
@@ -240,6 +273,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
             "PLAN_DUPLICATE_DEP",
             "task repeats a dependency",
             child + 1,
+            childLine,
           ),
         );
       }
@@ -254,6 +288,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
             "PLAN_TOO_MANY_DEPS",
             "task has too many dependencies",
             child + 1,
+            childLine,
           ),
         );
       }
@@ -265,6 +300,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
           "PLAN_MISSING_DEPS",
           "task is missing dependency metadata",
           index + 1,
+          line,
         ),
       );
     }
@@ -297,6 +333,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
             "PLAN_DUPLICATE_TASK",
             "plan.md contains a duplicate task identifier",
             task.line,
+            lines[task.line - 1],
           ),
         );
       }
@@ -316,7 +353,12 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
         dependenciesValid = false;
         addWarning(
           warnings,
-          planWarning(code, "task dependency cannot be resolved", task.line),
+          planWarning(
+            code,
+            "task dependency cannot be resolved",
+            task.line,
+            lines[task.line - 1],
+          ),
         );
       }
     }

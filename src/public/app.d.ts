@@ -26,6 +26,8 @@ export function startDashboard(
 ): { cleanup(): void };
 export const PEER_FETCH_TIMEOUT_MS: 5000;
 export const MAX_CONCURRENT_PEER_FETCHES: 4;
+export const WARNING_EXPLANATIONS: Readonly<Record<string, string>>;
+export const UNKNOWN_WARNING_EXPLANATION: string;
 export function providerCategory(
   provider: unknown,
 ): "openai" | "opencode" | "amazon-bedrock" | "other";

@@ -5,12 +5,25 @@ import {
   type WorklogEntry,
 } from "../contracts";
 import { readFactoryFile } from "./file";
+import { readerWarning } from "./warnings";
 
 export const MAX_WORKLOG_BYTES = 256 * 1024;
 export const MAX_WORKLOG_LINES = 4096;
 export const MAX_WORKLOG_LINE_LENGTH = 8192;
 export const MAX_WORKLOG_ENTRIES = 20;
 export const MAX_WORKLOG_WARNINGS = 32;
+
+export const WORKLOG_WARNING_CODES = [
+  "WARNINGS_TRUNCATED",
+  "WORKLOG_TOO_MANY_LINES",
+  "WORKLOG_LINE_TOO_LONG",
+  "WORKLOG_EMPTY",
+  "WORKLOG_MALFORMED_ENTRY",
+  "WORKLOG_INVALID_UTF8",
+  "WORKLOG_MISSING",
+  "WORKLOG_TOO_LARGE",
+  "WORKLOG_UNAVAILABLE",
+] as const;
 
 const WORKLOG_ENTRY =
   /^- (\d{4}-\d{2}-\d{2})(?: ((?:[01]\d|2[0-3]):[0-5]\d))? UTC - (.+)$/;
@@ -46,11 +59,10 @@ function addWarning(
   code: string,
   message: string,
   line?: number,
+  sourceLine?: string,
 ): void {
   if (warnings.length < MAX_WORKLOG_WARNINGS - 1) {
-    warnings.push(
-      line === undefined ? { code, message } : { code, message, line },
-    );
+    warnings.push(readerWarning(code, message, line, sourceLine));
   } else if (
     !warnings.some((warning) => warning.code === "WARNINGS_TRUNCATED")
   ) {
@@ -74,14 +86,19 @@ export function parseFactoryWorklog(text: string): ReaderResult<WorklogData> {
       ],
     };
   }
-  if (lines.some((line) => line.value.length > MAX_WORKLOG_LINE_LENGTH)) {
+  const overlongLine = lines.findIndex(
+    (line) => line.value.length > MAX_WORKLOG_LINE_LENGTH,
+  );
+  if (overlongLine !== -1) {
     return {
       status: "unavailable",
       warnings: [
-        {
-          code: "WORKLOG_LINE_TOO_LONG",
-          message: "worklog.md contains an oversized line",
-        },
+        readerWarning(
+          "WORKLOG_LINE_TOO_LONG",
+          "worklog.md contains an oversized line",
+          overlongLine + 1,
+          lines[overlongLine]?.value,
+        ),
       ],
     };
   }
@@ -103,6 +120,7 @@ export function parseFactoryWorklog(text: string): ReaderResult<WorklogData> {
         "WORKLOG_MALFORMED_ENTRY",
         "a worklog entry is malformed",
         current.index + 1,
+        current.line.value,
       );
       continue;
     }

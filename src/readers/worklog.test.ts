@@ -12,6 +12,7 @@ import {
   readFactoryWorklog,
 } from "./worklog";
 import { type WorklogData } from "../contracts";
+import { MAX_WARNING_EXCERPT_CODE_POINTS } from "./warnings";
 
 describe("worklog reader", () => {
   describe("constants", () => {
@@ -66,9 +67,14 @@ describe("worklog reader", () => {
     describe("line length validation", () => {
       test("returns unavailable for line exceeding MAX_WORKLOG_LINE_LENGTH", () => {
         const longLine = `- 2026-08-16 UTC - ${"x".repeat(MAX_WORKLOG_LINE_LENGTH + 1)}`;
-        const result = parseFactoryWorklog(longLine);
+        const result = parseFactoryWorklog(`first\n${longLine}`);
         expect(result.status).toBe("unavailable");
         expect(result.warnings[0]!.code).toBe("WORKLOG_LINE_TOO_LONG");
+        expect(result.warnings[0]!.line).toBe(2);
+        expect(Array.from(result.warnings[0]!.excerpt ?? "")).toHaveLength(
+          MAX_WARNING_EXCERPT_CODE_POINTS,
+        );
+        expect(result.warnings[0]!.excerpt?.endsWith("…")).toBe(true);
       });
 
       test("returns available for line with exactly MAX_WORKLOG_LINE_LENGTH", () => {
@@ -138,6 +144,18 @@ describe("worklog reader", () => {
           result.warnings.some((w) => w.code === "WORKLOG_MALFORMED_ENTRY"),
         ).toBe(true);
         expect(result.warnings[0]!.line).toBe(1);
+      });
+
+      test("preserves hostile and control characters in a bounded excerpt", () => {
+        const source = "- <img onerror=alert(1)>\u0001 malformed";
+        const result = parseFactoryWorklog(source);
+
+        expect(result.warnings[0]).toEqual({
+          code: "WORKLOG_MALFORMED_ENTRY",
+          message: "a worklog entry is malformed",
+          line: 1,
+          excerpt: source,
+        });
       });
 
       test("warns about malformed entry (invalid date format)", () => {

@@ -78,6 +78,7 @@ export interface ReaderWarning {
   code: string;
   message: string;
   line?: number;
+  excerpt?: string;
 }
 
 export type ReaderResult<T> =

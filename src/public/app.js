@@ -11,6 +11,7 @@ const MAX_ROUTING_STRING_LENGTH = 1024;
 const MAX_ROUTING_STEPS = 1_000_000;
 const MAX_COST_TASKS = 256;
 const MAX_COST_MODELS_PER_TASK = 64;
+const MAX_WARNING_EXCERPT_CODE_POINTS = 200;
 const loadGenerations = new WeakMap();
 const tabControllers = new WeakMap();
 const machineViews = new WeakMap();
@@ -632,10 +633,127 @@ function renderLogs(card, repository, now) {
   );
 }
 
-function renderWarnings(card, repository) {
+export const WARNING_EXPLANATIONS = Object.freeze({
+  WARNINGS_TRUNCATED:
+    "Additional warnings were omitted after the safety limit.",
+  PLAN_TOO_MANY_LINES: "The plan has more lines than the reader permits.",
+  PLAN_LINE_TOO_LONG: "A plan line exceeds the safe parsing limit.",
+  PLAN_MALFORMED_TASK: "A task line does not match the factory plan format.",
+  PLAN_TOO_MANY_TASKS: "The plan contains more tasks than the reader permits.",
+  PLAN_MALFORMED_PR: "A task has invalid pull-request metadata.",
+  PLAN_MALFORMED_ISSUE: "A task has an invalid Fixes issue reference.",
+  PLAN_TOO_MANY_ISSUES: "A task has more issue references than are retained.",
+  PLAN_MALFORMED_DEPS: "A task dependency line does not match the plan format.",
+  PLAN_DUPLICATE_DEP: "A task declares the same dependency more than once.",
+  PLAN_TOO_MANY_DEPS: "A task has more dependencies than are retained.",
+  PLAN_MISSING_DEPS: "A task has no valid dependency declaration.",
+  PLAN_DUPLICATE_TASK: "The same task identifier appears more than once.",
+  PLAN_SELF_DEP: "A task declares itself as a dependency.",
+  PLAN_UNKNOWN_DEP: "A task depends on an identifier absent from the plan.",
+  PLAN_AMBIGUOUS_DEP: "A task depends on a duplicated task identifier.",
+  PLAN_INVALID_UTF8: "The plan is not valid UTF-8 text.",
+  PLAN_MISSING: "The plan file is missing.",
+  PLAN_TOO_LARGE: "The plan file exceeds the safe read limit.",
+  PLAN_UNAVAILABLE: "The plan file could not be read safely.",
+  WORKLOG_TOO_MANY_LINES: "The worklog has more lines than the reader permits.",
+  WORKLOG_LINE_TOO_LONG: "A worklog line exceeds the safe parsing limit.",
+  WORKLOG_EMPTY: "The worklog contains no entries.",
+  WORKLOG_MALFORMED_ENTRY:
+    "A worklog entry does not match the protocol stamp format.",
+  WORKLOG_INVALID_UTF8: "The worklog is not valid UTF-8 text.",
+  WORKLOG_MISSING: "The worklog file is missing.",
+  WORKLOG_TOO_LARGE: "The worklog file exceeds the safe read limit.",
+  WORKLOG_UNAVAILABLE: "The worklog file could not be read safely.",
+  QUESTIONS_TOO_MANY_LINES:
+    "The questions file has more lines than the reader permits.",
+  QUESTIONS_LINE_TOO_LONG: "A questions line exceeds the safe parsing limit.",
+  QUESTIONS_EMPTY: "The questions file contains no entries.",
+  QUESTIONS_TOO_MANY_ENTRIES:
+    "The questions file has more entries than are retained.",
+  QUESTIONS_MALFORMED_ENTRY:
+    "A question heading does not match the protocol format.",
+  QUESTIONS_INCOMPLETE_ENTRY:
+    "An open question is missing required protocol fields.",
+  QUESTIONS_DUPLICATE_ID:
+    "The same question identifier appears more than once.",
+  QUESTIONS_INVALID_UTF8: "The questions file is not valid UTF-8 text.",
+  QUESTIONS_MISSING: "The questions file is missing.",
+  QUESTIONS_TOO_LARGE: "The questions file exceeds the safe read limit.",
+  QUESTIONS_UNAVAILABLE: "The questions file could not be read safely.",
+  STATE_INVALID_FIELD:
+    "A state field has an invalid value and was not trusted.",
+  STATE_INVALID_UTF8: "The state file is not valid UTF-8 text.",
+  STATE_INVALID_JSON: "The state file is not valid JSON.",
+  STATE_INVALID_ROOT: "The state file does not contain a JSON object.",
+  STATE_MISSING: "The state file is missing.",
+  STATE_TOO_LARGE: "The state file exceeds the safe read limit.",
+  STATE_UNAVAILABLE: "The state file could not be read safely.",
+  LOG_NARRATION_TRUNCATED:
+    "Older narration was omitted to keep the log tail bounded.",
+  LOG_LINE_TOO_LONG: "A log line was shortened to the safe display limit.",
+  LOG_LINES_TRUNCATED: "Older log lines were omitted from the narration tail.",
+  LOG_INVALID_UTF8: "A selected log is not valid UTF-8 text.",
+  LOG_INVALID_DURATION:
+    "A log timestamp could not support a trustworthy duration.",
+  LOG_CHANGED_DURING_READ:
+    "A selected log changed while its snapshot was read.",
+  LOGS_MISSING: "The factory logs directory is missing.",
+  LOG_NAME_INVALID: "A log name resembles a factory log but is not recognized.",
+  LOG_UNAVAILABLE: "A selected log could not be read safely.",
+  DRIVER_LOG_MISSING: "No recognized driver log is available for liveness.",
+  LOGS_EMPTY: "No recognized factory logs are available.",
+  LOGS_UNAVAILABLE: "The factory logs directory could not be read safely.",
+  ROUTING_INVALID_UTF8: "The routing file is not valid UTF-8 text.",
+  ROUTING_INVALID_JSON: "The routing file is not valid JSON.",
+  ROUTING_INVALID_ROOT: "The routing file does not contain a JSON object.",
+  ROUTING_UNSUPPORTED_SCHEMA:
+    "The routing file uses an unsupported schema version.",
+  ROUTING_INVALID_FIELD: "A required routing field has an invalid value.",
+  ROUTING_TOO_MANY_AGENTS:
+    "The routing file has more agents than are retained.",
+  ROUTING_INVALID_AGENT: "An agent routing entry has an invalid value.",
+  ROUTING_MISSING: "The routing file is missing.",
+  ROUTING_TOO_LARGE: "The routing file exceeds the safe read limit.",
+  ROUTING_UNAVAILABLE: "The routing file could not be read safely.",
+  COSTS_INVALID_UTF8: "The costs file is not valid UTF-8 text.",
+  COSTS_INVALID_JSON: "The costs file is not valid JSON.",
+  COSTS_INVALID_ROOT: "The costs file does not contain a JSON object.",
+  COSTS_UNSUPPORTED_SCHEMA:
+    "The costs file uses an unsupported schema version.",
+  COSTS_INVALID_FIELD: "A required cost field has an invalid value.",
+  COSTS_UNSUPPORTED_CURRENCY: "The costs file is not denominated in USD.",
+  COSTS_TOO_MANY_TASKS:
+    "The costs file has more task entries than are retained.",
+  COSTS_INVALID_TASK: "A task cost entry has an invalid value.",
+  COSTS_TOO_MANY_MODELS: "A task has more model entries than are retained.",
+  COSTS_INVALID_MODEL: "A model cost entry has an invalid value.",
+  COSTS_MISSING: "The costs file is missing.",
+  COSTS_TOO_LARGE: "The costs file exceeds the safe read limit.",
+  COSTS_UNAVAILABLE: "The costs file could not be read safely.",
+  REPOSITORY_WARNING: "The repository snapshot is incomplete.",
+});
+
+export const UNKNOWN_WARNING_EXPLANATION =
+  "This source reported a warning that this dashboard does not yet recognize.";
+
+function boundedWarningExcerpt(value) {
+  const codePoints = [...value];
+  return codePoints.length <= MAX_WARNING_EXCERPT_CODE_POINTS
+    ? value
+    : `${codePoints.slice(0, MAX_WARNING_EXCERPT_CODE_POINTS - 1).join("")}…`;
+}
+
+function collectWarnings(repository) {
   const warnings = [];
-  if (typeof repository.warning === "string") warnings.push(repository.warning);
-  for (const [label, result] of [
+  if (typeof repository.warning === "string") {
+    warnings.push({
+      source: "repository",
+      code: "REPOSITORY_WARNING",
+      line: undefined,
+      excerpt: boundedWarningExcerpt(repository.warning),
+    });
+  }
+  for (const [source, result] of [
     ["state", repository.state],
     ["plan", repository.plan],
     ["questions", repository.questions],
@@ -646,16 +764,95 @@ function renderWarnings(card, repository) {
   ]) {
     if (!Array.isArray(result?.warnings)) continue;
     for (const warning of result.warnings) {
-      warnings.push(
-        `${label}: ${warning?.code ?? "WARNING"} — ${warning?.message ?? "source warning"}`,
-      );
+      warnings.push({
+        source,
+        code: warning.code,
+        line: warning.line,
+        excerpt: warning.excerpt,
+      });
     }
   }
+  const grouped = new Map();
+  for (const warning of warnings) {
+    const key = `${warning.source}\u0000${warning.code}\u0000${warning.line ?? ""}`;
+    const existing = grouped.get(key);
+    if (existing) existing.count += 1;
+    else grouped.set(key, { ...warning, count: 1 });
+  }
+  return [...grouped.values()].sort(
+    (left, right) =>
+      left.source.localeCompare(right.source) ||
+      (left.line ?? Number.MAX_SAFE_INTEGER) -
+        (right.line ?? Number.MAX_SAFE_INTEGER) ||
+      left.code.localeCompare(right.code),
+  );
+}
+
+function warningsShouldOpen(repository, warnings) {
+  if (typeof repository.warning === "string") return true;
+  for (const result of [
+    repository.state,
+    repository.plan,
+    repository.questions,
+    repository.worklog,
+    repository.logs,
+    repository.routing,
+    repository.costs,
+  ]) {
+    if (result?.status === "unavailable") return true;
+  }
+  if (warnings.some((warning) => warning.code.includes("TRUNCATED"))) {
+    return true;
+  }
+  return !warnings.every(
+    (warning) =>
+      ["plan", "worklog"].includes(warning.source) &&
+      WARNING_EXPLANATIONS[warning.code] !== undefined,
+  );
+}
+
+function renderWarnings(card, repository) {
+  const warnings = collectWarnings(repository);
   if (warnings.length === 0) return;
-  const panel = addPanel(card, "Warnings", "warnings-panel", "panel-span-4");
-  const list = panel.ownerDocument.createElement("ul");
-  warnings.forEach((warning) => appendText(list, "li", warning));
-  panel.append(list);
+  const documentRoot = card.ownerDocument;
+  const panel = documentRoot.createElement("section");
+  panel.className = "panel warnings-panel panel-span-4";
+  const details = documentRoot.createElement("details");
+  details.open = warningsShouldOpen(repository, warnings);
+  const summary = documentRoot.createElement("summary");
+  appendText(
+    summary,
+    "h4",
+    `Warnings · ${warnings.length} · from this snapshot`,
+  );
+  details.append(summary);
+  const list = documentRoot.createElement("ul");
+  list.className = "warning-list";
+  for (const warning of warnings) {
+    const item = documentRoot.createElement("li");
+    item.className = "warning-row";
+    appendText(item, "span", warning.source, "warning-source");
+    appendText(item, "code", warning.code, "warning-code");
+    if (warning.line !== undefined) {
+      appendText(item, "span", `line ${warning.line}`, "warning-line");
+    }
+    if (warning.count > 1) {
+      appendText(item, "span", `×${warning.count}`, "warning-count");
+    }
+    appendText(
+      item,
+      "p",
+      WARNING_EXPLANATIONS[warning.code] ?? UNKNOWN_WARNING_EXPLANATION,
+      "warning-explanation",
+    );
+    if (warning.excerpt !== undefined) {
+      appendText(item, "pre", warning.excerpt, "warning-excerpt");
+    }
+    list.append(item);
+  }
+  details.append(list);
+  panel.append(details);
+  card.append(panel);
 }
 
 export function providerCategory(provider) {
@@ -743,6 +940,21 @@ function isTimestamp(value) {
 function isReaderResult(value) {
   if (!isRecord(value) || !Array.isArray(value.warnings)) return false;
   if (!["available", "partial", "unavailable"].includes(value.status)) {
+    return false;
+  }
+  if (
+    !value.warnings.every(
+      (warning) =>
+        isRecord(warning) &&
+        typeof warning.code === "string" &&
+        typeof warning.message === "string" &&
+        (warning.line === undefined ||
+          (Number.isSafeInteger(warning.line) && warning.line > 0)) &&
+        (warning.excerpt === undefined ||
+          (typeof warning.excerpt === "string" &&
+            [...warning.excerpt].length <= MAX_WARNING_EXCERPT_CODE_POINTS)),
+    )
+  ) {
     return false;
   }
   return value.status === "unavailable" || isRecord(value.data);

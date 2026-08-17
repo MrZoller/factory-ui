@@ -11,6 +11,16 @@ export const MAX_STATE_BYTES = 64 * 1024;
 export const MAX_PROJECT_LENGTH = 200;
 export const MAX_STATE_STRING_LENGTH = 1024;
 
+export const STATE_WARNING_CODES = [
+  "STATE_INVALID_UTF8",
+  "STATE_INVALID_JSON",
+  "STATE_INVALID_ROOT",
+  "STATE_INVALID_FIELD",
+  "STATE_MISSING",
+  "STATE_TOO_LARGE",
+  "STATE_UNAVAILABLE",
+] as const;
+
 const TASK_ID = /^T[1-9][0-9]*$/;
 const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 

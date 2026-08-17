@@ -12,6 +12,7 @@ import {
   readFactoryQuestions,
 } from "./questions";
 import { type QuestionsData } from "../contracts";
+import { MAX_WARNING_EXCERPT_CODE_POINTS } from "./warnings";
 
 describe("questions reader", () => {
   describe("constants", () => {
@@ -71,9 +72,14 @@ describe("questions reader", () => {
     describe("line length validation", () => {
       test("returns unavailable for line exceeding MAX_QUESTION_LINE_LENGTH", () => {
         const longLine = `## Q1 (task T1, open) — ${"x".repeat(MAX_QUESTION_LINE_LENGTH + 1)}\nContext: test\nOptions considered: A / B\n**A:**`;
-        const result = parseFactoryQuestions(longLine);
+        const result = parseFactoryQuestions(`first\n${longLine}`);
         expect(result.status).toBe("unavailable");
         expect(result.warnings[0]!.code).toBe("QUESTIONS_LINE_TOO_LONG");
+        expect(result.warnings[0]!.line).toBe(2);
+        expect(Array.from(result.warnings[0]!.excerpt ?? "")).toHaveLength(
+          MAX_WARNING_EXCERPT_CODE_POINTS,
+        );
+        expect(result.warnings[0]!.excerpt?.endsWith("…")).toBe(true);
       });
 
       test("returns available for line with exactly MAX_QUESTION_LINE_LENGTH", () => {
@@ -200,6 +206,7 @@ Options considered: A / B
           result.warnings.some((w) => w.code === "QUESTIONS_MALFORMED_ENTRY"),
         ).toBe(true);
         expect(result.warnings[0]!.line).toBe(1);
+        expect(result.warnings[0]!.excerpt).toBe("## Q1 (task T1) — Question?");
       });
 
       test("warns about malformed heading (invalid status)", () => {

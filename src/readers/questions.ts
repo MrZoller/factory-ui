@@ -5,12 +5,28 @@ import {
   type ReaderWarning,
 } from "../contracts";
 import { readFactoryFile } from "./file";
+import { readerWarning } from "./warnings";
 
 export const MAX_QUESTIONS_BYTES = 256 * 1024;
 export const MAX_QUESTIONS_LINES = 4096;
 export const MAX_QUESTION_LINE_LENGTH = 8192;
 export const MAX_QUESTIONS = 128;
 export const MAX_QUESTIONS_WARNINGS = 32;
+
+export const QUESTIONS_WARNING_CODES = [
+  "WARNINGS_TRUNCATED",
+  "QUESTIONS_TOO_MANY_LINES",
+  "QUESTIONS_LINE_TOO_LONG",
+  "QUESTIONS_EMPTY",
+  "QUESTIONS_TOO_MANY_ENTRIES",
+  "QUESTIONS_MALFORMED_ENTRY",
+  "QUESTIONS_INCOMPLETE_ENTRY",
+  "QUESTIONS_DUPLICATE_ID",
+  "QUESTIONS_INVALID_UTF8",
+  "QUESTIONS_MISSING",
+  "QUESTIONS_TOO_LARGE",
+  "QUESTIONS_UNAVAILABLE",
+] as const;
 
 const QUESTION_HEADING =
   /^## (Q[1-9][0-9]*) \(task (T[1-9][0-9]*), (open|answered)\) — (.+)$/;
@@ -38,11 +54,10 @@ function addWarning(
   code: string,
   message: string,
   line?: number,
+  sourceLine?: string,
 ): void {
   if (warnings.length < MAX_QUESTIONS_WARNINGS - 1) {
-    warnings.push(
-      line === undefined ? { code, message } : { code, message, line },
-    );
+    warnings.push(readerWarning(code, message, line, sourceLine));
   } else if (
     !warnings.some((warning) => warning.code === "WARNINGS_TRUNCATED")
   ) {
@@ -68,14 +83,19 @@ export function parseFactoryQuestions(
       ],
     };
   }
-  if (lines.some((line) => line.value.length > MAX_QUESTION_LINE_LENGTH)) {
+  const overlongLine = lines.findIndex(
+    (line) => line.value.length > MAX_QUESTION_LINE_LENGTH,
+  );
+  if (overlongLine !== -1) {
     return {
       status: "unavailable",
       warnings: [
-        {
-          code: "QUESTIONS_LINE_TOO_LONG",
-          message: "questions.md contains an oversized line",
-        },
+        readerWarning(
+          "QUESTIONS_LINE_TOO_LONG",
+          "questions.md contains an oversized line",
+          overlongLine + 1,
+          lines[overlongLine]?.value,
+        ),
       ],
     };
   }
@@ -111,6 +131,7 @@ export function parseFactoryQuestions(
         "QUESTIONS_MALFORMED_ENTRY",
         "a question heading is malformed",
         current.index + 1,
+        current.line.value,
       );
       continue;
     }
@@ -142,6 +163,7 @@ export function parseFactoryQuestions(
         "QUESTIONS_INCOMPLETE_ENTRY",
         "an open question is missing protocol fields",
         current.index + 1,
+        current.line.value,
       );
     }
     open.push({ id, taskId, title, text: textSlice });
@@ -155,6 +177,7 @@ export function parseFactoryQuestions(
         "QUESTIONS_DUPLICATE_ID",
         "questions.md contains a duplicate question identifier",
         line,
+        lines[line - 1]?.value,
       );
     }
   }

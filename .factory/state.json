@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T41",
+  "branch": "factory/t41-legacy-worklogs",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-17T18:59:26Z"
+  "updated": "2026-08-17T19:00:51Z"
 }

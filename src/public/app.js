@@ -206,7 +206,7 @@ const WORKLOG_EVENT_PATTERNS = [
   ["merged", /\bmerged\b|\bmerge completed\b/i],
   [
     "review wait",
-    /\breview wait\b|\b(?:awaiting|awaited|waiting for) (?:review|CI|checks?|bots?)\b|\bin review\b/i,
+    /\breview wait\b|\b(?:awaiting|awaited|waiting for) (?:review|CI|checks?|bots?)\b|\bin review\b|\b(?:review|verdict)(?: is| remains)?(?: still)? (?:in[- ]flight|pending)\b|\bawaiting [^.]{0,100}\bverdict\b/i,
   ],
   ["parked minors", /\bparked? (?:review )?minors?\b/i],
   ["reclassified", /\breclassif(?:ied|y|ication)\b/i],
@@ -524,11 +524,20 @@ function renderTask(panel, task, cost, routing) {
   panel.append(item);
 }
 
-function taskIdNumber(task) {
+function taskIdDigits(task) {
   const match = /^T([1-9][0-9]*)$/.exec(task?.id ?? "");
-  if (!match) return -1;
-  const number = Number(match[1]);
-  return Number.isSafeInteger(number) ? number : -1;
+  return match?.[1];
+}
+
+function compareTaskIdsDescending(left, right) {
+  const leftDigits = taskIdDigits(left);
+  const rightDigits = taskIdDigits(right);
+  if (leftDigits === undefined) return rightDigits === undefined ? 0 : 1;
+  if (rightDigits === undefined) return -1;
+  return (
+    rightDigits.length - leftDigits.length ||
+    (rightDigits > leftDigits ? 1 : rightDigits < leftDigits ? -1 : 0)
+  );
 }
 
 function mergedAtTime(repository, task) {
@@ -549,7 +558,7 @@ function completedTasks(repository, tasks) {
     } else if (rightMergedAt !== undefined) {
       return 1;
     }
-    return taskIdNumber(right) - taskIdNumber(left);
+    return compareTaskIdsDescending(left, right);
   });
 }
 
@@ -666,10 +675,12 @@ function renderWorklog(card, repository, disclosure) {
   );
   const entries = readerData(repository.worklog)?.entries;
   if (entries === undefined) {
+    disclosure.worklogEntries.clear();
     appendText(panel, "p", "Unavailable", "unavailable");
     return;
   }
   if (!Array.isArray(entries) || entries.length === 0) {
+    disclosure.worklogEntries.clear();
     panel.classList.add("panel-empty");
     appendText(panel, "p", "None", "empty");
     return;
@@ -953,6 +964,12 @@ export const WARNING_EXPLANATIONS = Object.freeze({
 export const UNKNOWN_WARNING_EXPLANATION =
   "This source reported a warning that this dashboard does not yet recognize.";
 
+function warningExplanation(code) {
+  return Object.hasOwn(WARNING_EXPLANATIONS, code)
+    ? WARNING_EXPLANATIONS[code]
+    : UNKNOWN_WARNING_EXPLANATION;
+}
+
 function boundedWarningExcerpt(value) {
   const codePoints = [...value];
   return codePoints.length <= MAX_WARNING_EXCERPT_CODE_POINTS
@@ -1024,7 +1041,7 @@ function warningsShouldOpen(repository, warnings) {
   return !warnings.every(
     (warning) =>
       ["plan", "worklog"].includes(warning.source) &&
-      WARNING_EXPLANATIONS[warning.code] !== undefined,
+      Object.hasOwn(WARNING_EXPLANATIONS, warning.code),
   );
 }
 
@@ -1037,10 +1054,10 @@ function renderWarnings(card, repository, disclosure) {
   const details = documentRoot.createElement("details");
   details.open =
     disclosure.warningsOpen ?? warningsShouldOpen(repository, warnings);
-  details.addEventListener("toggle", () => {
-    disclosure.warningsOpen = details.open;
-  });
   const summary = documentRoot.createElement("summary");
+  summary.addEventListener("click", () => {
+    disclosure.warningsOpen = !details.open;
+  });
   appendText(
     summary,
     "h4",
@@ -1063,7 +1080,7 @@ function renderWarnings(card, repository, disclosure) {
     appendText(
       item,
       "p",
-      WARNING_EXPLANATIONS[warning.code] ?? UNKNOWN_WARNING_EXPLANATION,
+      warningExplanation(warning.code),
       "warning-explanation",
     );
     if (warning.excerpt !== undefined) {

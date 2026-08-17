@@ -441,6 +441,22 @@ The dashboard is now available to operators.
           expect(result.data.entries[1]?.date).toBe("2026-08-18");
         }
       });
+
+      test("keeps a three-hash dated heading inside the legacy entry body", () => {
+        const worklog = `## 2026-08-16 — Legacy entry
+### 2026-08-17 — Nested section
+- body bullet`;
+
+        const result = parseFactoryWorklog(worklog);
+
+        expect(result).toEqual({
+          status: "available",
+          data: {
+            entries: [{ date: "2026-08-16", text: worklog }],
+          },
+          warnings: [],
+        });
+      });
     });
 
     describe("time field parsing", () => {

@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T37",
-  "branch": "factory/t37-task-tables",
-  "pr": 36,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-17T04:22:05Z"
+  "updated": "2026-08-17T04:33:21Z"
 }

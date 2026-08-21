@@ -47,11 +47,13 @@ task.
   - acceptance: In `src/index.ts`, `package.json`, `README.md`, `.gitignore`, `factory-ui.config.example.json`, and tests, provide a documented `serve --config <path>` launch path with fail-before-listen validation and port 7777 default; ignore machine-local config while committing a credential-free example for mini, macbook, and legion with different clone paths; document loopback/tailnet binds, peer/CORS symmetry, MagicDNS and ACL assumptions, repository-equivalent trust, fixed limits, `lsof` uncertainty, troubleshooting, and the no-registry/no-proxy read-only model; verify the full test and lint commands are green (spec 1, 5, 10).
   - deps: T9
 
-- [!] T42 (trivial) — parked review minors (batch)
+- [ ] T42 (trivial) — parked review minors (batch)
   - acceptance: Batch review minors parked by the shepherd into one focused change; preserve existing behavior and pass `bun test` plus `bun run lint`.
   - PR #49: keep short Completed task tables filling their wide panel while long identifiers retain internal horizontal scrolling.
   - PR #49: keep long hyphenated review-strip reviewer labels intact rather than wrapping within their cell.
   - PR #51: preserve the muted `CANNOT_VERIFY` liveness-chip tone instead of allowing the legacy `.unknown` warning color to override `chip-muted`.
+  - PR #52: distinguish unverified review cross-checks from matching cross-checks in the disclosure summary.
+  - PR #52: preserve the distinct Unknown question state in tab-badge tooltip text.
 - [x] T46 (standard) — UI polish 1/5: stop mid-word wrapping — scoped overflow-wrap, nowrap labels, tables that fit their containers (Fixes #44)
   - acceptance: In `src/public/styles.css`, `src/public/app.js` only for needed hooks, and `src/public/app.test.ts`, restrict arbitrary wrapping to untrusted long-text surfaces; keep labels, identifiers, pills, numeric cells, warning codes, and review labels intact; give fleet, repository, review, and task tables explicit column sizing and internal horizontal scrolling; keep task headers visible in narrow panels and timestamps intact; verify the specified 390/768/1100/1440 layouts by eye, cover style hooks and hostile strings in tests, and pass `bun test` plus `bun run lint`.
   - pr: 49
@@ -62,7 +64,7 @@ task.
 - [x] T43 (standard) — UI polish 3/5: design-system primitives — one chip, button, tab and panel-title style; type scale; compact header (Fixes #46)
   - acceptance: In `src/public/styles.css`, `src/public/app.js`, `src/public/how.js`, `src/public/index.html`, `src/public/how.html`, and colocated tests, consolidate the specified chip, button, tab, panel-title, empty-state, typography, header, color, numeric-cell, empty-value, and dark-mode primitives; retain text-only rendering and accessibility hooks; cover the shared primitives, compact headers on both pages, empty error handling, summary placeholders, and hostile strings; pass `bun test` and `bun run lint`.
   - pr: 51
-- [R] T44 (standard) — UI polish 4/5: declutter — tab badges, review strip, task cost/review columns, worklog entries, routing strip (Fixes #47)
+- [x] T44 (standard) — UI polish 4/5: declutter — tab badges, review strip, task cost/review columns, worklog entries, routing strip (Fixes #47)
   - acceptance: In `src/public/app.js`, `src/public/styles.css`, and `src/public/app.test.ts`, apply the issue's compact question/hold badges, collapsed review summary and mismatch disclosure, concise task cost/size/review cells, panel-level raw-worklog toggle, routing panel, and explicit summary placeholders; preserve disclosure state and metric semantics, render repository-derived values as text, cover every changed presentation and hostile strings, and pass `bun test` plus `bun run lint`.
   - deps: T43
   - pr: 52

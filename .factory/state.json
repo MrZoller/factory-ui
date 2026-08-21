@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T47",
+  "branch": "factory/t47-repository-card-layout",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-21T03:17:00Z"
+  "updated": "2026-08-21T03:18:21Z"
 }

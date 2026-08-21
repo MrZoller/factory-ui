@@ -54,7 +54,7 @@ task.
 - [x] T46 (standard) — UI polish 1/5: stop mid-word wrapping — scoped overflow-wrap, nowrap labels, tables that fit their containers (Fixes #44)
   - acceptance: In `src/public/styles.css`, `src/public/app.js` only for needed hooks, and `src/public/app.test.ts`, restrict arbitrary wrapping to untrusted long-text surfaces; keep labels, identifiers, pills, numeric cells, warning codes, and review labels intact; give fleet, repository, review, and task tables explicit column sizing and internal horizontal scrolling; keep task headers visible in narrow panels and timestamps intact; verify the specified 390/768/1100/1440 layouts by eye, cover style hooks and hostile strings in tests, and pass `bun test` plus `bun run lint`.
   - pr: 49
-- [ ] T47 (standard) — UI polish 2/5: repository card layout — no grid holes, equal-height rows, empty task groups collapsed (Fixes #45)
+- [~] T47 (standard) — UI polish 2/5: repository card layout — no grid holes, equal-height rows, empty task groups collapsed (Fixes #45)
   - acceptance: In `src/public/app.js`, `src/public/styles.css`, and `src/public/app.test.ts`, reorganize repository panels into gap-free equal-height rows at 1200px or wider, use a compact full-width strip for empty task groups without table headers, place repository availability in Current, adapt worklog width to warning presence, and preserve responsive collapse, disclosure state, text-only rendering, and hostile-string safety; cover panel order/spans, refresh transitions, status placement, and worklog sizing; pass `bun test` and `bun run lint`.
   - deps: T46
 - [ ] T43 (standard) — UI polish 3/5: design-system primitives — one chip, button, tab and panel-title style; type scale; compact header (Fixes #46)

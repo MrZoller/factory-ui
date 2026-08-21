@@ -47,7 +47,7 @@ task.
   - acceptance: In `src/index.ts`, `package.json`, `README.md`, `.gitignore`, `factory-ui.config.example.json`, and tests, provide a documented `serve --config <path>` launch path with fail-before-listen validation and port 7777 default; ignore machine-local config while committing a credential-free example for mini, macbook, and legion with different clone paths; document loopback/tailnet binds, peer/CORS symmetry, MagicDNS and ACL assumptions, repository-equivalent trust, fixed limits, `lsof` uncertainty, troubleshooting, and the no-registry/no-proxy read-only model; verify the full test and lint commands are green (spec 1, 5, 10).
   - deps: T9
 
-- [ ] T42 (trivial) — parked review minors (batch)
+- [~] T42 (trivial) — parked review minors (batch)
   - acceptance: Batch review minors parked by the shepherd into one focused change; preserve existing behavior and pass `bun test` plus `bun run lint`.
   - PR #49: keep short Completed task tables filling their wide panel while long identifiers retain internal horizontal scrolling.
   - PR #49: keep long hyphenated review-strip reviewer labels intact rather than wrapping within their cell.

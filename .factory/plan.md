@@ -51,6 +51,7 @@ task.
   - acceptance: Batch review minors parked by the shepherd into one focused change; preserve existing behavior and pass `bun test` plus `bun run lint`.
   - PR #49: keep short Completed task tables filling their wide panel while long identifiers retain internal horizontal scrolling.
   - PR #49: keep long hyphenated review-strip reviewer labels intact rather than wrapping within their cell.
+  - PR #51: preserve the muted `CANNOT_VERIFY` liveness-chip tone instead of allowing the legacy `.unknown` warning color to override `chip-muted`.
 - [x] T46 (standard) — UI polish 1/5: stop mid-word wrapping — scoped overflow-wrap, nowrap labels, tables that fit their containers (Fixes #44)
   - acceptance: In `src/public/styles.css`, `src/public/app.js` only for needed hooks, and `src/public/app.test.ts`, restrict arbitrary wrapping to untrusted long-text surfaces; keep labels, identifiers, pills, numeric cells, warning codes, and review labels intact; give fleet, repository, review, and task tables explicit column sizing and internal horizontal scrolling; keep task headers visible in narrow panels and timestamps intact; verify the specified 390/768/1100/1440 layouts by eye, cover style hooks and hostile strings in tests, and pass `bun test` plus `bun run lint`.
   - pr: 49
@@ -58,7 +59,7 @@ task.
   - acceptance: In `src/public/app.js`, `src/public/styles.css`, and `src/public/app.test.ts`, reorganize repository panels into gap-free equal-height rows at 1200px or wider, use a compact full-width strip for empty task groups without table headers, place repository availability in Current, adapt worklog width to warning presence, and preserve responsive collapse, disclosure state, text-only rendering, and hostile-string safety; cover panel order/spans, refresh transitions, status placement, and worklog sizing; pass `bun test` and `bun run lint`.
   - deps: T46
   - pr: 50
-- [R] T43 (standard) — UI polish 3/5: design-system primitives — one chip, button, tab and panel-title style; type scale; compact header (Fixes #46)
+- [x] T43 (standard) — UI polish 3/5: design-system primitives — one chip, button, tab and panel-title style; type scale; compact header (Fixes #46)
   - acceptance: In `src/public/styles.css`, `src/public/app.js`, `src/public/how.js`, `src/public/index.html`, `src/public/how.html`, and colocated tests, consolidate the specified chip, button, tab, panel-title, empty-state, typography, header, color, numeric-cell, empty-value, and dark-mode primitives; retain text-only rendering and accessibility hooks; cover the shared primitives, compact headers on both pages, empty error handling, summary placeholders, and hostile strings; pass `bun test` and `bun run lint`.
   - pr: 51
 - [ ] T44 (standard) — UI polish 4/5: declutter — tab badges, review strip, task cost/review columns, worklog entries, routing strip (Fixes #47)

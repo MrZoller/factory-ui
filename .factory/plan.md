@@ -69,9 +69,10 @@ task.
   - acceptance: In `src/public/app.js`, `src/public/styles.css`, and `src/public/app.test.ts`, apply the issue's compact question/hold badges, collapsed review summary and mismatch disclosure, concise task cost/size/review cells, panel-level raw-worklog toggle, routing panel, and explicit summary placeholders; preserve disclosure state and metric semantics, render repository-derived values as text, cover every changed presentation and hostile strings, and pass `bun test` plus `bun run lint`.
   - deps: T43
   - pr: 52
-- [~] T45 (standard) — UI polish 5/5: /how page — pipeline that fits, compact agent cards, one gate component (Fixes #48)
+- [R] T45 (standard) — UI polish 5/5: /how page — pipeline that fits, compact agent cards, one gate component (Fixes #48)
   - acceptance: In `src/public/how.js`, `src/public/how.html`, `src/public/styles.css`, and `src/public/how.test.ts`, make the six-stage pipeline, operators lane, and connectors responsive without diagram horizontal scrolling at 1280px or wider; remove fixed stage heights; move model limits and list prices into per-agent disclosures; use the shared gate and compact-header primitives; preserve machine routing, focus restoration, peer fan-out, text-only rendering, and hostile-string safety; pass `bun test` and `bun run lint`.
   - deps: T43
+  - pr: 54
 
 ## Risks
 

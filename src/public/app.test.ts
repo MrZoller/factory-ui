@@ -449,26 +449,44 @@ describe("local dashboard rendering", () => {
       "ago",
     );
     const card = document.querySelector(".repository")!;
-    const panelSpans = Object.fromEntries(
-      Array.from(card.querySelectorAll(".panel"), (panel) => [
-        panel.querySelector("h4")?.textContent,
-        Array.from(panel.classList).find((name) =>
-          name.startsWith("panel-span-"),
-        ),
-      ]),
+    expect(Array.from(card.children, (child) => child.classList[1])).toEqual([
+      "current-panel",
+      "logs-panel",
+      "questions-panel",
+      "active-work",
+      "review-work",
+      "runnable-work",
+      "blocked-work",
+      "worklog-panel",
+      "warnings-panel",
+      "panel-span-12",
+      "completed-work",
+    ]);
+    for (const selector of [
+      ".current-panel",
+      ".logs-panel",
+      ".questions-panel",
+    ]) {
+      expect(card.querySelector(selector)?.classList).toContain("panel-span-4");
+    }
+    for (const selector of [
+      ".active-work",
+      ".review-work",
+      ".runnable-work",
+      ".blocked-work",
+      ".completed-work",
+      ".review-strip",
+    ]) {
+      expect(card.querySelector(selector)?.classList).toContain(
+        "panel-span-12",
+      );
+    }
+    expect(card.querySelector(".worklog-panel")?.classList).toContain(
+      "panel-span-8",
     );
-    expect(panelSpans).toEqual({
-      Current: "panel-span-8",
-      Active: "panel-span-4",
-      "In review": "panel-span-4",
-      "Next runnable": "panel-span-4",
-      Blocked: "panel-span-4",
-      Completed: "panel-span-12",
-      "Open questions": "panel-span-6",
-      "Recent worklog": "panel-span-4",
-      "Driver activity": "panel-span-4",
-      "Warnings · 1 · from this snapshot": "panel-span-4",
-    });
+    expect(card.querySelector(".warnings-panel")?.classList).toContain(
+      "panel-span-4",
+    );
     expect(card.lastElementChild?.querySelector("h4")?.textContent).toBe(
       "Completed",
     );
@@ -519,7 +537,7 @@ describe("local dashboard rendering", () => {
     expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
-  test("renders every available task group as an accessible table, including empty groups", () => {
+  test("collapses empty task groups without table headers", () => {
     const document = dashboardDocument();
     const repository = richRepository({
       plan: {
@@ -537,38 +555,89 @@ describe("local dashboard rendering", () => {
 
     renderFleet(fleet("mini", [], [repository]), document, NOW);
 
-    for (const title of [
-      "Active",
-      "In review",
-      "Next runnable",
-      "Blocked",
-      "Completed",
-    ]) {
-      const panel = Array.from(
-        document.querySelectorAll<HTMLElement>(".panel"),
-      ).find(
-        (candidate) => candidate.querySelector("h4")?.textContent === title,
-      )!;
-      const table = panel.querySelector<HTMLTableElement>(
-        ".task-table-scroll > table.task-table",
-      )!;
-      expect(table.querySelector("caption")?.textContent).toBe(`${title} · 0`);
-      expect(table.querySelectorAll("thead tr")).toHaveLength(1);
-      expect(table.querySelectorAll("tbody tr")).toHaveLength(0);
-      expect(
-        Array.from(table.querySelectorAll("thead th"), (header) => [
-          header.textContent,
-          header.getAttribute("scope"),
-        ]),
-      ).toEqual([
-        ["Task", "col"],
-        ["Title", "col"],
-        ["Size", "col"],
-        ["Cost", "col"],
-        ["Review", "col"],
-        ["Refs", "col"],
-      ]);
-    }
+    const strip = document.querySelector(".empty-task-groups")!;
+    expect(strip.classList).toContain("panel-span-12");
+    expect(strip.querySelectorAll(".empty-task-group")).toHaveLength(4);
+    expect(
+      Array.from(strip.querySelectorAll(".empty-task-group"), (group) =>
+        group.textContent?.trim(),
+      ),
+    ).toEqual([
+      "Active · None",
+      "In review · None",
+      "Next runnable · None",
+      "Blocked · None",
+    ]);
+    expect(strip.querySelector("table, thead")).toBeNull();
+    const completed = document.querySelector(".completed-work")!;
+    expect(completed.textContent).toBe("CompletedNone");
+    expect(completed.querySelector("table, thead")).toBeNull();
+  });
+
+  test("restores a full task table when an empty group gains work on refresh", () => {
+    const document = dashboardDocument();
+    const base = richRepository();
+    const empty = {
+      ...base,
+      plan: {
+        ...base.plan,
+        data: { ...base.plan.data, active: [] },
+      },
+    };
+
+    renderFleet(fleet("mini", [], [empty]), document, NOW);
+    expect(
+      Array.from(
+        document.querySelectorAll(".empty-task-group"),
+        (group) => group.textContent,
+      ),
+    ).toContain("Active · None");
+    expect(document.querySelector(".active-work")).toBeNull();
+
+    renderFleet(fleet("mini", [], [base]), document, NOW);
+    expect(document.querySelector(".active-work thead")).not.toBeNull();
+    expect(document.querySelector(".active-work tbody .task")).not.toBeNull();
+    expect(
+      Array.from(
+        document.querySelectorAll(".empty-task-group"),
+        (group) => group.textContent,
+      ),
+    ).not.toContain("Active · None");
+  });
+
+  test("moves repository availability into Current and sizes worklog around warnings", () => {
+    const document = dashboardDocument();
+    const base = richRepository();
+    const clean = richRepository({
+      logs: { ...base.logs, status: "available", warnings: [] },
+    });
+    renderFleet(fleet("mini", [], [clean]), document, NOW);
+
+    expect(document.querySelector(".repository > header")).toBeNull();
+    expect(
+      document.querySelector(".current-panel h4 .status.available")
+        ?.textContent,
+    ).toBe("AVAILABLE");
+    expect(document.querySelector(".warnings-panel")).toBeNull();
+    expect(document.querySelector(".worklog-panel")?.classList).toContain(
+      "panel-span-12",
+    );
+
+    renderFleet(
+      fleet("mini", [], [richRepository({ warning: "snapshot incomplete" })]),
+      document,
+      NOW,
+    );
+    expect(document.querySelector(".warnings-panel")).not.toBeNull();
+    expect(document.querySelector(".worklog-panel")?.classList).toContain(
+      "panel-span-8",
+    );
+
+    renderFleet(fleet("mini", [], [clean]), document, NOW);
+    expect(document.querySelector(".warnings-panel")).toBeNull();
+    expect(document.querySelector(".worklog-panel")?.classList).toContain(
+      "panel-span-12",
+    );
   });
 
   test("keeps task metadata in distinct table cells with size guidance, costs, dependencies, and safe references", () => {
@@ -689,6 +758,7 @@ describe("local dashboard rendering", () => {
     const compact = emptyDocument.querySelector("section.questions-compact")!;
     expect(compact.textContent).toBe("Open questions · 0 · None");
     expect(compact.classList.contains("panel")).toBe(false);
+    expect(compact.classList).toContain("panel-span-4");
     expect(emptyDocument.querySelector(".questions-panel")).toBeNull();
 
     const unavailableDocument = dashboardDocument();
@@ -706,6 +776,9 @@ describe("local dashboard rendering", () => {
       NOW,
     );
     expect(unavailableDocument.querySelector(".questions-compact")).toBeNull();
+    expect(
+      unavailableDocument.querySelector(".questions-panel")?.classList,
+    ).toContain("panel-span-4");
     expect(
       unavailableDocument.querySelector(".questions-panel")?.textContent,
     ).toContain("Unavailable");
@@ -1281,6 +1354,17 @@ describe("local dashboard rendering", () => {
     expect(css).toMatch(/\.task-table\s*\{[^}]*min-width: 42rem;/s);
     expect(css).toMatch(/\.warnings-panel ul\s*\{[^}]*overflow-x: auto;/s);
     expect(css).toMatch(/\.warning-row\s*\{[^}]*min-width: max-content;/s);
+    expect(css).toMatch(
+      /\.current-facts\s*\{[^}]*grid-template-columns:[^}]*minmax\(0, 1fr\)[^}]*minmax\(0, 1fr\);/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 74\.999rem\)[\s\S]*\.questions-panel\s*,\s*\.questions-compact\s*\{[^}]*grid-column: 1 \/ -1;/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 49\.999rem\)[\s\S]*\.panel-span-4,\s*\.panel-span-6,\s*\.panel-span-8,\s*\.panel-span-12\s*\{[^}]*grid-column: 1 \/ -1;/,
+    );
+    expect(css).not.toMatch(/\.panel-empty\s*\{[^}]*align-self:/s);
+    expect(css).not.toMatch(/\.questions-compact\s*\{[^}]*align-self:/s);
   });
 
   test("sizes summary and review tables instead of squeezing labels", async () => {
@@ -1557,6 +1641,14 @@ describe("local dashboard rendering", () => {
         },
         warnings: [{ code: hostile, message: hostile }],
       },
+      plan: {
+        ...richRepository().plan,
+        data: {
+          ...richRepository().plan.data,
+          tasks: [{ ...richRepository().plan.data.tasks[0], title: hostile }],
+          active: [{ ...richRepository().plan.data.active[0], title: hostile }],
+        },
+      },
       questions: {
         status: "available",
         data: {
@@ -1589,6 +1681,9 @@ describe("local dashboard rendering", () => {
     );
 
     expect(document.body.textContent).toContain(hostile);
+    expect(
+      document.querySelector(".active-work .task-title")?.textContent,
+    ).toContain(hostile);
     expect(document.querySelectorAll("script, img, form, iframe")).toHaveLength(
       0,
     );
@@ -2496,9 +2591,10 @@ describe("local dashboard rendering", () => {
       NOW,
     );
 
-    expect(document.querySelector(".status.unavailable")?.textContent).toBe(
-      "UNAVAILABLE",
-    );
+    expect(
+      document.querySelector(".current-panel h4 .status.unavailable")
+        ?.textContent,
+    ).toBe("UNAVAILABLE");
     expect(document.querySelector(".active-work")?.textContent).toContain(
       "Unavailable",
     );
@@ -4253,8 +4349,11 @@ describe("browser peer fan-out", () => {
 
     await loadFleet(document, fetcher);
     expect(
-      document.querySelector(".peer-machine .repository")?.textContent,
-    ).toContain("recovered");
+      Array.from(
+        document.querySelectorAll(".repository-summary"),
+        (summary) => summary.textContent ?? "",
+      ).some((text) => text.includes("recovered")),
+    ).toBe(true);
     expect(document.body.textContent).toContain("recovered");
     expect(document.body.textContent).not.toContain("UNREACHABLE");
   });

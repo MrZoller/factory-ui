@@ -333,10 +333,19 @@ function appendWorklogHighlight(parent, text, repositoryUrl) {
 }
 
 function renderCurrent(card, repository) {
-  const panel = addPanel(card, "Current", "current-panel", "panel-span-8");
+  const panel = addPanel(card, "Current", "current-panel", "panel-span-4");
+  const heading = panel.querySelector("h4");
+  appendText(
+    heading,
+    "span",
+    repository?.status === "available" ? "AVAILABLE" : "UNAVAILABLE",
+    repository?.status === "available"
+      ? "status available"
+      : "status unavailable",
+  );
   const state = readerData(repository.state);
   const list = panel.ownerDocument.createElement("dl");
-  list.className = "facts";
+  list.className = "facts current-facts";
   appendText(list, "dt", "Project");
   const projectDefinition = list.ownerDocument.createElement("dd");
   appendExternalOrText(
@@ -403,10 +412,10 @@ function renderCurrent(card, repository) {
 }
 
 const TASK_GROUPS = [
-  ["Active", "active", "active-work", "panel-span-4"],
-  ["In review", "review", "review-work", "panel-span-4"],
-  ["Next runnable", "nextRunnable", "runnable-work", "panel-span-4"],
-  ["Blocked", "blocked", "blocked-work", "panel-span-4"],
+  ["Active", "active", "active-work", "panel-span-12"],
+  ["In review", "review", "review-work", "panel-span-12"],
+  ["Next runnable", "nextRunnable", "runnable-work", "panel-span-12"],
+  ["Blocked", "blocked", "blocked-work", "panel-span-12"],
 ];
 
 const COMPLETED_TASK_GROUP = [
@@ -724,7 +733,13 @@ function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
   const routing = readerData(repository.routing);
   const metrics = readerData(repository.metrics);
   const oldestDigits = oldestMetricTaskDigits(metrics);
+  const emptyGroups = [];
   for (const [title, key, className, spanClass] of groups) {
+    const planTasks = Array.isArray(plan?.[key]) ? plan[key] : [];
+    if (plan && groups === TASK_GROUPS && planTasks.length === 0) {
+      emptyGroups.push(title);
+      continue;
+    }
     const panel = addPanel(
       card,
       title,
@@ -737,15 +752,14 @@ function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
       appendText(panel, "p", "Unavailable", "unavailable");
       continue;
     }
-    const planTasks = Array.isArray(plan?.[key]) ? plan[key] : [];
     const tasks =
       key === "completed" ? completedTasks(repository, planTasks) : planTasks;
-    const { body, scroll } = createTaskTable(panel, title, tasks.length);
     if (tasks.length === 0) {
       panel.classList.add("panel-empty");
       appendText(panel, "p", "None", "empty");
       continue;
     }
+    const { body, scroll } = createTaskTable(panel, title, tasks.length);
     let expanded =
       key === "completed" && (disclosure.completedExpanded ?? false);
     const renderList = () => {
@@ -786,6 +800,22 @@ function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
       });
       updateToggle();
     }
+  }
+  if (emptyGroups.length > 0) {
+    const strip = card.ownerDocument.createElement("section");
+    strip.className = "empty-task-groups panel-span-12";
+    strip.setAttribute("aria-label", "Empty task groups");
+    emptyGroups.forEach((title, index) => {
+      if (index > 0) {
+        appendText(strip, "span", "·", "empty-task-separator");
+      }
+      const group = strip.ownerDocument.createElement("span");
+      group.className = "empty-task-group";
+      appendText(group, "strong", title);
+      group.append(strip.ownerDocument.createTextNode(" · None"));
+      strip.append(group);
+    });
+    card.append(strip);
   }
 }
 
@@ -1018,7 +1048,7 @@ function renderQuestions(card, repository) {
   const open = readerData(repository.questions)?.open;
   if (Array.isArray(open) && open.length === 0) {
     const compact = card.ownerDocument.createElement("section");
-    compact.className = "questions-compact panel-span-6";
+    compact.className = "questions-compact panel-span-4";
     const heading = compact.ownerDocument.createElement("h4");
     appendExternalOrText(
       heading,
@@ -1035,7 +1065,7 @@ function renderQuestions(card, repository) {
     card,
     "Open questions",
     "questions-panel",
-    "panel-span-6",
+    "panel-span-4",
     repository.questionsUrl,
     "questions",
   );
@@ -1062,12 +1092,12 @@ function renderQuestions(card, repository) {
   }
 }
 
-function renderWorklog(card, repository, disclosure) {
+function renderWorklog(card, repository, disclosure, spanClass) {
   const panel = addPanel(
     card,
     "Recent worklog",
     "worklog-panel",
-    "panel-span-4",
+    spanClass,
     repository.worklogUrl,
     "worklog",
   );
@@ -1503,8 +1533,7 @@ function warningsShouldOpen(repository, warnings) {
   );
 }
 
-function renderWarnings(card, repository, disclosure) {
-  const warnings = collectWarnings(repository);
+function renderWarnings(card, repository, disclosure, warnings) {
   if (warnings.length === 0) return;
   const documentRoot = card.ownerDocument;
   const panel = documentRoot.createElement("section");
@@ -1640,24 +1669,19 @@ function renderRepository(repository, machine, documentRoot, now, generatedAt) {
   const disclosure = disclosureState(documentRoot, machine, repository.name);
   const card = documentRoot.createElement("article");
   card.className = "repository";
-  const header = documentRoot.createElement("header");
-  appendText(header, "h3", repository?.name ?? "Unknown repository");
-  appendText(
-    header,
-    "p",
-    repository?.status === "available" ? "AVAILABLE" : "UNAVAILABLE",
-    repository?.status === "available"
-      ? "status available"
-      : "status unavailable",
-  );
-  card.append(header);
-  renderReviewStrip(card, repository ?? {});
   renderCurrent(card, repository ?? {});
-  renderTasks(card, repository ?? {}, disclosure);
-  renderQuestions(card, repository ?? {});
-  renderWorklog(card, repository ?? {}, disclosure);
   renderLogs(card, repository ?? {}, now, generatedAt);
-  renderWarnings(card, repository ?? {}, disclosure);
+  renderQuestions(card, repository ?? {});
+  renderTasks(card, repository ?? {}, disclosure);
+  const warnings = collectWarnings(repository ?? {});
+  renderWorklog(
+    card,
+    repository ?? {},
+    disclosure,
+    warnings.length > 0 ? "panel-span-8" : "panel-span-12",
+  );
+  renderWarnings(card, repository ?? {}, disclosure, warnings);
+  renderReviewStrip(card, repository ?? {});
   renderTasks(card, repository ?? {}, disclosure, COMPLETED_TASK_GROUP);
   return card;
 }

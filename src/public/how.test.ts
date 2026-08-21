@@ -272,22 +272,29 @@ describe("how factory works page", () => {
     expect(details.querySelector("summary")?.textContent).toBe(
       "Limits & list prices",
     );
-    expect(driver.querySelector(".agent-model-name")?.textContent).toBe(
+    expect(details.querySelector(".agent-model-name")?.textContent).toBe(
       "GPT 5.6",
     );
-    expect(driver.querySelector(".agent-model-limits")?.textContent).toBe(
+    expect(details.querySelector(".agent-model-limits")?.textContent).toBe(
       "Context 1.05M · Max output 128K",
     );
-    expect(driver.querySelector(".agent-list-prices")?.textContent).toBe(
+    expect(details.querySelector(".agent-list-prices")?.textContent).toBe(
       "List / M · input $1.25 · output $10.00 · cache read $0.25 · cache write Unpriced",
     );
+    const smallModelDetails = document.querySelector(
+      '[data-role="small_model"] .agent-model-details',
+    )!;
     expect(
-      document.querySelector('[data-role="small_model"] .agent-list-prices')
-        ?.textContent,
+      smallModelDetails.querySelector(".agent-list-prices")?.textContent,
     ).toBe("Unpriced");
     expect(document.querySelectorAll(".agent-model-details")).toHaveLength(
       ROLES.length,
     );
+    ROLES.forEach(({ id }) => {
+      expect(
+        document.querySelectorAll(`[data-role="${id}"] > .agent-model-details`),
+      ).toHaveLength(1);
+    });
   });
 
   test("selects machines from the hash, supports keyboard tabs, and renders unavailable machines", () => {

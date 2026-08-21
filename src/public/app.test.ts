@@ -2431,9 +2431,9 @@ describe("local dashboard rendering", () => {
       ".review-cross-checks > summary",
     )!;
     expect(unverified.textContent).toBe("1 unverified");
-    expect(unverifiedDocument.querySelector(".review-cross-checks")?.textContent).toContain(
-      "T35 claude: 2r vs unknown mechanical",
-    );
+    expect(
+      unverifiedDocument.querySelector(".review-cross-checks")?.textContent,
+    ).toContain("T35 claude: 2r vs unknown mechanical");
   });
 
   test("keeps hostile reviewer identifiers and metric strings literal and inert", () => {
@@ -3640,9 +3640,7 @@ describe("fleet summary and machine tabs", () => {
 
     expect(
       Array.from(
-        document.querySelectorAll<HTMLElement>(
-          ".question-badge-unavailable",
-        ),
+        document.querySelectorAll<HTMLElement>(".question-badge-unavailable"),
         (badge) => badge.title,
       ),
     ).toEqual(["Questions unknown", "Questions unknown"]);

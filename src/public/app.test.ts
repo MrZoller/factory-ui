@@ -2424,7 +2424,11 @@ describe("local dashboard rendering", () => {
     expect(allMatch.textContent).toBe("all match");
     expect(allMatch.classList).toContain("muted");
 
-    delete metrics.data.tasks.T35.pr;
+    type T35Metrics = typeof metrics.data.tasks.T35;
+    const t35Metrics: Omit<T35Metrics, "pr"> & {
+      pr?: T35Metrics["pr"];
+    } = metrics.data.tasks.T35;
+    delete t35Metrics.pr;
     const unverifiedDocument = dashboardDocument();
     renderFleet(fleet("mini", [], [repository]), unverifiedDocument, NOW);
     const unverified = unverifiedDocument.querySelector(

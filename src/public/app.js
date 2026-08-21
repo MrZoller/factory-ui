@@ -128,6 +128,7 @@ function addPanel(card, title, className, spanClass, titleUrl, titleUrlKind) {
   const section = card.ownerDocument.createElement("section");
   section.className = `panel ${className} ${spanClass}`;
   const heading = section.ownerDocument.createElement("h4");
+  heading.className = "panel-title";
   if (titleUrlKind) {
     appendExternalOrText(heading, title, titleUrl, titleUrlKind);
   } else {
@@ -340,8 +341,8 @@ function renderCurrent(card, repository) {
     "span",
     repository?.status === "available" ? "AVAILABLE" : "UNAVAILABLE",
     repository?.status === "available"
-      ? "status available"
-      : "status unavailable",
+      ? "chip chip-good status available"
+      : "chip chip-warn status unavailable",
   );
   const state = readerData(repository.state);
   const list = panel.ownerDocument.createElement("dl");
@@ -543,14 +544,19 @@ function renderTaskReview(cell, task, metrics, oldestDigits) {
   const taskMetrics = metrics?.tasks?.[task?.id];
   if (taskMetrics?.ship) {
     if (taskMetrics.ship.internal === null) {
-      appendText(cell, "span", "panel unknown", "review-chip review-unknown");
+      appendText(
+        cell,
+        "span",
+        "panel unknown",
+        "chip chip-muted review-chip review-unknown",
+      );
     } else if (taskMetrics.ship.internal) {
       const internal = taskMetrics.ship.internal;
       appendText(
         cell,
         "span",
         `panel ${internal.rounds}r · ${internal.fixed} fixed`,
-        "review-chip review-internal",
+        "chip chip-accent review-chip review-internal",
       );
       appendText(
         cell,
@@ -572,7 +578,7 @@ function renderTaskReview(cell, task, metrics, oldestDigits) {
       cell,
       "span",
       `${reviewer} ${review?.rounds ?? 0}r${suffix}`,
-      "review-chip review-external",
+      "chip chip-info review-chip review-external",
     );
     appendText(
       cell,
@@ -590,7 +596,12 @@ function renderTaskReview(cell, task, metrics, oldestDigits) {
     oldestDigits &&
     compareDecimalDigits(digits, oldestDigits) > 0
   ) {
-    appendText(cell, "span", "metrics missing", "review-missing");
+    appendText(
+      cell,
+      "span",
+      "metrics missing",
+      "chip chip-muted chip-dashed review-missing",
+    );
   }
 }
 
@@ -784,7 +795,12 @@ function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
     };
     renderList();
     if (key === "completed" && tasks.length > COMPLETED_TASK_LIMIT) {
-      const toggle = appendText(panel, "button", "", "completed-tasks-toggle");
+      const toggle = appendText(
+        panel,
+        "button",
+        "",
+        "button button-ghost completed-tasks-toggle",
+      );
       toggle.type = "button";
       const updateToggle = () => {
         toggle.textContent = expanded
@@ -1001,7 +1017,7 @@ function appendReviewAggregateRow(body, label, tasks) {
 function renderReviewStrip(card, repository) {
   const strip = card.ownerDocument.createElement("section");
   strip.className = "review-strip panel-span-12";
-  appendText(strip, "h4", "Review");
+  appendText(strip, "h4", "Review", "panel-title");
   const metrics = readerData(repository.metrics);
   if (!metrics) {
     appendText(strip, "p", "Unavailable", "unavailable");
@@ -1050,6 +1066,7 @@ function renderQuestions(card, repository) {
     const compact = card.ownerDocument.createElement("section");
     compact.className = "questions-compact panel-span-4";
     const heading = compact.ownerDocument.createElement("h4");
+    heading.className = "panel-title";
     appendExternalOrText(
       heading,
       "Open questions",
@@ -1161,13 +1178,18 @@ function renderWorklog(card, repository, disclosure, spanClass) {
           worklogReferenceUrl(repository.repositoryUrl, "task", task),
           "plan",
         );
-        taskChip.classList.add("worklog-chip", "worklog-task-chip");
+        taskChip.classList.add(
+          "chip",
+          "chip-muted",
+          "worklog-chip",
+          "worklog-task-chip",
+        );
       }
       appendText(
         headline,
         "span",
         parsed.malformed ? "other" : worklogEvent(sentence.headline),
-        "worklog-chip worklog-event-chip",
+        "chip chip-muted worklog-chip worklog-event-chip",
       );
       const headlineText = item.ownerDocument.createElement("span");
       headlineText.className = "worklog-summary";
@@ -1208,7 +1230,7 @@ function renderWorklog(card, repository, disclosure, spanClass) {
       panel,
       "button",
       `Show all ${newestFirst.length}`,
-      "worklog-toggle",
+      "button button-secondary worklog-toggle",
     );
     toggle.type = "button";
     toggle.addEventListener("click", () => {
@@ -1234,10 +1256,11 @@ function renderLogs(card, repository, now, generatedAt) {
     panel,
     "p",
     repository.liveness?.state ?? "CANNOT_VERIFY",
-    "liveness",
+    "chip liveness",
   );
   const liveness = repository.liveness?.state;
   status.classList.add(
+    liveness === "RUNNING" ? "chip-good" : "chip-muted",
     liveness === "RUNNING"
       ? "running"
       : liveness === "STOPPED"
@@ -1549,6 +1572,7 @@ function renderWarnings(card, repository, disclosure, warnings) {
     summary,
     "h4",
     `Warnings · ${warnings.length} · from this snapshot`,
+    "panel-title",
   );
   details.append(summary);
   const list = documentRoot.createElement("ul");
@@ -2140,7 +2164,7 @@ function unavailableSummary(name) {
     liveness: "Unavailable",
     currentTask: "Unavailable",
     pullRequest: "Unavailable",
-    hold: false,
+    hold: "Unavailable",
     questions: "Unavailable",
     age: "Unavailable",
     cost: "Unavailable",
@@ -2152,7 +2176,7 @@ function repositoryCostData(repository) {
 }
 
 function meteredTotal(repositories) {
-  if (repositories.length === 0) return { text: "Unavailable" };
+  if (repositories.length === 0) return { text: "—" };
   let total = 0;
   let contributors = 0;
   const missingNames = [];
@@ -2229,10 +2253,12 @@ function notionalTotal(repositories) {
 }
 
 function aggregateCurrent(repositories, key, format) {
-  if (repositories.length === 0) return "Unknown";
+  if (repositories.length === 0) return "—";
   const concrete = [];
   let everyNull = true;
+  let failures = 0;
   for (const repository of repositories) {
+    if (repository.state?.status === "unavailable") failures += 1;
     const state = readerData(repository.state);
     const value = state?.[key];
     if (value !== null) everyNull = false;
@@ -2240,11 +2266,13 @@ function aggregateCurrent(repositories, key, format) {
       concrete.push({ name: repository.name, value: format(value) });
     }
   }
+  if (failures === repositories.length) return "Unavailable";
+  if (failures > 0) return "Unknown";
   if (concrete.length === 1) return concrete[0].value;
   if (concrete.length > 1) {
     return concrete.map(({ name, value }) => `${name}: ${value}`).join(", ");
   }
-  return everyNull ? "None" : "Unknown";
+  return everyNull ? "—" : "Unknown";
 }
 
 function summarizeMachine(name, fleet, now, intervalMilliseconds = 30_000) {
@@ -2265,9 +2293,17 @@ function summarizeMachine(name, fleet, now, intervalMilliseconds = 30_000) {
     (repository) => readerData(repository.questions)?.open,
   );
   const questions =
-    repositories.length > 0 && questionLists.every(Array.isArray)
-      ? String(questionLists.reduce((total, open) => total + open.length, 0))
-      : "Unknown";
+    repositories.length === 0
+      ? "—"
+      : repositories.every(
+            (repository) => repository.questions?.status === "unavailable",
+          )
+        ? "Unavailable"
+        : questionLists.every(Array.isArray)
+          ? String(
+              questionLists.reduce((total, open) => total + open.length, 0),
+            )
+          : "Unknown";
   const cost = meteredTotal(repositories);
   return {
     name,
@@ -2278,13 +2314,20 @@ function summarizeMachine(name, fleet, now, intervalMilliseconds = 30_000) {
       "pr",
       (value) => `PR #${value}`,
     ),
-    hold: states.some((state) => state?.hold === true),
+    hold:
+      repositories.length === 0
+        ? false
+        : states.every((state) => state === undefined)
+          ? "Unavailable"
+          : states.some((state) => state === undefined)
+            ? "Unknown"
+            : states.some((state) => state?.hold === true),
     questions,
     age:
       now.valueOf() - new Date(fleet.generatedAt).valueOf() >
       intervalMilliseconds
         ? displayAge(fleet.generatedAt, now)
-        : "",
+        : "—",
     cost: cost.text,
     costTitle: cost.title,
     notional: notionalLabel(notionalTotal(repositories)),
@@ -2298,6 +2341,17 @@ function livenessClass(liveness) {
   return "unknown";
 }
 
+function summaryCellClass(value, base = "", numeric = false) {
+  return [
+    base,
+    numeric ? "numeric-cell" : "",
+    value === "Unknown" || value === "—" ? "empty" : "",
+    value === "Unavailable" ? "unavailable" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function renderSummaryRow(row, summary) {
   const documentRoot = row.ownerDocument;
   const livenessCell = documentRoot.createElement("td");
@@ -2305,15 +2359,21 @@ function renderSummaryRow(row, summary) {
     livenessCell,
     "span",
     summary.liveness,
-    `liveness ${livenessClass(summary.liveness)}`,
+    `chip ${summary.liveness === "RUNNING" ? "chip-good" : summary.liveness === "Unavailable" ? "chip-warn" : "chip-muted"} liveness ${livenessClass(summary.liveness)}`,
   );
-  const holdCell = documentRoot.createElement("td");
-  if (summary.hold) appendText(holdCell, "span", "HELD", "badge held-badge");
+  const holdCell = textElement(
+    documentRoot,
+    "td",
+    summary.hold === true ? "" : summary.hold === false ? "—" : summary.hold,
+    summaryCellClass(summary.hold === false ? "—" : summary.hold),
+  );
+  if (summary.hold === true)
+    appendText(holdCell, "span", "HELD", "chip chip-warn badge held-badge");
   const costCell = textElement(
     documentRoot,
     "td",
     summary.cost,
-    "cost-total metered-total",
+    summaryCellClass(summary.cost, "cost-total metered-total", true),
   );
   if (summary.costTitle) costCell.title = summary.costTitle;
   if (summary.notional) {
@@ -2329,15 +2389,34 @@ function renderSummaryRow(row, summary) {
   row.replaceChildren(
     textElement(documentRoot, "th", summary.name),
     livenessCell,
-    textElement(documentRoot, "td", summary.currentTask),
-    textElement(documentRoot, "td", summary.pullRequest),
+    textElement(
+      documentRoot,
+      "td",
+      summary.currentTask,
+      summaryCellClass(summary.currentTask),
+    ),
+    textElement(
+      documentRoot,
+      "td",
+      summary.pullRequest,
+      summaryCellClass(summary.pullRequest),
+    ),
     holdCell,
-    textElement(documentRoot, "td", summary.questions),
+    textElement(
+      documentRoot,
+      "td",
+      summary.questions,
+      summaryCellClass(summary.questions, "", true),
+    ),
     textElement(
       documentRoot,
       "td",
       summary.age,
-      `age${summary.age && summary.age !== "Unavailable" ? " stale" : ""}`,
+      summaryCellClass(
+        summary.age,
+        `age${summary.age !== "—" && summary.age !== "Unavailable" ? " stale" : ""}`,
+        true,
+      ),
     ),
     costCell,
   );
@@ -2349,9 +2428,14 @@ function renderTabLabel(tab, summary) {
   const children = [
     textElement(documentRoot, "span", summary.name, "tab-name"),
   ];
-  if (summary.hold) {
+  if (summary.hold === true) {
     children.push(
-      textElement(documentRoot, "span", "HELD", "badge held-badge"),
+      textElement(
+        documentRoot,
+        "span",
+        "HELD",
+        "chip chip-warn badge held-badge",
+      ),
     );
   }
   children.push(
@@ -2359,16 +2443,17 @@ function renderTabLabel(tab, summary) {
       documentRoot,
       "span",
       `Questions ${summary.questions}`,
-      "badge question-badge",
+      "chip chip-accent badge question-badge",
     ),
   );
   tab.replaceChildren(...children);
 }
 
 function worklogAge(repository, now) {
+  if (repository.worklog?.status === "unavailable") return "Unavailable";
   const entries = readerData(repository.worklog)?.entries;
   if (!Array.isArray(entries)) return "Unknown";
-  if (entries.length === 0) return "None";
+  if (entries.length === 0) return "—";
   const entry = entries.at(-1);
   if (typeof entry?.date !== "string") return "Unknown";
   const time = typeof entry.time === "string" ? entry.time : "00:00";
@@ -2387,20 +2472,37 @@ function summarizeRepository(repository, now) {
     availability:
       repository.status === "available" ? "AVAILABLE" : "UNAVAILABLE",
     liveness: repository.liveness?.state ?? "CANNOT_VERIFY",
-    currentTask: displayOptional(state?.currentTask),
+    currentTask:
+      repository.state?.status === "unavailable"
+        ? "Unavailable"
+        : state?.currentTask === null
+          ? "—"
+          : displayOptional(state?.currentTask),
     pullRequest:
-      state?.pr === undefined
-        ? "Unknown"
-        : state.pr === null
-          ? "None"
-          : `PR #${state.pr}`,
-    hold: state?.hold === true,
-    questions: Array.isArray(questions) ? String(questions.length) : "Unknown",
+      repository.state?.status === "unavailable"
+        ? "Unavailable"
+        : state?.pr === undefined
+          ? "Unknown"
+          : state.pr === null
+            ? "—"
+            : `PR #${state.pr}`,
+    hold:
+      repository.state?.status === "unavailable"
+        ? "Unavailable"
+        : state?.hold === undefined
+          ? "Unknown"
+          : state.hold,
+    questions:
+      repository.questions?.status === "unavailable"
+        ? "Unavailable"
+        : Array.isArray(questions)
+          ? String(questions.length)
+          : "Unknown",
     age: worklogAge(repository, now),
     cost: cost.text,
     costTitle: cost.title,
     notional,
-    unattributed: unattributed?.text ?? (costTasks ? "None" : "Unavailable"),
+    unattributed: unattributed?.text ?? (costTasks ? "—" : "Unavailable"),
     unattributedTitle: unattributed?.title,
   };
 }
@@ -2412,22 +2514,28 @@ function renderRepositorySummaryRow(row, summary) {
     availabilityCell,
     "span",
     summary.availability,
-    `status ${summary.availability === "AVAILABLE" ? "available" : "unavailable"}`,
+    `chip ${summary.availability === "AVAILABLE" ? "chip-good" : "chip-warn"} status ${summary.availability === "AVAILABLE" ? "available" : "unavailable"}`,
   );
   const livenessCell = documentRoot.createElement("td");
   appendText(
     livenessCell,
     "span",
     summary.liveness,
-    `liveness ${livenessClass(summary.liveness)}`,
+    `chip ${summary.liveness === "RUNNING" ? "chip-good" : "chip-muted"} liveness ${livenessClass(summary.liveness)}`,
   );
-  const holdCell = documentRoot.createElement("td");
-  if (summary.hold) appendText(holdCell, "span", "HELD", "badge held-badge");
+  const holdCell = textElement(
+    documentRoot,
+    "td",
+    summary.hold === true ? "" : summary.hold === false ? "—" : summary.hold,
+    summaryCellClass(summary.hold === false ? "—" : summary.hold),
+  );
+  if (summary.hold === true)
+    appendText(holdCell, "span", "HELD", "chip chip-warn badge held-badge");
   const unattributedCell = textElement(
     documentRoot,
     "td",
     summary.unattributed,
-    "cost-unattributed",
+    summaryCellClass(summary.unattributed, "cost-unattributed", true),
   );
   if (summary.unattributedTitle)
     unattributedCell.title = summary.unattributedTitle;
@@ -2435,7 +2543,7 @@ function renderRepositorySummaryRow(row, summary) {
     documentRoot,
     "td",
     summary.cost,
-    "cost-total metered-total",
+    summaryCellClass(summary.cost, "cost-total metered-total", true),
   );
   if (summary.costTitle) costCell.title = summary.costTitle;
   if (summary.notional) {
@@ -2452,11 +2560,31 @@ function renderRepositorySummaryRow(row, summary) {
     textElement(documentRoot, "th", summary.name),
     availabilityCell,
     livenessCell,
-    textElement(documentRoot, "td", summary.currentTask),
-    textElement(documentRoot, "td", summary.pullRequest),
+    textElement(
+      documentRoot,
+      "td",
+      summary.currentTask,
+      summaryCellClass(summary.currentTask),
+    ),
+    textElement(
+      documentRoot,
+      "td",
+      summary.pullRequest,
+      summaryCellClass(summary.pullRequest),
+    ),
     holdCell,
-    textElement(documentRoot, "td", summary.questions),
-    textElement(documentRoot, "td", summary.age, "age"),
+    textElement(
+      documentRoot,
+      "td",
+      summary.questions,
+      summaryCellClass(summary.questions, "", true),
+    ),
+    textElement(
+      documentRoot,
+      "td",
+      summary.age,
+      summaryCellClass(summary.age, "age", true),
+    ),
     costCell,
     unattributedCell,
   );
@@ -2485,6 +2613,13 @@ function createRepositorySummary(documentRoot) {
   ]) {
     const cell = textElement(documentRoot, "th", heading);
     cell.scope = "col";
+    if (
+      ["Questions", "Worklog age", "Total cost", "Unattributed"].includes(
+        heading,
+      )
+    ) {
+      cell.className = "numeric-cell";
+    }
     headingRow.append(cell);
   }
   head.append(headingRow);
@@ -2511,7 +2646,7 @@ function createRepositoryView(
   renderRepositorySummaryRow(row, summary);
   tab.type = "button";
   tab.id = tabId;
-  tab.className = "repository-tab";
+  tab.className = "tab repository-tab";
   tab.setAttribute("role", "tab");
   tab.setAttribute("aria-controls", panelId);
   tab.setAttribute("aria-selected", "false");
@@ -2537,7 +2672,7 @@ function createMachineView(identity, index, documentRoot, isPeer) {
   const panelId = `machine-panel-${index}`;
   tab.type = "button";
   tab.id = tabId;
-  tab.className = "machine-tab";
+  tab.className = "tab machine-tab";
   tab.setAttribute("role", "tab");
   tab.setAttribute("aria-controls", panelId);
   tab.setAttribute("aria-selected", "false");
@@ -2562,7 +2697,12 @@ function updateMachineView(view, summary, fleet, now, unreachable = false) {
   if (unreachable) {
     view.repositories = [];
     view.grid.replaceChildren(
-      textElement(view.grid.ownerDocument, "p", "UNREACHABLE", "unreachable"),
+      textElement(
+        view.grid.ownerDocument,
+        "p",
+        "UNREACHABLE",
+        "chip chip-warn unreachable",
+      ),
     );
     return;
   }

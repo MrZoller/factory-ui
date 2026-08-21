@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "bun:test";
+import { Window } from "happy-dom";
 
 import { createRequestHandler, startServer } from "./server";
 import type { AppConfigSource, FleetSnapshot } from "./contracts";
@@ -360,10 +361,10 @@ describe("server", () => {
       expect(text).toMatch(
         /<h1 class="wordmark">\s*<span>Factory<\/span>\s*<\/h1>/,
       );
-      expect(text).toContain('<svg\n            class="factory-mark"');
+      expect(text).toContain('<svg\n              class="factory-mark"');
       expect(text).toContain('aria-hidden="true"');
       expect(text).toContain('<script src="/app.js" type="module">');
-      expect(text).toContain('<a href="/how">How it works</a>');
+      expect(text).toContain('class="button button-secondary" href="/how"');
       expect(text).toContain('<link rel="stylesheet" href="/styles.css" />');
       expect(text).not.toContain("innerHTML");
       expect(text).not.toContain("onload=");
@@ -374,8 +375,10 @@ describe("server", () => {
     test("serves the how page and module through the static pipeline with restrictive CSP", async () => {
       const handler = createRequestHandler(baseConfig);
       const page = await handler(new Request("http://localhost/how"));
+      const dashboard = await handler(new Request("http://localhost/"));
       const script = await handler(new Request("http://localhost/how.js"));
       const html = await page.text();
+      const dashboardHtml = await dashboard.text();
 
       expect(page.status).toBe(200);
       expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
@@ -383,6 +386,31 @@ describe("server", () => {
         "script-src 'self'",
       );
       expect(html).toContain('<script src="/how.js" type="module">');
+      for (const pageHtml of [dashboardHtml, html]) {
+        expect(pageHtml).toMatch(
+          /<header class="dashboard-header(?: how-header)?">[\s\S]*<div class="header-primary">[\s\S]*<div class="header-secondary">/,
+        );
+        expect(pageHtml).toContain('class="wordmark-lockup"');
+      }
+      const dashboardDocument = new Window().document;
+      dashboardDocument.body.innerHTML = dashboardHtml;
+      const howDocument = new Window().document;
+      howDocument.body.innerHTML = html;
+      for (const documentRoot of [dashboardDocument, howDocument]) {
+        const header = documentRoot.querySelector(".dashboard-header")!;
+        expect(
+          header.querySelector(":scope > .header-primary .wordmark-lockup"),
+        ).not.toBeNull();
+        expect(
+          header.querySelector(":scope > .header-secondary .header-actions"),
+        ).not.toBeNull();
+      }
+      expect(dashboardDocument.querySelector("#error")?.matches(":empty")).toBe(
+        true,
+      );
+      expect(howDocument.querySelector("#how-error")?.matches(":empty")).toBe(
+        true,
+      );
       expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/i);
       expect(html).not.toMatch(/(?:src|href)="https?:\/\//i);
       expect(html).not.toMatch(/\son[a-z]+\s*=/i);

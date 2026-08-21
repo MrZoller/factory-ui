@@ -1344,6 +1344,105 @@ describe("local dashboard rendering", () => {
     );
   });
 
+  test("uses the canonical visual primitives and token-only type scale", async () => {
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+
+    expect(css.match(/--text-(?:xs|sm|base|lg|xl):/g)).toHaveLength(5);
+    expect(
+      Array.from(
+        css.matchAll(/font-size:\s*([^;]+);/g),
+        (match) => match[1] ?? "",
+      ),
+    ).toSatisfy((values) =>
+      values.every((value) =>
+        /^var\(--text-(?:xs|sm|base|lg|xl)\)$/.test(value),
+      ),
+    );
+    expect(css).toMatch(
+      /\.chip,[\s\S]*\.status,[\s\S]*\.badge,[\s\S]*\.review-chip,[\s\S]*\.worklog-chip/s,
+    );
+    expect(css).toMatch(
+      /\.button,[\s\S]*\.worklog-toggle,[\s\S]*\.completed-tasks-toggle/s,
+    );
+    expect(css).toMatch(/\.tab,[\s\S]*\.machine-tab,[\s\S]*\.repository-tab/s);
+    expect(css).toMatch(
+      /\.panel-title,[\s\S]*\.review-strip h4,[\s\S]*\.questions-compact h4,[\s\S]*\.panel h4/s,
+    );
+    expect(css).toMatch(/body\s*\{[^}]*line-height:\s*1\.5;/s);
+    expect(css).toMatch(/h1\s*\{[^}]*font-size:\s*var\(--text-xl\);/s);
+    expect(css).toMatch(/h2,[\s\S]*font-size:\s*var\(--text-lg\);/s);
+    expect(css).toMatch(/h3\s*\{[^}]*font-size:\s*var\(--text-base\);/s);
+    expect(css).toMatch(/h4,[\s\S]*font-size:\s*var\(--text-xs\);/s);
+    expect(css).toMatch(
+      /#error:empty,[\s\S]*#how-error:empty\s*\{[^}]*display:\s*none;/s,
+    );
+    expect(css).toMatch(
+      /\.numeric-cell\s*\{[^}]*text-align:\s*right !important;[^}]*font-variant-numeric:\s*tabular-nums;/s,
+    );
+    expect(
+      Array.from(
+        css.matchAll(/--color-focus:\s*([^;]+);/g),
+        (match) => match[1]?.trim() ?? "",
+      ),
+    ).toSatisfy((values) =>
+      values.every((value) => !/^#fff(?:fff)?\b/i.test(value)),
+    );
+    expect(css).toMatch(/\.empty\s*\{[^}]*color:\s*var\(--color-muted\);/s);
+    expect(css.match(/text-transform:\s*uppercase;/g)).toHaveLength(5);
+    expect(css.match(/letter-spacing:/g)).toHaveLength(5);
+    for (const selector of [
+      ".repository-summary thead th",
+      "#fleet-summary thead th",
+      ".panel-title",
+      ".review-strip thead th",
+      ".task-table thead th",
+    ]) {
+      expect(css).toContain(selector);
+    }
+  });
+
+  test("uses em dashes for applicable empty summary cells and numeric-cell alignment", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      state: {
+        status: "available",
+        data: { currentTask: null, pr: null, hold: false },
+        warnings: [],
+      },
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+      worklog: { status: "available", data: { entries: [] }, warnings: [] },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    for (const row of [
+      summaryRow(document, "mini")!,
+      document.querySelector<HTMLTableRowElement>(
+        ".repository-summary tbody tr",
+      )!,
+    ]) {
+      expect(
+        Array.from(row.children, (cell) => cell.textContent),
+      ).not.toContain("");
+      expect(Array.from(row.children, (cell) => cell.textContent)).toContain(
+        "—",
+      );
+      expect(row.querySelectorAll(".numeric-cell")).toHaveLength(
+        row.closest(".repository-summary") ? 4 : 3,
+      );
+    }
+    expect(summaryCells(document, "mini")).toEqual([
+      "mini",
+      "RUNNING",
+      "—",
+      "—",
+      "—",
+      "0",
+      "—",
+      "Unavailable",
+    ]);
+  });
+
   test("keeps table headers sticky and task-table scrolling internal", async () => {
     const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
     expect(css).toMatch(/\.task-list-scroll\s*\{[^}]*max-height: 24rem;/s);
@@ -3417,7 +3516,7 @@ describe("fleet summary and machine tabs", () => {
       "PR #42",
       "HELD",
       "1",
-      "",
+      "—",
       "Unavailable",
     ]);
     expect(document.querySelectorAll(".questions-compact")).toHaveLength(1);
@@ -3430,7 +3529,7 @@ describe("fleet summary and machine tabs", () => {
       "Unavailable",
       "Unavailable",
       "Unavailable",
-      "",
+      "Unavailable",
       "Unavailable",
       "Unavailable",
       "Unavailable",
@@ -3453,7 +3552,7 @@ describe("fleet summary and machine tabs", () => {
     ).toBe("mini");
   });
 
-  test("uses None only for explicit empty values and Unknown for unavailable state", () => {
+  test("uses em dashes for empty values and Unavailable for failed readers", () => {
     const document = dashboardDocument();
     renderFleet(
       fleet(
@@ -3484,11 +3583,11 @@ describe("fleet summary and machine tabs", () => {
     expect(summaryCells(document, "mini")).toEqual([
       "mini",
       "CANNOT_VERIFY",
-      "None",
-      "None",
-      "",
+      "—",
+      "—",
+      "—",
       "0",
-      "",
+      "—",
       "Unavailable",
     ]);
 
@@ -3502,10 +3601,32 @@ describe("fleet summary and machine tabs", () => {
       NOW,
     );
     expect(summaryCells(document, "mini").slice(2, 6)).toEqual([
-      "Unknown",
-      "Unknown",
-      "",
+      "Unavailable",
+      "Unavailable",
+      "Unavailable",
       "1",
+    ]);
+
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({ name: "available" }),
+          richRepository({
+            name: "unavailable",
+            state: { status: "unavailable", warnings: [] },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+    expect(summaryCells(document, "mini").slice(2, 6)).toEqual([
+      "Unknown",
+      "Unknown",
+      "Unknown",
+      "2",
     ]);
   });
 
@@ -3740,7 +3861,7 @@ describe("repository strips and sub-tabs", () => {
       expect.stringContaining("betaAVAILABLE"),
     ]);
     expect(rows[1]?.textContent).toContain("STOPPED");
-    expect(rows[1]?.textContent).toContain("None");
+    expect(rows[1]?.textContent).toContain("—");
     expect(rows[1]?.textContent).toContain("0");
     expect(rows[0]?.querySelector(".age")?.textContent).toBe("12h ago");
     expect(rows[1]?.querySelector(".age")?.textContent).toBe("12h ago");
@@ -3922,7 +4043,7 @@ describe("repository strips and sub-tabs", () => {
     );
   });
 
-  test("leaves fresh machine data ages blank and highlights ages beyond the interval", async () => {
+  test("uses an em dash for fresh machine data ages and highlights stale ages", async () => {
     const document = dashboardDocument();
     const peer = { name: "macbook", origin: "https://macbook.example" };
     const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
@@ -3940,7 +4061,7 @@ describe("repository strips and sub-tabs", () => {
 
     await loadFleet(document, fetcher, { now: () => NOW });
 
-    expect(summaryCells(document, "mini")[6]).toBe("");
+    expect(summaryCells(document, "mini")[6]).toBe("—");
     expect(summaryCells(document, "macbook")[6]).toBe("31s ago");
     expect(
       summaryRow(document, "macbook")?.querySelector(".age")?.classList,
@@ -4055,7 +4176,7 @@ describe("browser peer fan-out", () => {
       "PR #42",
       "HELD",
       "1",
-      "",
+      "—",
       "Unavailable",
     ]);
     expect(summaryRow(document, "legion")?.textContent).toContain(
@@ -4179,7 +4300,7 @@ describe("browser peer fan-out", () => {
       "PR #42",
       "HELD",
       "1",
-      "",
+      "—",
       "$1.23",
     ]);
   });

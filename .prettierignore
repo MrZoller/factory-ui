@@ -1,0 +1,3 @@
+# Factory bookkeeping is written by the opencode engine and its agents, not by
+# hand; its formatting is not part of the product lint surface.
+.factory/

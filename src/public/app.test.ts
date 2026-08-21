@@ -1278,7 +1278,9 @@ describe("local dashboard rendering", () => {
     expect(css).toMatch(/\.task-table-scroll\s*\{[^}]*overflow-x: auto;/s);
     expect(css).toMatch(/\.task-table thead th\s*\{[^}]*position: sticky;/s);
     expect(css).toMatch(/\.task-table\s*\{[^}]*table-layout: fixed;/s);
-    expect(css).not.toMatch(/\.task-table\s*\{[^}]*min-width: 42rem;/s);
+    expect(css).toMatch(/\.task-table\s*\{[^}]*min-width: 42rem;/s);
+    expect(css).toMatch(/\.warnings-panel ul\s*\{[^}]*overflow-x: auto;/s);
+    expect(css).toMatch(/\.warning-row\s*\{[^}]*min-width: max-content;/s);
   });
 
   test("sizes summary and review tables instead of squeezing labels", async () => {

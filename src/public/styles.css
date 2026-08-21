@@ -1101,6 +1101,8 @@ a:focus-visible {
   gap: 0.7rem;
   margin: 0;
   padding: 0;
+  overflow-x: auto;
+  overscroll-behavior: contain;
   list-style: none;
 }
 
@@ -1118,6 +1120,7 @@ a:focus-visible {
 
 .task-table {
   width: 100%;
+  min-width: 42rem;
   table-layout: fixed;
   border-collapse: collapse;
 }
@@ -1227,6 +1230,7 @@ a:focus-visible {
 
 .warning-row {
   display: grid;
+  min-width: max-content;
   grid-template-columns: max-content minmax(max-content, 1fr) auto auto;
   gap: var(--space-1) var(--space-2);
   align-items: baseline;

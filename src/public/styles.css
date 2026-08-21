@@ -331,13 +331,19 @@ p {
 }
 
 #fleet-summary {
-  width: 100%;
+  /* Keep valid unbroken identifiers in their own columns; the wrapper scrolls. */
+  width: max-content;
+  min-width: 68rem;
+  table-layout: fixed;
   border-collapse: collapse;
   background: var(--color-surface);
 }
 
 .repository-summary {
-  width: 100%;
+  /* A configured repository name is an identifier, not arbitrary prose. */
+  width: max-content;
+  min-width: 89rem;
+  table-layout: fixed;
   border-collapse: collapse;
   background: var(--color-surface);
 }
@@ -351,7 +357,38 @@ p {
   padding: 0.7rem 0.8rem;
   border-bottom: 1px solid var(--color-border-subtle);
   text-align: left;
-  overflow-wrap: anywhere;
+}
+
+.repository-summary th {
+  white-space: nowrap;
+}
+
+.repository-summary th:nth-child(1) {
+  width: 11rem;
+}
+
+.repository-summary th:nth-child(2),
+.repository-summary th:nth-child(3) {
+  width: 9rem;
+}
+
+.repository-summary th:nth-child(4),
+.repository-summary th:nth-child(8) {
+  width: 10rem;
+}
+
+.repository-summary th:nth-child(5),
+.repository-summary th:nth-child(6) {
+  width: 5rem;
+}
+
+.repository-summary th:nth-child(7) {
+  width: 7rem;
+}
+
+.repository-summary th:nth-child(9),
+.repository-summary th:nth-child(10) {
+  width: 12rem;
 }
 
 .repository-summary thead th {
@@ -419,7 +456,33 @@ p {
   padding: 0.75rem 0.9rem;
   border-bottom: 1px solid var(--color-border-subtle);
   text-align: left;
-  overflow-wrap: anywhere;
+}
+
+#fleet-summary th {
+  white-space: nowrap;
+}
+
+#fleet-summary th:nth-child(1),
+#fleet-summary th:nth-child(3),
+#fleet-summary th:nth-child(7) {
+  width: 10rem;
+}
+
+#fleet-summary th:nth-child(2) {
+  width: 9rem;
+}
+
+#fleet-summary th:nth-child(4),
+#fleet-summary th:nth-child(5) {
+  width: 5rem;
+}
+
+#fleet-summary th:nth-child(6) {
+  width: 7rem;
+}
+
+#fleet-summary th:nth-child(8) {
+  width: 12rem;
 }
 
 #fleet-summary thead th {
@@ -819,8 +882,10 @@ p {
 }
 
 .review-strip table {
-  width: 100%;
+  /* Reviewer IDs and chips must widen the internal scroll area, not overlap. */
+  width: max-content;
   min-width: 76rem;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--text-xs);
 }
@@ -831,7 +896,34 @@ p {
   border-bottom: 1px solid var(--color-border-subtle);
   text-align: left;
   vertical-align: top;
-  overflow-wrap: anywhere;
+}
+
+.review-strip th:nth-child(1) {
+  width: 7rem;
+}
+
+.review-strip th:nth-child(2) {
+  width: 8rem;
+}
+
+.review-strip th:nth-child(3) {
+  width: 14rem;
+}
+
+.review-strip th:nth-child(4) {
+  width: 13rem;
+}
+
+.review-strip th:nth-child(5) {
+  width: 16rem;
+}
+
+.review-strip th:nth-child(6) {
+  width: 10rem;
+}
+
+.review-strip th:nth-child(7) {
+  width: 8rem;
 }
 
 .review-strip thead th {
@@ -846,6 +938,11 @@ p {
   color: var(--color-text);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.review-strip tbody td:nth-child(2) {
+  white-space: nowrap;
 }
 
 .review-strip tbody tr:last-child > * {
@@ -869,11 +966,14 @@ p {
   font-weight: 800;
 }
 
-.repository h3,
-.repository p,
-.repository dd,
-.repository li,
-.repository pre {
+.repository > header h3,
+.facts dd,
+.task-title,
+.questions-panel .text-entry,
+.worklog-summary,
+.worklog-body,
+.warning-explanation,
+.warning-excerpt {
   overflow-wrap: anywhere;
 }
 
@@ -885,6 +985,7 @@ p {
   border-radius: var(--radius-pill);
   font-size: var(--text-xs);
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .available,
@@ -977,6 +1078,10 @@ p {
   margin: 0;
 }
 
+.timing-stamp {
+  white-space: nowrap;
+}
+
 .factory-document-links {
   margin: var(--space-1) 0 0;
   color: var(--color-muted);
@@ -999,6 +1104,8 @@ a:focus-visible {
   gap: 0.7rem;
   margin: 0;
   padding: 0;
+  overflow-x: auto;
+  overscroll-behavior: contain;
   list-style: none;
 }
 
@@ -1015,8 +1122,10 @@ a:focus-visible {
 }
 
 .task-table {
-  width: 100%;
+  /* Long valid task IDs retain their spelling and widen the internal scroller. */
+  width: max-content;
   min-width: 42rem;
+  table-layout: fixed;
   border-collapse: collapse;
 }
 
@@ -1037,7 +1146,30 @@ a:focus-visible {
   border-bottom: 1px solid var(--color-border-subtle);
   text-align: left;
   vertical-align: top;
-  overflow-wrap: anywhere;
+}
+
+.task-table th:nth-child(1) {
+  width: 10%;
+}
+
+.task-table th:nth-child(2) {
+  width: 28%;
+}
+
+.task-table th:nth-child(3) {
+  width: 12%;
+}
+
+.task-table th:nth-child(4) {
+  width: 16%;
+}
+
+.task-table th:nth-child(5) {
+  width: 20%;
+}
+
+.task-table th:nth-child(6) {
+  width: 14%;
 }
 
 .task-table thead th {
@@ -1060,6 +1192,7 @@ a:focus-visible {
 .task-table .task-numeric {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .completed-tasks-toggle {
@@ -1101,7 +1234,8 @@ a:focus-visible {
 
 .warning-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  min-width: max-content;
+  grid-template-columns: max-content minmax(max-content, 1fr) auto auto;
   gap: var(--space-1) var(--space-2);
   align-items: baseline;
   padding-top: var(--space-3);
@@ -1119,13 +1253,13 @@ a:focus-visible {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
 .warning-code {
-  min-width: 0;
-  overflow-wrap: anywhere;
   color: var(--color-text);
   font-size: var(--text-xs);
+  white-space: nowrap;
 }
 
 .warning-line,
@@ -1166,6 +1300,7 @@ a:focus-visible {
   color: var(--color-id);
   font-family: var(--font-mono);
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .task-size {
@@ -1184,7 +1319,7 @@ a:focus-visible {
 }
 
 .task-review {
-  min-width: 10rem;
+  min-width: 0;
 }
 
 .review-chip,
@@ -1323,6 +1458,7 @@ a:focus-visible {
   background: var(--color-canvas);
   font-size: var(--text-xs);
   line-height: 1.4;
+  white-space: nowrap;
 }
 
 .worklog-task-chip,

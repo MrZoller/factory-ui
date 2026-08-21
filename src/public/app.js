@@ -1240,13 +1240,21 @@ function renderLogs(card, repository, now, generatedAt) {
     ["Shepherd", "shepherd"],
   ]) {
     const timing = logs?.[key];
-    addDefinition(
-      list,
-      label,
-      timing
-        ? `${displayTime(timing.startedAt)} → ${displayTime(timing.lastActivityAt)}${timing.durationMs === undefined ? "" : ` (${displayDuration(timing.durationMs)})`}`
-        : "Unknown",
-    );
+    appendText(list, "dt", label);
+    const value = list.ownerDocument.createElement("dd");
+    if (!timing) {
+      value.textContent = "Unknown";
+    } else {
+      appendText(value, "span", displayTime(timing.startedAt), "timing-stamp");
+      value.append(list.ownerDocument.createTextNode(" → "));
+      appendText(
+        value,
+        "span",
+        `${displayTime(timing.lastActivityAt)}${timing.durationMs === undefined ? "" : ` (${displayDuration(timing.durationMs)})`}`,
+        "timing-stamp",
+      );
+    }
+    list.append(value);
   }
   addDefinition(list, "Source age", displayAge(logs?.asOf?.overall, now));
   panel.append(list);

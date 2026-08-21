@@ -62,7 +62,7 @@ task.
 - [x] T43 (standard) — UI polish 3/5: design-system primitives — one chip, button, tab and panel-title style; type scale; compact header (Fixes #46)
   - acceptance: In `src/public/styles.css`, `src/public/app.js`, `src/public/how.js`, `src/public/index.html`, `src/public/how.html`, and colocated tests, consolidate the specified chip, button, tab, panel-title, empty-state, typography, header, color, numeric-cell, empty-value, and dark-mode primitives; retain text-only rendering and accessibility hooks; cover the shared primitives, compact headers on both pages, empty error handling, summary placeholders, and hostile strings; pass `bun test` and `bun run lint`.
   - pr: 51
-- [ ] T44 (standard) — UI polish 4/5: declutter — tab badges, review strip, task cost/review columns, worklog entries, routing strip (Fixes #47)
+- [~] T44 (standard) — UI polish 4/5: declutter — tab badges, review strip, task cost/review columns, worklog entries, routing strip (Fixes #47)
   - acceptance: In `src/public/app.js`, `src/public/styles.css`, and `src/public/app.test.ts`, apply the issue's compact question/hold badges, collapsed review summary and mismatch disclosure, concise task cost/size/review cells, panel-level raw-worklog toggle, routing panel, and explicit summary placeholders; preserve disclosure state and metric semantics, render repository-derived values as text, cover every changed presentation and hostile strings, and pass `bun test` plus `bun run lint`.
   - deps: T43
 - [ ] T45 (standard) — UI polish 5/5: /how page — pipeline that fits, compact agent cards, one gate component (Fixes #48)

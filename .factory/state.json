@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T46",
+  "branch": "factory/t46-stop-mid-word-wrapping",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-21T02:21:09Z"
+  "updated": "2026-08-21T02:26:59Z"
 }

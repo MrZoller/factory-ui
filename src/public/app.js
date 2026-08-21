@@ -32,7 +32,7 @@ function disclosureState(documentRoot, machine, repository) {
   if (!repositories) machines.set(machine, (repositories = new Map()));
   let state = repositories.get(repository);
   if (!state) {
-    state = { worklogEntries: new Map() };
+    state = {};
     repositories.set(repository, state);
   }
   return state;
@@ -289,9 +289,27 @@ function worklogReferenceUrl(repositoryUrl, kind, value) {
   return undefined;
 }
 
+function safeBareGithubUrl(value) {
+  for (const kind of [
+    "repository",
+    "branch",
+    "pull",
+    "issue",
+    "commit",
+    "plan",
+    "spec",
+    "worklog",
+    "questions",
+  ]) {
+    const href = safeGithubUrl(value, kind);
+    if (href) return href;
+  }
+  return undefined;
+}
+
 function appendWorklogHighlight(parent, text, repositoryUrl) {
   const pattern =
-    /(`[^`\n]+`|\bT[1-9][0-9]*\b|\bPR #[1-9][0-9]*\b|(?<![A-Za-z0-9])#[1-9][0-9]*\b|\b[0-9a-fA-F]{40}\b)/g;
+    /(`[^`\n]+`|https:\/\/[^\s<>"'`]+|\bT[1-9][0-9]*\b|\bPR #[1-9][0-9]*\b|(?<![A-Za-z0-9])#[1-9][0-9]*\b|\b[0-9a-fA-F]{40}\b)/g;
   let offset = 0;
   for (const match of text.matchAll(pattern)) {
     if (match.index > offset)
@@ -301,6 +319,26 @@ function appendWorklogHighlight(parent, text, repositoryUrl) {
     const token = match[0];
     if (token.startsWith("`")) {
       appendText(parent, "code", token.slice(1, -1));
+    } else if (token.startsWith("https://")) {
+      let label = token;
+      let suffix = "";
+      let href = safeBareGithubUrl(label);
+      if (!href && /[.,;:!?]$/.test(label)) {
+        suffix = label.slice(-1);
+        label = label.slice(0, -1);
+        href = safeBareGithubUrl(label);
+      }
+      if (href) {
+        const link = textElement(parent.ownerDocument, "a", label);
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.className = "worklog-reference worklog-url";
+        parent.append(link);
+        if (suffix) parent.append(parent.ownerDocument.createTextNode(suffix));
+      } else {
+        parent.append(parent.ownerDocument.createTextNode(token));
+      }
     } else {
       const kind = token.startsWith("T")
         ? "task"
@@ -499,7 +537,7 @@ function notionalLabel(notional) {
     : "";
   return {
     text: `~${formatUsd(notional.usd)} at list${notional.partial ? " (partial)" : ""}${coverage}`,
-    title: `notional: subscription lane priced at models.dev list price as of ${notional.pricesAsOf.join(", ")}; not billed${missing}`,
+    title: `notional${notional.partial ? " (partial)" : ""}: subscription lane priced at models.dev list price as of ${notional.pricesAsOf.join(", ")}; not billed${missing}`,
   };
 }
 
@@ -542,6 +580,7 @@ function findingSummary(findings, classes) {
 
 function renderTaskReview(cell, task, metrics, oldestDigits) {
   const taskMetrics = metrics?.tasks?.[task?.id];
+  const details = [];
   if (taskMetrics?.ship) {
     if (taskMetrics.ship.internal === null) {
       appendText(
@@ -555,38 +594,46 @@ function renderTaskReview(cell, task, metrics, oldestDigits) {
       appendText(
         cell,
         "span",
-        `panel ${internal.rounds}r · ${internal.fixed} fixed`,
+        `panel ${internal.rounds}r`,
         "chip chip-accent review-chip review-internal",
       );
-      appendText(
-        cell,
-        "span",
-        findingSummary(internal.findings, ["blocking", "minor", "invalid"]),
-        "review-detail",
-      );
+      cell.lastElementChild.title = `${findingSummary(internal.findings, ["blocking", "minor", "invalid"])} · ${internal.fixed} fixed`;
+      const panelDetails = [
+        ...["blocking", "minor", "invalid"]
+          .filter((name) => internal.findings?.[name] > 0)
+          .map((name) => `${internal.findings[name]} ${name}`),
+        ...(internal.fixed > 0 ? [`${internal.fixed} fixed`] : []),
+      ];
+      if (panelDetails.length > 0)
+        details.push(`panel: ${panelDetails.join(" · ")}`);
     }
   }
   for (const [reviewer, review] of Object.entries(
     taskMetrics?.merge?.external ?? {},
   ).sort(([left], [right]) => left.localeCompare(right))) {
     const findings = ["blocking", "minor", "refuted"];
-    const prominent = findings.find((name) => review?.findings?.[name] > 0);
-    const suffix = prominent
-      ? ` · ${review.findings[prominent]} ${prominent}`
-      : "";
-    appendText(
+    const chip = appendText(
       cell,
       "span",
-      `${reviewer} ${review?.rounds ?? 0}r${suffix}`,
+      `${reviewer} ${review?.rounds ?? 0}r`,
       "chip chip-info review-chip review-external",
     );
-    appendText(
-      cell,
-      "span",
-      `${findingSummary(review?.findings, findings)} · ${review?.fixPushes ?? 0} fix pushes`,
-      "review-detail",
-    );
+    chip.title = `${findingSummary(review?.findings, findings)} · ${review?.fixPushes ?? 0} fix pushes`;
+    const reviewerDetails = [
+      ...findings
+        .filter((name) => review?.findings?.[name] > 0)
+        .map((name) => `${review.findings[name]} ${name}`),
+      ...(review?.fixPushes > 0
+        ? [
+            `${review.fixPushes} fix ${review.fixPushes === 1 ? "push" : "pushes"}`,
+          ]
+        : []),
+    ];
+    if (reviewerDetails.length > 0)
+      details.push(`${reviewer}: ${reviewerDetails.join(" · ")}`);
   }
+  if (details.length > 0)
+    appendText(cell, "span", details.join("; "), "review-detail");
   const digits = taskMetricDigits(task?.id);
   if (
     task?.pr !== undefined &&
@@ -624,36 +671,34 @@ function renderTask(tableBody, task, cost, routing, metrics, oldestDigits) {
     );
   }
   const size = task?.size ?? "unknown";
-  const sizeCell = appendText(item, "td", size, "task-size task-numeric");
+  const sizeCell = item.ownerDocument.createElement("td");
+  sizeCell.className = "task-size task-numeric";
   sizeCell.title = Object.hasOwn(SIZE_DESCRIPTIONS, size)
     ? SIZE_DESCRIPTIONS[size]
     : SIZE_LEGEND;
+  appendText(sizeCell, "span", size, "chip chip-muted task-size-chip");
+  item.append(sizeCell);
   const costCell = item.ownerDocument.createElement("td");
   costCell.className = "task-cost-cell task-numeric";
   const label = costLabel(cost);
   if (label) {
     const costGroup = item.ownerDocument.createElement("span");
     costGroup.className = "task-cost-group";
-    const costNode = appendText(
-      costGroup,
-      "span",
-      cost.usd > 0 ? `${formatUsd(cost.usd)} metered` : label.text,
-      "task-cost",
-    );
-    costNode.title = label.title;
-    const notional = notionalLabel(taskNotional(cost, routing));
+    appendText(costGroup, "span", label.text, "task-cost");
+    const taskListCost = taskNotional(cost, routing);
+    const notional = notionalLabel(taskListCost);
     if (notional) {
       appendText(costGroup, "span", "·", "task-cost-separator");
       const notionalNode = appendText(
         costGroup,
         "span",
-        notional.text,
+        `~${formatUsd(taskListCost.usd)}`,
         "task-notional",
       );
       notionalNode.title = notional.title;
     }
     costCell.append(costGroup);
-    appendText(costCell, "span", label.title, "task-cost-detail");
+    costCell.title = `${label.text === "sub" ? "" : "metered · "}${label.title}${notional ? ` · ${notional.text}; ${notional.title}` : ""}`;
   }
   item.append(costCell);
   const reviewCell = appendText(item, "td", "", "task-review");
@@ -916,7 +961,7 @@ function reactionCount(reactions) {
   );
 }
 
-function appendReviewCrossChecks(parent, tasks) {
+function reviewCrossChecks(tasks) {
   const checks = [];
   for (const task of tasks) {
     if (!task.pr) {
@@ -952,16 +997,33 @@ function appendReviewCrossChecks(parent, tasks) {
       });
     }
   }
+  return checks;
+}
+
+function appendReviewCrossChecks(parent, checks) {
   if (checks.length === 0) {
-    parent.textContent = "None";
-    return;
+    appendText(parent, "span", "all match", "review-cross-check-summary muted");
+    return 0;
   }
+  const mismatches = checks.filter(
+    (check) => check.comparable && check.reported !== check.mechanical,
+  ).length;
+  const details = parent.ownerDocument.createElement("details");
+  details.className = "review-cross-checks";
+  appendText(
+    details,
+    "summary",
+    mismatches === 0 ? "all match" : `${mismatches} mismatches`,
+    mismatches === 0
+      ? "review-cross-check-summary muted"
+      : "review-cross-check-summary review-mismatch",
+  );
   for (const check of checks) {
     const text = check.comparable
       ? `${check.task} ${check.reviewer}: ${check.reported}r vs ${check.mechanical} mechanical`
       : `${check.task} ${check.reviewer}: ${check.reported}r vs unknown mechanical`;
     appendText(
-      parent,
+      details,
       "span",
       text,
       check.comparable && check.reported !== check.mechanical
@@ -969,17 +1031,25 @@ function appendReviewCrossChecks(parent, tasks) {
         : "review-cross-check",
     );
   }
+  parent.append(details);
+  return mismatches;
 }
 
-function appendReviewAggregateRow(body, label, tasks) {
+function appendReviewAggregateRow(body, label, tasks, checks) {
   const row = body.ownerDocument.createElement("tr");
+  appendText(row, "th", label);
+  row.firstElementChild.scope = "row";
+  if (tasks.length === 0) {
+    const empty = appendText(row, "td", "No measured tasks", "empty");
+    empty.colSpan = 6;
+    body.append(row);
+    return;
+  }
   const aggregate = metricAggregate(tasks);
   const externalTotal =
     aggregate.external.findings.blocking +
     aggregate.external.findings.minor +
     aggregate.external.findings.refuted;
-  appendText(row, "th", label);
-  row.firstElementChild.scope = "row";
   appendText(row, "td", `${tasks.length} measured`, "review-measured");
   appendText(
     row,
@@ -1009,27 +1079,45 @@ function appendReviewAggregateRow(body, label, tasks) {
     `${average(aggregate.external.fixPushes, tasks.length)} fix pushes/PR · ${average(aggregate.ciReruns, tasks.length)} CI reruns/PR`,
   );
   const crossCheck = row.ownerDocument.createElement("td");
-  appendReviewCrossChecks(crossCheck, tasks);
+  if (checks) appendReviewCrossChecks(crossCheck, checks);
+  else appendText(crossCheck, "span", "—", "empty");
   row.append(crossCheck);
   body.append(row);
 }
 
-function renderReviewStrip(card, repository) {
+function renderReviewStrip(card, repository, disclosure) {
   const strip = card.ownerDocument.createElement("section");
   strip.className = "review-strip panel-span-12";
-  appendText(strip, "h4", "Review", "panel-title");
   const metrics = readerData(repository.metrics);
   if (!metrics) {
+    appendText(strip, "h4", "Review", "panel-title");
     appendText(strip, "p", "Unavailable", "unavailable");
     card.append(strip);
     return;
   }
   const all = measuredMetrics(metrics);
   if (all.length === 0) {
+    appendText(strip, "h4", "Review", "panel-title");
     appendText(strip, "p", "No measured tasks", "empty");
     card.append(strip);
     return;
   }
+  const checks = reviewCrossChecks(all);
+  const mismatchCount = checks.filter(
+    (check) => check.comparable && check.reported !== check.mechanical,
+  ).length;
+  const disclosurePanel = strip.ownerDocument.createElement("details");
+  disclosurePanel.className = "review-strip-details";
+  disclosurePanel.open = disclosure.reviewOpen ?? false;
+  disclosurePanel.addEventListener("toggle", () => {
+    disclosure.reviewOpen = disclosurePanel.open;
+  });
+  appendText(
+    disclosurePanel,
+    "summary",
+    `Review · ${all.length} measured · ${mismatchCount} mismatches`,
+    "panel-title",
+  );
   const scroll = strip.ownerDocument.createElement("div");
   scroll.className = "review-strip-scroll";
   const table = strip.ownerDocument.createElement("table");
@@ -1049,14 +1137,15 @@ function renderReviewStrip(card, repository) {
   }
   head.append(headingRow);
   const body = strip.ownerDocument.createElement("tbody");
-  appendReviewAggregateRow(body, "overall", all);
+  appendReviewAggregateRow(body, "overall", all, checks);
   for (const size of ["trivial", "standard", "major"]) {
     const tasks = measuredMetrics(metrics, size);
     appendReviewAggregateRow(body, size, tasks);
   }
   table.append(head, body);
   scroll.append(table);
-  strip.append(scroll);
+  disclosurePanel.append(scroll);
+  strip.append(disclosurePanel);
   card.append(strip);
 }
 
@@ -1120,12 +1209,10 @@ function renderWorklog(card, repository, disclosure, spanClass) {
   );
   const entries = readerData(repository.worklog)?.entries;
   if (entries === undefined) {
-    disclosure.worklogEntries.clear();
     appendText(panel, "p", "Unavailable", "unavailable");
     return;
   }
   if (!Array.isArray(entries) || entries.length === 0) {
-    disclosure.worklogEntries.clear();
     panel.classList.add("panel-empty");
     appendText(panel, "p", "None", "empty");
     return;
@@ -1133,11 +1220,7 @@ function renderWorklog(card, repository, disclosure, spanClass) {
   const newestFirst = entries.slice().reverse();
   const visibleCount = 6;
   let expanded = disclosure.worklogExpanded ?? false;
-  const entryKey = (entry) => `${entry?.date ?? ""}\u0000${entry?.time ?? ""}`;
-  const currentKeys = new Set(newestFirst.map(entryKey));
-  for (const key of disclosure.worklogEntries.keys()) {
-    if (!currentKeys.has(key)) disclosure.worklogEntries.delete(key);
-  }
+  let rawVisible = disclosure.worklogRaw ?? false;
   const list = panel.ownerDocument.createElement("div");
   list.className = "worklog-list";
   panel.append(list);
@@ -1162,35 +1245,33 @@ function renderWorklog(card, repository, disclosure, spanClass) {
           : splitFirstSentence(parsed.content);
       const item = panel.ownerDocument.createElement("article");
       item.className = "worklog-entry";
-      const headline = item.ownerDocument.createElement("div");
-      headline.className = "worklog-headline";
+      const meta = item.ownerDocument.createElement("div");
+      meta.className = "worklog-meta muted";
       appendText(
-        headline,
+        meta,
         "time",
         entry?.time ?? "Time unavailable",
         "worklog-time",
       );
+      const event = parsed.malformed
+        ? "other"
+        : worklogEvent(sentence.headline);
+      if (event !== "other") {
+        meta.append(item.ownerDocument.createTextNode(" · "));
+        appendText(meta, "span", event, "worklog-event");
+      }
       const task = /\bT[1-9][0-9]*\b/.exec(parsed.content)?.[0];
       if (task) {
-        const taskChip = appendExternalOrText(
-          headline,
+        meta.append(item.ownerDocument.createTextNode(" · "));
+        const taskReference = appendExternalOrText(
+          meta,
           task,
           worklogReferenceUrl(repository.repositoryUrl, "task", task),
           "plan",
         );
-        taskChip.classList.add(
-          "chip",
-          "chip-muted",
-          "worklog-chip",
-          "worklog-task-chip",
-        );
+        taskReference.classList.add("worklog-reference", "worklog-task");
       }
-      appendText(
-        headline,
-        "span",
-        parsed.malformed ? "other" : worklogEvent(sentence.headline),
-        "chip chip-muted worklog-chip worklog-event-chip",
-      );
+      item.append(meta);
       const headlineText = item.ownerDocument.createElement("span");
       headlineText.className = "worklog-summary";
       appendWorklogHighlight(
@@ -1198,8 +1279,7 @@ function renderWorklog(card, repository, disclosure, spanClass) {
         sentence.headline,
         repository.repositoryUrl,
       );
-      headline.append(headlineText);
-      item.append(headline);
+      item.append(headlineText);
       if (sentence.remainder) {
         const body = item.ownerDocument.createElement("p");
         body.className = "worklog-body";
@@ -1210,20 +1290,32 @@ function renderWorklog(card, repository, disclosure, spanClass) {
         );
         item.append(body);
       }
-      const details = item.ownerDocument.createElement("details");
-      details.className = "worklog-raw";
-      const key = entryKey(entry);
-      details.open = disclosure.worklogEntries.get(key) ?? false;
-      details.addEventListener("toggle", () => {
-        disclosure.worklogEntries.set(key, details.open);
-      });
-      appendText(details, "summary", "Raw entry");
-      appendText(details, "pre", parsed.raw, "verbatim");
-      item.append(details);
+      const raw = appendText(item, "pre", parsed.raw, "verbatim worklog-raw");
+      raw.hidden = !rawVisible;
       list.append(item);
     }
   };
   renderEntries();
+
+  const rawToggle = appendText(
+    panel,
+    "button",
+    rawVisible ? "Hide raw entries" : "Show raw entries",
+    "button button-ghost worklog-raw-toggle",
+  );
+  rawToggle.type = "button";
+  rawToggle.setAttribute("aria-expanded", String(rawVisible));
+  rawToggle.addEventListener("click", () => {
+    rawVisible = !rawVisible;
+    disclosure.worklogRaw = rawVisible;
+    rawToggle.textContent = rawVisible
+      ? "Hide raw entries"
+      : "Show raw entries";
+    rawToggle.setAttribute("aria-expanded", String(rawVisible));
+    for (const raw of list.querySelectorAll(".worklog-raw")) {
+      raw.hidden = !rawVisible;
+    }
+  });
 
   if (newestFirst.length > visibleCount) {
     const toggle = appendText(
@@ -1620,8 +1712,8 @@ export function providerCategory(provider) {
 
 function renderRoutingStrip(fleet, documentRoot) {
   const strip = documentRoot.createElement("section");
-  strip.className = "routing-strip";
-  appendText(strip, "h3", "Routing");
+  strip.className = "panel routing-panel routing-strip";
+  appendText(strip, "h3", "Routing", "panel-title");
   const routing = fleet?.repositories?.find(
     (repository) =>
       repository.routing && repository.routing.status !== "unavailable",
@@ -1705,7 +1797,7 @@ function renderRepository(repository, machine, documentRoot, now, generatedAt) {
     warnings.length > 0 ? "panel-span-8" : "panel-span-12",
   );
   renderWarnings(card, repository ?? {}, disclosure, warnings);
-  renderReviewStrip(card, repository ?? {});
+  renderReviewStrip(card, repository ?? {}, disclosure);
   renderTasks(card, repository ?? {}, disclosure, COMPLETED_TASK_GROUP);
   return card;
 }
@@ -2368,7 +2460,7 @@ function renderSummaryRow(row, summary) {
     summaryCellClass(summary.hold === false ? "—" : summary.hold),
   );
   if (summary.hold === true)
-    appendText(holdCell, "span", "HELD", "chip chip-warn badge held-badge");
+    appendText(holdCell, "span", "HELD", "chip chip-danger badge held-badge");
   const costCell = textElement(
     documentRoot,
     "td",
@@ -2434,18 +2526,30 @@ function renderTabLabel(tab, summary) {
         documentRoot,
         "span",
         "HELD",
-        "chip chip-warn badge held-badge",
+        "chip chip-danger badge held-badge",
       ),
     );
   }
-  children.push(
-    textElement(
+  const questionCount = Number(summary.questions);
+  if (Number.isSafeInteger(questionCount) && questionCount > 0) {
+    children.push(
+      textElement(
+        documentRoot,
+        "span",
+        `${questionCount} question${questionCount === 1 ? "" : "s"}`,
+        "chip chip-accent badge question-badge",
+      ),
+    );
+  } else if (["Unavailable", "Unknown"].includes(summary.questions)) {
+    const unavailable = textElement(
       documentRoot,
       "span",
-      `Questions ${summary.questions}`,
-      "chip chip-accent badge question-badge",
-    ),
-  );
+      "?",
+      "chip chip-muted badge question-badge question-badge-unavailable",
+    );
+    unavailable.title = "Questions unavailable";
+    children.push(unavailable);
+  }
   tab.replaceChildren(...children);
 }
 
@@ -2530,7 +2634,7 @@ function renderRepositorySummaryRow(row, summary) {
     summaryCellClass(summary.hold === false ? "—" : summary.hold),
   );
   if (summary.hold === true)
-    appendText(holdCell, "span", "HELD", "chip chip-warn badge held-badge");
+    appendText(holdCell, "span", "HELD", "chip chip-danger badge held-badge");
   const unattributedCell = textElement(
     documentRoot,
     "td",

@@ -1,6 +1,6 @@
 :root {
   /* Semantic tones: good=running/available; info=review/current/links;
-     warn=stale/unavailable/unreachable/hold; danger=blocked/error/mismatch;
+     warn=stale/unavailable/unreachable; danger=blocked/error/mismatch/hold;
      accent=questions/internal panel; muted=unknown/inactive. */
   color-scheme: light;
   --space-1: 0.25rem;
@@ -283,14 +283,8 @@ p {
 }
 
 .routing-strip {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem 1.25rem;
   margin-bottom: 1rem;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-raised);
+  padding: var(--space-3) var(--space-4);
 }
 
 .routing-strip h3,
@@ -299,11 +293,13 @@ p {
 }
 
 .routing-strip h3 {
+  margin-bottom: var(--space-2);
   color: var(--color-muted);
   font-size: var(--text-xs);
 }
 
 .routing-defaults {
+  margin-bottom: var(--space-2) !important;
   color: var(--color-muted);
   overflow-wrap: anywhere;
 }
@@ -311,7 +307,6 @@ p {
 .routing-agents {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  flex: 1;
   gap: 0.45rem 1.25rem;
   min-width: 0;
   margin: 0;
@@ -892,7 +887,7 @@ p {
 }
 
 .held-badge {
-  color: var(--color-warn);
+  color: var(--color-danger);
 }
 
 .question-badge {
@@ -940,6 +935,15 @@ p {
 
 .review-strip p {
   margin: 0;
+}
+
+.review-strip-details > summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.review-strip-details[open] > summary {
+  margin-bottom: var(--space-3);
 }
 
 .review-strip-scroll {
@@ -1028,6 +1032,15 @@ p {
   border-left: 3px solid var(--color-danger);
   color: var(--color-danger);
   font-weight: 800;
+}
+
+.review-cross-checks summary {
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.review-cross-checks[open] summary {
+  margin-bottom: var(--space-1);
 }
 
 .facts dd,
@@ -1371,6 +1384,11 @@ a:focus-visible {
   white-space: nowrap;
 }
 
+.task-size-chip {
+  color: var(--color-muted);
+  text-transform: lowercase;
+}
+
 .task-deps {
   display: block;
   margin-top: var(--space-1);
@@ -1486,11 +1504,14 @@ a:focus-visible {
   min-width: 0;
 }
 
-.worklog-headline {
+.worklog-meta {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-2);
   align-items: baseline;
+  margin-bottom: var(--space-1);
+  color: var(--color-muted);
+  font-size: var(--text-xs);
   font-family: var(--font-sans);
 }
 
@@ -1500,20 +1521,21 @@ a:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.worklog-task-chip,
+.worklog-task,
 .worklog-reference,
-.worklog-headline code,
+.worklog-summary code,
 .worklog-body code {
   font-family: var(--font-mono);
 }
 
-.worklog-event-chip {
-  color: var(--color-muted);
+.worklog-event,
+.worklog-task {
+  white-space: nowrap;
 }
 
 .worklog-summary {
+  display: block;
   min-width: 12rem;
-  flex: 1 1 18rem;
 }
 
 .worklog-body {
@@ -1524,21 +1546,21 @@ a:focus-visible {
 }
 
 .worklog-raw {
-  margin-top: var(--space-2);
-  color: var(--color-muted);
-  font-size: var(--text-xs);
-}
-
-.worklog-raw summary {
-  cursor: pointer;
-}
-
-.worklog-raw .verbatim {
+  display: block;
   margin-top: var(--space-2);
 }
 
-.worklog-toggle {
+.worklog-raw[hidden] {
+  display: none;
+}
+
+.worklog-toggle,
+.worklog-raw-toggle {
   margin-top: var(--space-4);
+}
+
+.worklog-raw-toggle + .worklog-toggle {
+  margin-left: var(--space-3);
 }
 
 .narration {
@@ -1604,11 +1626,6 @@ a:focus-visible {
   .panel-span-8,
   .panel-span-12 {
     grid-column: 1 / -1;
-  }
-
-  .routing-strip {
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   #fleet-summary th,

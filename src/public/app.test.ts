@@ -697,8 +697,13 @@ describe("local dashboard rendering", () => {
       "PR held for review",
     ]);
     expect(rows[0]!.querySelector(".task-deps")?.textContent).toBe("deps: T99");
-    expect(rows[0]!.querySelector(".task-cost")?.textContent).toBe(
-      "$1.23 metered",
+    expect(rows[0]!.querySelector(".task-cost")?.textContent).toBe("$1.23");
+    expect(rows[0]!.querySelector<HTMLElement>(".task-cost-cell")?.title).toBe(
+      "metered · 123 tokens",
+    );
+    expect(rows[0]!.querySelector(".task-cost-detail")).toBeNull();
+    expect(rows[0]!.querySelector(".task-size-chip")?.textContent).toBe(
+      "trivial",
     );
     expect(rows[0]!.querySelector(".task-review")?.textContent).toBe("");
     expect(
@@ -796,18 +801,14 @@ describe("local dashboard rendering", () => {
     renderFleet(fleet("mini", [], [repository]), document, NOW);
 
     const active = document.querySelector(".active-work .task")!;
-    expect(active.querySelector(".task-cost")?.textContent).toBe(
-      "$1.23 metered",
+    expect(active.querySelector(".task-cost")?.textContent).toBe("$1.23");
+    expect(active.querySelector<HTMLElement>(".task-cost-cell")?.title).toBe(
+      "metered · 123 tokens",
     );
-    expect(active.querySelector<HTMLElement>(".task-cost")?.title).toBe(
-      "123 tokens",
-    );
-    expect(active.querySelector(".task-cost-detail")?.textContent).toBe(
-      "123 tokens",
-    );
+    expect(active.querySelector(".task-cost-detail")).toBeNull();
     const review = document.querySelector(".review-work .task")!;
     expect(review.querySelector(".task-cost")?.textContent).toBe("sub");
-    expect(review.querySelector<HTMLElement>(".task-cost")?.title).toBe(
+    expect(review.querySelector<HTMLElement>(".task-cost-cell")?.title).toBe(
       "456 tokens",
     );
     expect(document.querySelector(".runnable-work .task-cost")).toBeNull();
@@ -870,11 +871,15 @@ describe("local dashboard rendering", () => {
     renderFleet(fleet("mini", [], [repository]), document, NOW);
 
     const task = document.querySelector(".active-work .task")!;
-    expect(task.querySelector(".task-cost")?.textContent).toBe("$7.50 metered");
+    expect(task.querySelector(".task-cost")?.textContent).toBe("$7.50");
     const taskNotional = task.querySelector<HTMLElement>(".task-notional")!;
-    expect(taskNotional.textContent).toBe("~$6.00 at list (partial)");
+    expect(taskNotional.textContent).toBe("~$6.00");
+    expect(task.querySelector<HTMLElement>(".task-cost-cell")?.title).toContain(
+      "metered · 3,000,000 tokens · ~$6.00 at list (partial); notional (partial):",
+    );
+    expect(taskNotional.title).toContain("at models.dev list price");
     expect(taskNotional.title).toBe(
-      "notional: subscription lane priced at models.dev list price as of 2026-08-16; not billed",
+      "notional (partial): subscription lane priced at models.dev list price as of 2026-08-16; not billed",
     );
     const repositoryTotal = document.querySelector(
       ".repository-summary .cost-total",
@@ -968,7 +973,7 @@ describe("local dashboard rendering", () => {
 
     expect(document.querySelector(".task-cost")?.textContent).toBe("sub");
     expect(document.querySelector(".task-notional")?.textContent).toBe(
-      "~$3.00 at list (partial)",
+      "~$3.00",
     );
     expect(document.querySelector(".notional-total")?.textContent).toBe(
       "~$3.00 at list (partial)",
@@ -999,9 +1004,7 @@ describe("local dashboard rendering", () => {
 
     renderFleet(fleet("mini", [], [repository]), document, NOW);
 
-    expect(document.querySelector(".task-cost")?.textContent).toBe(
-      "$4.50 metered",
-    );
+    expect(document.querySelector(".task-cost")?.textContent).toBe("$4.50");
     expect(document.querySelector(".task-notional")).toBeNull();
     expect(document.querySelector(".notional-total")).toBeNull();
   });
@@ -1847,7 +1850,7 @@ describe("local dashboard rendering", () => {
     );
   });
 
-  test("renders legacy heading worklog entries through the normal headline, chip, and body path", () => {
+  test("renders legacy heading worklog entries through the normal meta, headline, and body path", () => {
     const document = dashboardDocument();
     const hostile = '<img src=x onerror="globalThis.headingPwned=1">';
     const repository = richRepository({
@@ -1876,8 +1879,11 @@ describe("local dashboard rendering", () => {
     expect(entry.querySelector(".worklog-time")?.textContent).toBe(
       "Time unavailable",
     );
-    expect(entry.querySelector(".worklog-task-chip")?.textContent).toBe("T27");
-    expect(entry.querySelector(".worklog-event-chip")?.textContent).toBe(
+    expect(entry.querySelector(".worklog-meta")?.textContent).toBe(
+      "Time unavailable · opened PR · T27",
+    );
+    expect(entry.querySelector(".worklog-task")?.textContent).toBe("T27");
+    expect(entry.querySelector(".worklog-event")?.textContent).toBe(
       "opened PR",
     );
     expect(entry.querySelector(".worklog-summary")?.textContent).toBe(
@@ -1916,9 +1922,7 @@ describe("local dashboard rendering", () => {
 
     const worklog = document.querySelector(".worklog-panel")!;
     worklog.querySelector<HTMLButtonElement>(".worklog-toggle")!.click();
-    const raw = worklog.querySelector<HTMLDetailsElement>(".worklog-raw")!;
-    raw.open = true;
-    raw.dispatchEvent(new document.defaultView!.Event("toggle"));
+    worklog.querySelector<HTMLButtonElement>(".worklog-raw-toggle")!.click();
     const warnings = document.querySelector<HTMLDetailsElement>(
       ".warnings-panel details",
     )!;
@@ -1942,8 +1946,14 @@ describe("local dashboard rendering", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(refreshedWorklog.querySelectorAll(".worklog-entry")).toHaveLength(7);
     expect(
-      refreshedWorklog.querySelector<HTMLDetailsElement>(".worklog-raw")?.open,
-    ).toBe(true);
+      refreshedWorklog.querySelector(".worklog-raw-toggle")?.textContent,
+    ).toBe("Hide raw entries");
+    expect(
+      Array.from(
+        refreshedWorklog.querySelectorAll<HTMLElement>(".worklog-raw"),
+        (raw) => raw.hidden,
+      ),
+    ).toSatisfy((hidden) => hidden.every((value) => value === false));
     expect(
       document.querySelector<HTMLDetailsElement>(".warnings-panel details")
         ?.open,
@@ -2239,13 +2249,21 @@ describe("local dashboard rendering", () => {
     ).toContain("unknown");
     expect(
       document.querySelector(".review-work .task-review")?.textContent,
-    ).toContain("panel 0r · 0 fixed");
+    ).toContain("panel 0r");
     expect(
       document.querySelector(".review-work .task-review")?.textContent,
-    ).toContain("codex 1r · 2 minor");
+    ).toContain("codex 1r");
     expect(
       document.querySelector(".completed-work .task-review")?.textContent,
-    ).toContain("panel 2r · 3 fixed");
+    ).toContain("panel 2r");
+    const reviewCell = document.querySelector(".review-work .task-review")!;
+    expect(reviewCell.querySelectorAll(".review-detail")).toHaveLength(1);
+    expect(reviewCell.querySelector(".review-detail")?.textContent).toBe(
+      "codex: 2 minor",
+    );
+    expect(
+      reviewCell.querySelector<HTMLElement>(".review-external")?.title,
+    ).toBe("0 blocking · 2 minor · 0 refuted · 0 fix pushes");
     expect(
       document.querySelectorAll(".active-work .task-review")[1]?.textContent,
     ).toContain("metrics missing");
@@ -2335,18 +2353,70 @@ describe("local dashboard rendering", () => {
     renderFleet(fleet("mini", [], [repository]), document, NOW);
 
     const strip = document.querySelector(".review-strip")!;
+    const disclosure = strip.querySelector<HTMLDetailsElement>(
+      ".review-strip-details",
+    )!;
+    expect(disclosure.open).toBe(false);
+    expect(disclosure.querySelector(":scope > summary")?.textContent).toBe(
+      "Review · 2 measured · 2 mismatches",
+    );
     expect(strip.textContent).toContain("standard");
     expect(strip.textContent).toContain("major");
+    expect(strip.textContent).toContain("No measured tasks");
+    expect(
+      Array.from(strip.querySelectorAll("tbody tr"), (row) => row.textContent),
+    ).toEqual(expect.arrayContaining(["trivialNo measured tasks"]));
+    expect(
+      strip.querySelector("tbody tr:nth-child(2) td")?.getAttribute("colspan"),
+    ).toBe("6");
     expect(strip.textContent).toContain("2 measured");
     expect(strip.textContent).toContain("codex");
     expect(strip.textContent).toContain("claude");
     expect(strip.textContent).toContain("50%");
-    expect(strip.querySelector(".review-mismatch")?.textContent).toContain(
-      "codex",
+    const crossChecks = strip.querySelector(".review-cross-checks")!;
+    expect(crossChecks.querySelector("summary")?.textContent).toBe(
+      "2 mismatches",
     );
+    expect(crossChecks.querySelectorAll(".review-mismatch")).toHaveLength(3);
+    expect(
+      Array.from(
+        crossChecks.querySelectorAll(".review-cross-check.review-mismatch"),
+        (line) => line.textContent,
+      ),
+    ).toEqual([
+      "T34 codex: 3r vs 2 mechanical",
+      "T34 mechanicalonly: 0r vs 1 mechanical",
+    ]);
     expect(strip.textContent).toContain(
       "T34 mechanicalonly: 0r vs 1 mechanical",
     );
+    expect(strip.querySelectorAll("tbody .review-cross-checks")).toHaveLength(
+      1,
+    );
+
+    disclosure.open = true;
+    disclosure.dispatchEvent(new document.defaultView!.Event("toggle"));
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+    expect(
+      document.querySelector<HTMLDetailsElement>(
+        ".review-strip .review-strip-details",
+      )?.open,
+    ).toBe(true);
+
+    metrics.data.tasks.T34.pr.reviews.codex = 2;
+    metrics.data.tasks.T34.pr.reviews.mechanicalonly = 0;
+    const matchingDocument = dashboardDocument();
+    renderFleet(fleet("mini", [], [repository]), matchingDocument, NOW);
+    const matchingStrip = matchingDocument.querySelector(".review-strip")!;
+    expect(
+      matchingStrip.querySelector(".review-strip-details > summary")
+        ?.textContent,
+    ).toBe("Review · 2 measured · 0 mismatches");
+    const allMatch = matchingStrip.querySelector(
+      ".review-cross-checks > summary",
+    )!;
+    expect(allMatch.textContent).toBe("all match");
+    expect(allMatch.classList).toContain("muted");
   });
 
   test("keeps hostile reviewer identifiers and metric strings literal and inert", () => {
@@ -2435,7 +2505,7 @@ describe("local dashboard rendering", () => {
     ).toBe("Show all 7");
   });
 
-  test("drops raw-entry disclosure state when an entry leaves the reader window", () => {
+  test("keeps one raw-entry toggle across changing worklog windows", () => {
     const document = dashboardDocument();
     const oldEntry = {
       date: "2026-08-15",
@@ -2456,13 +2526,7 @@ describe("local dashboard rendering", () => {
       });
     renderFleet(fleet("mini", [], [repository(currentEntries)]), document, NOW);
     document.querySelector<HTMLButtonElement>(".worklog-toggle")!.click();
-    const oldRaw = Array.from(
-      document.querySelectorAll<HTMLDetailsElement>(".worklog-raw"),
-    ).find((details) =>
-      details.parentElement?.textContent?.includes("Old entry"),
-    )!;
-    oldRaw.open = true;
-    oldRaw.dispatchEvent(new document.defaultView!.Event("toggle"));
+    document.querySelector<HTMLButtonElement>(".worklog-raw-toggle")!.click();
 
     renderFleet(
       fleet("mini", [], [repository(currentEntries.slice(1))]),
@@ -2471,46 +2535,19 @@ describe("local dashboard rendering", () => {
     );
     renderFleet(fleet("mini", [], [repository(currentEntries)]), document, NOW);
 
-    const restoredOldRaw = Array.from(
-      document.querySelectorAll<HTMLDetailsElement>(".worklog-raw"),
-    ).find((details) =>
-      details.parentElement?.textContent?.includes("Old entry"),
+    expect(document.querySelectorAll(".worklog-raw-toggle")).toHaveLength(1);
+    expect(document.querySelector(".worklog-raw-toggle")?.textContent).toBe(
+      "Hide raw entries",
     );
-    expect(restoredOldRaw?.open).toBe(false);
+    expect(
+      Array.from(
+        document.querySelectorAll<HTMLElement>(".worklog-raw"),
+        (raw) => raw.hidden,
+      ),
+    ).toEqual(Array(7).fill(false));
   });
 
-  test("drops raw-entry disclosure state when worklog data intervenes without entries", () => {
-    for (const intervening of [
-      { status: "available", data: { entries: [] }, warnings: [] },
-      { status: "unavailable", warnings: [] },
-    ]) {
-      const document = dashboardDocument();
-      const entry = {
-        date: "2026-08-16",
-        time: "09:00",
-        text: "- 2026-08-16 09:00 UTC - Same-key entry.",
-      };
-      const repository = (worklog: unknown) => richRepository({ worklog });
-      const available = {
-        status: "available",
-        data: { entries: [entry] },
-        warnings: [],
-      };
-      renderFleet(fleet("mini", [], [repository(available)]), document, NOW);
-      const raw = document.querySelector<HTMLDetailsElement>(".worklog-raw")!;
-      raw.open = true;
-      raw.dispatchEvent(new document.defaultView!.Event("toggle"));
-
-      renderFleet(fleet("mini", [], [repository(intervening)]), document, NOW);
-      renderFleet(fleet("mini", [], [repository(available)]), document, NOW);
-
-      expect(
-        document.querySelector<HTMLDetailsElement>(".worklog-raw")?.open,
-      ).toBe(false);
-    }
-  });
-
-  test("renders worklog event chips, sentence bodies, raw fallbacks, and safe inline highlights", () => {
+  test("renders worklog metadata, panel raw entries, and safe inline highlights", () => {
     const document = dashboardDocument();
     const sha = "0123456789abcdef0123456789abcdef01234567";
     const events = [
@@ -2529,7 +2566,7 @@ describe("local dashboard rendering", () => {
     const entries = events.map(([sentence], index) => ({
       date: "2026-08-16",
       time: `${String(index).padStart(2, "0")}:00`,
-      text: `- 2026-08-16 ${String(index).padStart(2, "0")}:00 UTC - ${sentence} Follow-up has T27, PR #12, issue #34, ${sha}, and \`literal code\`.`,
+      text: `- 2026-08-16 ${String(index).padStart(2, "0")}:00 UTC - ${sentence} Follow-up has T27, PR #12, issue #34, ${sha}, \`literal code\`, and https://github.com/example/factory-ui/issues/47.`,
     }));
     entries.push({
       date: "2026-08-15",
@@ -2549,10 +2586,12 @@ describe("local dashboard rendering", () => {
     expect(
       rendered
         .slice(1)
-        .map(
-          (entry) => entry.querySelector(".worklog-event-chip")?.textContent,
-        ),
-    ).toEqual(events.map(([, event]) => event).reverse());
+        .map((entry) => entry.querySelector(".worklog-event")?.textContent),
+    ).toEqual(
+      events
+        .map(([, event]) => (event === "other" ? undefined : event))
+        .reverse(),
+    );
     const opened = rendered[events.length]!;
     expect(opened.querySelector(".worklog-summary")?.textContent).toBe(
       "T27 implemented and opened as PR #12.",
@@ -2572,12 +2611,16 @@ describe("local dashboard rendering", () => {
         (code) => code.textContent,
       ),
     ).toContain("literal code");
-    expect(opened.querySelector("details summary")?.textContent).toBe(
-      "Raw entry",
+    expect(panel.querySelectorAll(".worklog-raw-toggle")).toHaveLength(1);
+    expect(opened.querySelector("details")).toBeNull();
+    expect(opened.querySelector<HTMLElement>(".worklog-raw")?.hidden).toBe(
+      true,
     );
-    expect(opened.querySelector("details")?.open).toBe(false);
-    expect(opened.querySelector("details pre")?.textContent).toContain(sha);
-    expect(opened.querySelector("details pre")?.textContent).toContain("UTC -");
+    panel.querySelector<HTMLButtonElement>(".worklog-raw-toggle")!.click();
+    expect(opened.querySelector(".worklog-raw")?.textContent).toContain(sha);
+    expect(opened.querySelector(".worklog-raw")?.textContent).toContain(
+      "UTC -",
+    );
     expect(
       Array.from(
         opened.querySelectorAll<HTMLAnchorElement>("a"),
@@ -2589,6 +2632,7 @@ describe("local dashboard rendering", () => {
         "https://github.com/example/factory-ui/pull/12",
         "https://github.com/example/factory-ui/issues/34",
         `https://github.com/example/factory-ui/commit/${sha}`,
+        "https://github.com/example/factory-ui/issues/47",
       ]),
     );
     opened.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => {
@@ -2596,9 +2640,7 @@ describe("local dashboard rendering", () => {
       expect(link.rel).toBe("noopener noreferrer");
     });
     const malformed = rendered[0]!;
-    expect(malformed.querySelector(".worklog-event-chip")?.textContent).toBe(
-      "other",
-    );
+    expect(malformed.querySelector(".worklog-event")).toBeNull();
     expect(malformed.querySelector(".worklog-summary")?.textContent).toBe(
       "not a worklog stamp <em>at all</em>",
     );
@@ -2636,7 +2678,9 @@ describe("local dashboard rendering", () => {
       ),
     ).toHaveLength(0);
     const references = Array.from(
-      panel.querySelectorAll<HTMLElement>(".worklog-reference"),
+      panel.querySelectorAll<HTMLElement>(
+        ".worklog-summary .worklog-reference, .worklog-body .worklog-reference",
+      ),
     );
     expect(references.map((reference) => reference.tagName)).toEqual([
       "CODE",
@@ -3272,6 +3316,10 @@ describe("fleet summary and machine tabs", () => {
 
     const strip = document.querySelector(".routing-strip")!;
     expect(document.querySelectorAll(".routing-strip")).toHaveLength(1);
+    expect(strip.classList).toContain("panel");
+    expect(strip.classList).toContain("routing-panel");
+    expect(strip.querySelector(".panel-title")?.textContent).toBe("Routing");
+    expect(strip.nextElementSibling?.classList).toContain("repository-grid");
     expect(strip.querySelector(".routing-defaults")?.textContent).toBe(
       "default openai/default · small opencode/small",
     );
@@ -3504,11 +3552,24 @@ describe("fleet summary and machine tabs", () => {
         document.querySelectorAll('#machine-tabs [role="tab"]'),
         (tab) => tab.textContent,
       ),
-    ).toEqual([
-      "miniHELDQuestions 1",
-      "macbookQuestions Unavailable",
-      "legionQuestions Unavailable",
-    ]);
+    ).toEqual(["miniHELD1 question", "macbook?", "legion?"]);
+    expect(
+      document.querySelectorAll("#machine-tabs .question-badge"),
+    ).toHaveLength(3);
+    expect(
+      Array.from(
+        document.querySelectorAll<HTMLElement>(
+          "#machine-tabs .question-badge-unavailable",
+        ),
+        (badge) => badge.title,
+      ),
+    ).toEqual(["Questions unavailable", "Questions unavailable"]);
+    expect(
+      document.querySelector("#machine-tabs .held-badge")?.classList,
+    ).toContain("chip-danger");
+    expect(
+      summaryRow(document, "mini")?.querySelector(".held-badge")?.classList,
+    ).toContain("chip-danger");
     expect(summaryCells(document, "mini")).toEqual([
       "mini",
       "RUNNING",
@@ -3815,7 +3876,7 @@ describe("fleet summary and machine tabs", () => {
         document.querySelectorAll('#machine-tabs [role="tab"]'),
         (tab) => tab.textContent,
       ),
-    ).toEqual([`${hostile}HELDQuestions 1`, `${hostile}Questions Unavailable`]);
+    ).toEqual([`${hostile}HELD1 question`, `${hostile}?`]);
     expect(
       document.querySelectorAll("script, img, [onerror], [onclick]"),
     ).toHaveLength(0);
@@ -3875,9 +3936,10 @@ describe("repository strips and sub-tabs", () => {
       panel.querySelectorAll<HTMLElement>('[role="tabpanel"]'),
     );
     expect(tabs.map((tab) => tab.textContent)).toEqual([
-      "alphaHELDQuestions 1",
-      "betaQuestions 0",
+      "alphaHELD1 question",
+      "beta",
     ]);
+    expect(tabs[1]?.querySelector(".question-badge")).toBeNull();
     expect(tabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual([
       "true",
       "false",
@@ -3888,7 +3950,7 @@ describe("repository strips and sub-tabs", () => {
     });
     expect(
       document.querySelector('#machine-tabs [role="tab"]')?.textContent,
-    ).toBe("miniHELDQuestions 1");
+    ).toBe("miniHELD1 question");
     expect(summaryCells(document, "mini").slice(4, 6)).toEqual(["HELD", "1"]);
   });
 

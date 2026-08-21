@@ -331,7 +331,8 @@ p {
 }
 
 #fleet-summary {
-  width: 100%;
+  /* Keep valid unbroken identifiers in their own columns; the wrapper scrolls. */
+  width: max-content;
   min-width: 68rem;
   table-layout: fixed;
   border-collapse: collapse;
@@ -339,7 +340,8 @@ p {
 }
 
 .repository-summary {
-  width: 100%;
+  /* A configured repository name is an identifier, not arbitrary prose. */
+  width: max-content;
   min-width: 89rem;
   table-layout: fixed;
   border-collapse: collapse;
@@ -880,7 +882,8 @@ p {
 }
 
 .review-strip table {
-  width: 100%;
+  /* Reviewer IDs and chips must widen the internal scroll area, not overlap. */
+  width: max-content;
   min-width: 76rem;
   table-layout: fixed;
   border-collapse: collapse;
@@ -1119,7 +1122,8 @@ a:focus-visible {
 }
 
 .task-table {
-  width: 100%;
+  /* Long valid task IDs retain their spelling and widen the internal scroller. */
+  width: max-content;
   min-width: 42rem;
   table-layout: fixed;
   border-collapse: collapse;

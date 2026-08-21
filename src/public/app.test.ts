@@ -1298,6 +1298,17 @@ describe("local dashboard rendering", () => {
     expect(css).toMatch(/#fleet-summary th:nth-child\(1\)\s*,/s);
     expect(css).toMatch(/\.repository-summary th:nth-child\(1\)\s*\{/s);
     expect(css).toMatch(/\.review-strip th:nth-child\(1\)\s*\{/s);
+    for (const selector of [
+      "#fleet-summary",
+      ".repository-summary",
+      ".review-strip table",
+      ".task-table",
+    ]) {
+      const escaped = selector.replace(/[.#]/g, "\\$&");
+      expect(css).toMatch(
+        new RegExp(`${escaped}\\s*\\{[^}]*width: max-content;`, "s"),
+      );
+    }
   });
 
   test("wraps only long text while keeping identifiers and pills intact", async () => {

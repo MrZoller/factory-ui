@@ -2364,11 +2364,7 @@ function renderSummaryRow(row, summary) {
   const holdCell = textElement(
     documentRoot,
     "td",
-    summary.hold === true
-      ? ""
-      : summary.hold === "Unavailable"
-        ? "Unavailable"
-        : "—",
+    summary.hold === true ? "" : summary.hold === false ? "—" : summary.hold,
     summaryCellClass(summary.hold === false ? "—" : summary.hold),
   );
   if (summary.hold === true)

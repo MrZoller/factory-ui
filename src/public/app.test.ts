@@ -1379,7 +1379,15 @@ describe("local dashboard rendering", () => {
     expect(css).toMatch(
       /\.numeric-cell\s*\{[^}]*text-align:\s*right !important;[^}]*font-variant-numeric:\s*tabular-nums;/s,
     );
-    expect(css).toMatch(/--color-focus:\s*(?!#fff(?:fff)?\b)/);
+    expect(
+      Array.from(
+        css.matchAll(/--color-focus:\s*([^;]+);/g),
+        (match) => match[1]?.trim() ?? "",
+      ),
+    ).toSatisfy((values) =>
+      values.every((value) => !/^#fff(?:fff)?\b/i.test(value)),
+    );
+    expect(css).toMatch(/\.empty\s*\{[^}]*color:\s*var\(--color-muted\);/s);
     expect(css.match(/text-transform:\s*uppercase;/g)).toHaveLength(5);
     expect(css.match(/letter-spacing:/g)).toHaveLength(5);
     for (const selector of [
@@ -3597,6 +3605,28 @@ describe("fleet summary and machine tabs", () => {
       "Unavailable",
       "Unavailable",
       "1",
+    ]);
+
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          richRepository({ name: "available" }),
+          richRepository({
+            name: "unavailable",
+            state: { status: "unavailable", warnings: [] },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+    expect(summaryCells(document, "mini").slice(2, 6)).toEqual([
+      "Unknown",
+      "Unknown",
+      "Unknown",
+      "2",
     ]);
   });
 

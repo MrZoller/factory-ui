@@ -366,6 +366,19 @@ describe("driver liveness freshness", () => {
     expect(panel.textContent).not.toContain("Liveness checked");
     expect(panel.querySelector("p.age")).toBeNull();
     expect(panel.textContent).toContain("Source age1m ago");
+    expect(
+      Array.from(
+        panel.querySelectorAll(".timing-stamp"),
+        (node) => node.textContent,
+      ),
+    ).toEqual([
+      "8/16/2026, 11:00:00 AM",
+      "8/16/2026, 11:59:00 AM (59m 0s)",
+      "8/16/2026, 11:30:00 AM",
+      "8/16/2026, 11:58:00 AM",
+      "8/16/2026, 11:40:00 AM",
+      "8/16/2026, 11:50:00 AM",
+    ]);
   });
 
   test("shows an old liveness check in the stale style", () => {
@@ -1264,6 +1277,47 @@ describe("local dashboard rendering", () => {
     expect(css).toMatch(/\.task-list-scroll\s*\{[^}]*overflow: auto;/s);
     expect(css).toMatch(/\.task-table-scroll\s*\{[^}]*overflow-x: auto;/s);
     expect(css).toMatch(/\.task-table thead th\s*\{[^}]*position: sticky;/s);
+    expect(css).toMatch(/\.task-table\s*\{[^}]*table-layout: fixed;/s);
+    expect(css).not.toMatch(/\.task-table\s*\{[^}]*min-width: 42rem;/s);
+  });
+
+  test("sizes summary and review tables instead of squeezing labels", async () => {
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+    for (const selector of [
+      "#fleet-summary",
+      ".repository-summary",
+      ".review-strip table",
+    ]) {
+      const escaped = selector.replace(/[.#]/g, "\\$&");
+      expect(css).toMatch(
+        new RegExp(`${escaped}\\s*\\{[^}]*table-layout: fixed;`, "s"),
+      );
+    }
+    expect(css).toMatch(/#fleet-summary th:nth-child\(1\)\s*,/s);
+    expect(css).toMatch(/\.repository-summary th:nth-child\(1\)\s*\{/s);
+    expect(css).toMatch(/\.review-strip th:nth-child\(1\)\s*\{/s);
+  });
+
+  test("wraps only long text while keeping identifiers and pills intact", async () => {
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+    expect(css).toMatch(
+      /\.task-title\s*,[^{]*\{[^}]*overflow-wrap: anywhere;/s,
+    );
+    expect(css).toMatch(/\.facts dd\s*,[^{]*\{[^}]*overflow-wrap: anywhere;/s);
+    expect(css).toMatch(/\.warning-code\s*\{[^}]*white-space: nowrap;/s);
+    expect(css).toMatch(/\.warning-source\s*\{[^}]*white-space: nowrap;/s);
+    expect(css).toMatch(/\.task-id\s*\{[^}]*white-space: nowrap;/s);
+    expect(css).toMatch(/\.task-size\s*\{[^}]*white-space: nowrap;/s);
+    expect(css).toMatch(
+      /\.review-strip tbody th\s*\{[^}]*white-space: nowrap;/s,
+    );
+    expect(css).toMatch(
+      /\.review-strip tbody td:nth-child\(2\)\s*\{[^}]*white-space: nowrap;/s,
+    );
+    expect(css).toMatch(/\.timing-stamp\s*\{[^}]*white-space: nowrap;/s);
+    expect(css).not.toMatch(
+      /(?:#fleet-summary|\.repository-summary|\.review-strip|\.task-table) th\s*,[^}]*overflow-wrap: anywhere;/s,
+    );
   });
 
   test("renders validated GitHub links", () => {

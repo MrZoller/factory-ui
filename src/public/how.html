@@ -10,25 +10,31 @@
   <body>
     <main>
       <header class="dashboard-header how-header">
-        <div class="wordmark-lockup">
-          <svg
-            class="factory-mark"
-            viewBox="0 0 40 40"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <path d="M5 8h12v8H5zM23 8h12v8H23zM14 24h12v8H14z" />
-            <path class="factory-mark-path" d="M11 16v4h9m9-4v4h-9v4" />
-          </svg>
-          <div>
-            <p class="eyebrow">Software factory fleet</p>
-            <h1 class="wordmark"><span>Factory</span></h1>
+        <div class="header-primary">
+          <div class="wordmark-lockup">
+            <svg
+              class="factory-mark"
+              viewBox="0 0 40 40"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M5 8h12v8H5zM23 8h12v8H23zM14 24h12v8H14z" />
+              <path class="factory-mark-path" d="M11 16v4h9m9-4v4h-9v4" />
+            </svg>
+            <div>
+              <p class="eyebrow">Software factory fleet</p>
+              <h1 class="wordmark"><span>Factory</span></h1>
+            </div>
           </div>
+          <p class="machine-subtitle">
+            A live map from intent to merged change
+          </p>
         </div>
-        <p class="machine-subtitle">A live map from intent to merged change</p>
-        <nav class="header-actions" aria-label="Dashboard pages">
-          <a href="/">Fleet dashboard</a>
-        </nav>
+        <div class="header-secondary">
+          <nav class="header-actions" aria-label="Dashboard pages">
+            <a class="button button-secondary" href="/">Fleet dashboard</a>
+          </nav>
+        </div>
       </header>
       <p id="how-error" role="alert"></p>
       <section class="content-section how-intro" aria-labelledby="how-heading">

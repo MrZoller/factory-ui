@@ -226,7 +226,12 @@ function renderOperators(documentRoot) {
   }
   const edges = element(documentRoot, "div", undefined, "operator-edges");
   for (const edge of OPERATOR_EDGES) {
-    const line = element(documentRoot, "p", edge.label, "operator-edge");
+    const line = element(
+      documentRoot,
+      "p",
+      edge.label,
+      "chip chip-info operator-edge",
+    );
     line.dataset.edge = edge.id;
     if (edge.alternative) line.classList.add("operator-edge-alternative");
     edges.append(line);
@@ -271,11 +276,21 @@ function renderPipeline(documentRoot, fleet) {
     stage.append(roles);
     if (GATES.has(phase.id)) {
       stage.append(
-        element(documentRoot, "p", GATES.get(phase.id), "approval-gate"),
+        element(
+          documentRoot,
+          "p",
+          GATES.get(phase.id),
+          "chip chip-warn chip-dashed approval-gate",
+        ),
       );
     }
     if (phase.id === "ship") {
-      const hold = element(documentRoot, "aside", undefined, "hold-branch");
+      const hold = element(
+        documentRoot,
+        "aside",
+        undefined,
+        "chip chip-warn chip-dashed hold-branch",
+      );
       hold.append(
         element(documentRoot, "strong", "Major / hold"),
         element(documentRoot, "span", "Human merge authority"),
@@ -321,7 +336,7 @@ export function renderHow(machines, documentRoot = document) {
       documentRoot,
       "button",
       machine.identity,
-      "machine-tab",
+      "tab machine-tab",
     );
     const panel = element(
       documentRoot,

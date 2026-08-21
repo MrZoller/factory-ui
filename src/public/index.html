@@ -10,27 +10,33 @@
   <body>
     <main>
       <header class="dashboard-header">
-        <div class="wordmark-lockup">
-          <svg
-            class="factory-mark"
-            viewBox="0 0 40 40"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <path d="M5 8h12v8H5zM23 8h12v8H23zM14 24h12v8H14z" />
-            <path class="factory-mark-path" d="M11 16v4h9m9-4v4h-9v4" />
-          </svg>
-          <div>
-            <p class="eyebrow">Software factory fleet</p>
-            <h1 class="wordmark"><span>Factory</span></h1>
+        <div class="header-primary">
+          <div class="wordmark-lockup">
+            <svg
+              class="factory-mark"
+              viewBox="0 0 40 40"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M5 8h12v8H5zM23 8h12v8H23zM14 24h12v8H14z" />
+              <path class="factory-mark-path" d="M11 16v4h9m9-4v4h-9v4" />
+            </svg>
+            <div>
+              <p class="eyebrow">Software factory fleet</p>
+              <h1 class="wordmark"><span>Factory</span></h1>
+            </div>
           </div>
+          <p id="machine" class="machine-subtitle">Loading local machine…</p>
         </div>
-        <p id="machine" class="machine-subtitle">Loading local machine…</p>
-        <p id="generated" class="age">Waiting for snapshot…</p>
-        <nav class="header-actions" aria-label="Dashboard pages">
-          <a href="/how">How it works</a>
-          <button id="refresh" type="button">Refresh</button>
-        </nav>
+        <div class="header-secondary">
+          <p id="generated" class="age">Waiting for snapshot…</p>
+          <nav class="header-actions" aria-label="Dashboard pages">
+            <a class="button button-secondary" href="/how">How it works</a>
+            <button id="refresh" class="button button-primary" type="button">
+              Refresh
+            </button>
+          </nav>
+        </div>
       </header>
       <p id="error" role="alert"></p>
       <section
@@ -47,9 +53,9 @@
                 <th scope="col">Current task</th>
                 <th scope="col">PR</th>
                 <th scope="col">Hold</th>
-                <th scope="col">Questions</th>
-                <th scope="col">Data age</th>
-                <th scope="col">Cost</th>
+                <th class="numeric-cell" scope="col">Questions</th>
+                <th class="numeric-cell" scope="col">Data age</th>
+                <th class="numeric-cell" scope="col">Cost</th>
               </tr>
             </thead>
             <tbody></tbody>

@@ -1008,12 +1008,17 @@ function appendReviewCrossChecks(parent, checks) {
   const mismatches = checks.filter(
     (check) => check.comparable && check.reported !== check.mechanical,
   ).length;
+  const unverified = checks.filter((check) => !check.comparable).length;
+  const summaryParts = [];
+  if (mismatches > 0)
+    summaryParts.push(`${mismatches} mismatch${mismatches === 1 ? "" : "es"}`);
+  if (unverified > 0) summaryParts.push(`${unverified} unverified`);
   const details = parent.ownerDocument.createElement("details");
   details.className = "review-cross-checks";
   appendText(
     details,
     "summary",
-    mismatches === 0 ? "all match" : `${mismatches} mismatches`,
+    summaryParts.length === 0 ? "all match" : summaryParts.join(" · "),
     mismatches === 0
       ? "review-cross-check-summary muted"
       : "review-cross-check-summary review-mismatch",
@@ -2547,7 +2552,10 @@ function renderTabLabel(tab, summary) {
       "?",
       "chip chip-muted badge question-badge question-badge-unavailable",
     );
-    unavailable.title = "Questions unavailable";
+    unavailable.title =
+      summary.questions === "Unknown"
+        ? "Questions unknown"
+        : "Questions unavailable";
     children.push(unavailable);
   }
   tab.replaceChildren(...children);

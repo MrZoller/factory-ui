@@ -1453,7 +1453,9 @@ describe("local dashboard rendering", () => {
     expect(css).toMatch(/\.task-table-scroll\s*\{[^}]*overflow-x: auto;/s);
     expect(css).toMatch(/\.task-table thead th\s*\{[^}]*position: sticky;/s);
     expect(css).toMatch(/\.task-table\s*\{[^}]*table-layout: fixed;/s);
-    expect(css).toMatch(/\.task-table\s*\{[^}]*min-width: 42rem;/s);
+    expect(css).toMatch(
+      /\.task-table\s*\{[^}]*min-width: max\(42rem, 100%\);/s,
+    );
     expect(css).toMatch(/\.warnings-panel ul\s*\{[^}]*overflow-x: auto;/s);
     expect(css).toMatch(/\.warning-row\s*\{[^}]*min-width: max-content;/s);
     expect(css).toMatch(
@@ -1513,6 +1515,10 @@ describe("local dashboard rendering", () => {
     expect(css).toMatch(
       /\.review-strip tbody td:nth-child\(2\)\s*\{[^}]*white-space: nowrap;/s,
     );
+    expect(css).toMatch(
+      /\.review-reviewer-average\s*\{[^}]*white-space: nowrap;/s,
+    );
+    expect(css).toMatch(/\.unknown:not\(\.chip-muted\)\s*,/s);
     expect(css).toMatch(/\.timing-stamp\s*\{[^}]*white-space: nowrap;/s);
     expect(css).not.toMatch(
       /(?:#fleet-summary|\.repository-summary|\.review-strip|\.task-table) th\s*,[^}]*overflow-wrap: anywhere;/s,
@@ -2417,6 +2423,17 @@ describe("local dashboard rendering", () => {
     )!;
     expect(allMatch.textContent).toBe("all match");
     expect(allMatch.classList).toContain("muted");
+
+    delete metrics.data.tasks.T35.pr;
+    const unverifiedDocument = dashboardDocument();
+    renderFleet(fleet("mini", [], [repository]), unverifiedDocument, NOW);
+    const unverified = unverifiedDocument.querySelector(
+      ".review-cross-checks > summary",
+    )!;
+    expect(unverified.textContent).toBe("1 unverified");
+    expect(unverifiedDocument.querySelector(".review-cross-checks")?.textContent).toContain(
+      "T35 claude: 2r vs unknown mechanical",
+    );
   });
 
   test("keeps hostile reviewer identifiers and metric strings literal and inert", () => {
@@ -3611,6 +3628,24 @@ describe("fleet summary and machine tabs", () => {
         "machine",
       ),
     ).toBe("mini");
+  });
+
+  test("distinguishes unknown from unavailable question badges", () => {
+    const document = dashboardDocument();
+    const unknownQuestions = richRepository({
+      questions: { status: "available", warnings: [] },
+    });
+
+    renderFleet(fleet("mini", [], [unknownQuestions]), document, NOW);
+
+    expect(
+      Array.from(
+        document.querySelectorAll<HTMLElement>(
+          ".question-badge-unavailable",
+        ),
+        (badge) => badge.title,
+      ),
+    ).toEqual(["Questions unknown", "Questions unknown"]);
   });
 
   test("uses em dashes for empty values and Unavailable for failed readers", () => {

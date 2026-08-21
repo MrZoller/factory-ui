@@ -1022,6 +1022,10 @@ p {
   display: block;
 }
 
+.review-reviewer-average {
+  white-space: nowrap;
+}
+
 .review-reviewer-average + .review-reviewer-average,
 .review-cross-check + .review-cross-check {
   margin-top: var(--space-1);
@@ -1060,7 +1064,7 @@ p {
 }
 
 .unavailable,
-.unknown,
+.unknown:not(.chip-muted),
 .warnings-panel h4 {
   color: var(--color-warn);
 }
@@ -1211,9 +1215,9 @@ a:focus-visible {
 }
 
 .task-table {
-  /* Long valid task IDs retain their spelling and widen the internal scroller. */
+  /* Fill wide panels while long task IDs can still widen the internal scroller. */
   width: max-content;
-  min-width: 42rem;
+  min-width: max(42rem, 100%);
   table-layout: fixed;
   border-collapse: collapse;
 }

@@ -139,8 +139,15 @@ function formatListPrice(value) {
 
 function appendModelDetails(item, model, documentRoot) {
   if (!model) return;
-  item.append(element(documentRoot, "p", model.name, "agent-model-name"));
-  item.append(
+  const details = element(
+    documentRoot,
+    "details",
+    undefined,
+    "agent-model-details",
+  );
+  details.append(
+    element(documentRoot, "summary", "Limits & list prices"),
+    element(documentRoot, "p", model.name, "agent-model-name"),
     element(
       documentRoot,
       "p",
@@ -149,11 +156,12 @@ function appendModelDetails(item, model, documentRoot) {
     ),
   );
   if (model.source === null) {
-    item.append(element(documentRoot, "p", "Unpriced", "agent-list-prices"));
+    details.append(element(documentRoot, "p", "Unpriced", "agent-list-prices"));
+    item.append(details);
     return;
   }
   const prices = model.pricePerMillion;
-  item.append(
+  details.append(
     element(
       documentRoot,
       "p",
@@ -161,6 +169,7 @@ function appendModelDetails(item, model, documentRoot) {
       "agent-list-prices",
     ),
   );
+  item.append(details);
 }
 
 function renderRole(documentRoot, role, routing, fleet) {
@@ -173,6 +182,7 @@ function renderRole(documentRoot, role, routing, fleet) {
     return item;
   }
   const routeLine = element(documentRoot, "p", undefined, "agent-route");
+  routeLine.title = `${route.provider}/${route.model}`;
   routeLine.append(
     element(
       documentRoot,
@@ -233,7 +243,8 @@ function renderOperators(documentRoot) {
       "chip chip-info operator-edge",
     );
     line.dataset.edge = edge.id;
-    if (edge.alternative) line.classList.add("operator-edge-alternative");
+    if (edge.alternative)
+      line.classList.add("chip-dashed", "operator-edge-alternative");
     edges.append(line);
   }
   lane.append(
@@ -254,6 +265,19 @@ function renderPipeline(documentRoot, fleet) {
   const routing = routingFor(fleet);
   const diagram = element(documentRoot, "div", undefined, "pipeline-diagram");
   diagram.append(renderOperators(documentRoot));
+  const stages = element(documentRoot, "div", undefined, "pipeline-stages");
+  const gate = (label, detail) => {
+    const node = element(
+      documentRoot,
+      "aside",
+      undefined,
+      "chip chip-warn chip-dashed gate",
+    );
+    node.append(element(documentRoot, "strong", label));
+    if (detail)
+      node.append(element(documentRoot, "span", detail, "gate-detail"));
+    return node;
+  };
   for (const [index, phase] of PIPELINE.entries()) {
     const stage = element(documentRoot, "section", undefined, "pipeline-stage");
     stage.dataset.phase = phase.id;
@@ -275,30 +299,14 @@ function renderPipeline(documentRoot, fleet) {
     }
     stage.append(roles);
     if (GATES.has(phase.id)) {
-      stage.append(
-        element(
-          documentRoot,
-          "p",
-          GATES.get(phase.id),
-          "chip chip-warn chip-dashed approval-gate",
-        ),
-      );
+      stage.append(gate(GATES.get(phase.id)));
     }
     if (phase.id === "ship") {
-      const hold = element(
-        documentRoot,
-        "aside",
-        undefined,
-        "chip chip-warn chip-dashed hold-branch",
-      );
-      hold.append(
-        element(documentRoot, "strong", "Major / hold"),
-        element(documentRoot, "span", "Human merge authority"),
-      );
-      stage.append(hold);
+      stage.append(gate("Major / hold", "Human merge authority"));
     }
-    diagram.append(stage);
+    stages.append(stage);
   }
+  diagram.append(stages);
   return diagram;
 }
 

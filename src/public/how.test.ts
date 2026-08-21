@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
 
+const stylesheet = await Bun.file(
+  new URL("./styles.css", import.meta.url),
+).text();
+const howHtml = await Bun.file(new URL("./how.html", import.meta.url)).text();
+
 interface PipelineStage {
   id: string;
 }
@@ -183,6 +188,12 @@ describe("how factory works page", () => {
     expect(lane.querySelector("[data-edge=direct]")?.classList).toContain(
       "operator-edge-alternative",
     );
+    expect(lane.querySelector("[data-edge=direct]")?.classList).toContain(
+      "chip-dashed",
+    );
+    expect(lane.querySelector("[data-edge=assisted]")?.classList).not.toContain(
+      "chip-dashed",
+    );
     expect(lane.textContent).toContain(
       "Everything below runs identically either way.",
     );
@@ -202,23 +213,22 @@ describe("how factory works page", () => {
       "shepherd",
       "merge",
     ]);
+    const stages = document.querySelector(".pipeline-stages")!;
     expect(
-      Array.from(document.querySelectorAll(".pipeline-stage"), (stage) =>
+      Array.from(stages.querySelectorAll(".pipeline-stage"), (stage) =>
         stage.getAttribute("data-phase"),
       ),
     ).toEqual(PIPELINE.map(({ id }) => id));
-    expect(document.querySelector(".approval-gate")?.textContent).toBe(
+    expect(
+      Array.from(
+        document.querySelectorAll(".gate"),
+        (gate) => gate.textContent,
+      ),
+    ).toEqual([
       "Spec approval",
-    );
-    expect(document.querySelectorAll(".approval-gate")[1]?.textContent).toBe(
       "Plan approval",
-    );
-    expect(document.querySelector(".hold-branch")?.textContent).toContain(
-      "Major / hold",
-    );
-    expect(document.querySelector(".hold-branch")?.textContent).toContain(
-      "Human merge authority",
-    );
+      "Major / holdHuman merge authority",
+    ]);
     expect(
       Array.from(
         document.querySelectorAll<HTMLElement>(".agent-node"),
@@ -252,19 +262,39 @@ describe("how factory works page", () => {
       document.querySelector('[data-role="driver"] .agent-cost')?.textContent,
     ).toBe("$1.25 metered");
     const driver = document.querySelector('[data-role="driver"]')!;
-    expect(driver.querySelector(".agent-model-name")?.textContent).toBe(
+    expect(driver.querySelector(".agent-route")?.getAttribute("title")).toBe(
+      "openai/gpt-5.6",
+    );
+    const details = driver.querySelector<HTMLDetailsElement>(
+      ".agent-model-details",
+    )!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector("summary")?.textContent).toBe(
+      "Limits & list prices",
+    );
+    expect(details.querySelector(".agent-model-name")?.textContent).toBe(
       "GPT 5.6",
     );
-    expect(driver.querySelector(".agent-model-limits")?.textContent).toBe(
+    expect(details.querySelector(".agent-model-limits")?.textContent).toBe(
       "Context 1.05M · Max output 128K",
     );
-    expect(driver.querySelector(".agent-list-prices")?.textContent).toBe(
+    expect(details.querySelector(".agent-list-prices")?.textContent).toBe(
       "List / M · input $1.25 · output $10.00 · cache read $0.25 · cache write Unpriced",
     );
+    const smallModelDetails = document.querySelector(
+      '[data-role="small_model"] .agent-model-details',
+    )!;
     expect(
-      document.querySelector('[data-role="small_model"] .agent-list-prices')
-        ?.textContent,
+      smallModelDetails.querySelector(".agent-list-prices")?.textContent,
     ).toBe("Unpriced");
+    expect(document.querySelectorAll(".agent-model-details")).toHaveLength(
+      ROLES.length,
+    );
+    ROLES.forEach(({ id }) => {
+      expect(
+        document.querySelectorAll(`[data-role="${id}"] > .agent-model-details`),
+      ).toHaveLength(1);
+    });
   });
 
   test("selects machines from the hash, supports keyboard tabs, and renders unavailable machines", () => {
@@ -321,6 +351,7 @@ describe("how factory works page", () => {
       '[data-role="architect"] .agent-route',
     )!;
     expect(route.textContent).toContain(hostile);
+    expect(route.getAttribute("title")).toBe(`${hostile}/${hostile}`);
     expect(
       document.querySelector('[data-role="architect"] .agent-model-name')
         ?.textContent,
@@ -405,5 +436,47 @@ describe("how factory works page", () => {
       document.activeElement?.closest<HTMLElement>(".how-machine-panel")
         ?.hidden,
     ).toBe(false);
+  });
+
+  test("uses responsive stage and operator grids without diagram overflow", () => {
+    expect(stylesheet).toMatch(
+      /\.pipeline-stages\s*\{[^}]*grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\)/s,
+    );
+    expect(stylesheet).toMatch(
+      /@media \(max-width: 79\.999rem\)[\s\S]*?\.pipeline-stages\s*\{[^}]*repeat\(3, minmax\(0, 1fr\)\)/,
+    );
+    expect(stylesheet).toMatch(
+      /@media \(max-width: 49\.999rem\)[\s\S]*?\.pipeline-stages,[\s\S]*?\.operator-nodes\s*\{[^}]*minmax\(0, 1fr\)/,
+    );
+    expect(stylesheet).toMatch(/\.operator-nodes\s*\{[^}]*repeat\(3, 1fr\)/s);
+    expect(stylesheet).toMatch(
+      /@media \(max-width: 79\.999rem\)[\s\S]*?\.operator-nodes\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/,
+    );
+    expect(stylesheet).not.toContain("min-width: 100rem");
+    expect(stylesheet).not.toMatch(/\.pipeline-stage\s*\{[^}]*min-height:/s);
+    expect(stylesheet).not.toMatch(/\.how-machine-panel\s*\{[^}]*overflow-x:/s);
+    expect(stylesheet).not.toContain('content: "↳"');
+  });
+
+  test("truncates model routes visually while retaining their full title", () => {
+    expect(stylesheet).toMatch(
+      /\.agent-route\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/s,
+    );
+  });
+
+  test("keeps the shared compact header and a single concise intro", () => {
+    const window = new Window();
+    const document = window.document;
+    document.documentElement.innerHTML = howHtml;
+
+    expect(
+      document.querySelector(".dashboard-header .header-primary"),
+    ).not.toBeNull();
+    expect(
+      document.querySelector(".dashboard-header .header-secondary"),
+    ).not.toBeNull();
+    expect(document.querySelectorAll(".how-intro h2")).toHaveLength(1);
+    expect(document.querySelectorAll(".how-intro > p")).toHaveLength(1);
+    expect(document.querySelector(".how-intro .eyebrow")).toBeNull();
   });
 });

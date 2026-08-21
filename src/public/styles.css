@@ -585,10 +585,15 @@ p {
 
 .pipeline-diagram {
   display: grid;
-  grid-template-columns: repeat(6, minmax(15rem, 1fr));
   gap: var(--space-4);
-  min-width: 100rem;
   padding: var(--space-3) var(--space-2) var(--space-5);
+}
+
+.pipeline-stages {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: stretch;
 }
 
 .operators-lane {
@@ -641,45 +646,23 @@ p {
 }
 
 .operator-edge {
+  max-width: 100%;
   padding: var(--space-1) var(--space-3);
-  border-left: 3px solid var(--color-brand-end);
   font: 700 var(--text-xs) / 1.5 var(--font-mono);
-}
-
-.operator-edge-alternative {
-  border: 1px dashed var(--color-warn);
-  color: var(--color-warn);
+  white-space: normal;
 }
 
 .operator-caption {
   margin-top: var(--space-2);
 }
 
-.how-machine-panel {
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-}
-
 .pipeline-stage {
-  position: relative;
-  min-height: 25rem;
   padding: var(--space-5);
   border: 1px solid var(--color-border);
   border-top: 0.25rem solid var(--color-brand-start);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
-}
-
-.pipeline-stage:not(:last-child)::after {
-  position: absolute;
-  z-index: 2;
-  top: 2rem;
-  right: calc(-1 * var(--space-4) - 0.45rem);
-  color: var(--color-brand-end);
-  content: "→";
-  font-size: var(--text-lg);
-  font-weight: 900;
 }
 
 .stage-number {
@@ -694,7 +677,6 @@ p {
 }
 
 .stage-detail {
-  min-height: 2.6rem;
   color: var(--color-muted);
   font-size: var(--text-sm);
 }
@@ -708,11 +690,11 @@ p {
 }
 
 .agent-node {
+  min-width: 0;
   padding: var(--space-3);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
   background: var(--color-surface-raised);
-  overflow-wrap: anywhere;
 }
 
 .agent-node h4,
@@ -725,8 +707,24 @@ p {
 }
 
 .agent-route {
+  min-width: 0;
+  overflow: hidden;
   margin-top: var(--space-2);
   font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-model-details {
+  margin-top: var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+.agent-model-details summary {
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 700;
 }
 
 .agent-cost,
@@ -749,29 +747,15 @@ p {
   font-weight: 700;
 }
 
-.approval-gate,
-.hold-branch {
-  margin-top: var(--space-5);
-  text-align: center;
-}
-
-.hold-branch {
+.gate {
   display: grid;
   gap: var(--space-1);
-  position: relative;
+  margin-top: var(--space-5);
   border-radius: var(--radius-sm);
   text-align: left;
 }
 
-.hold-branch::before {
-  position: absolute;
-  top: -1.15rem;
-  left: var(--space-4);
-  content: "↳";
-  font-size: var(--text-lg);
-}
-
-.hold-branch span {
+.gate-detail {
   color: var(--color-muted);
   font-weight: 500;
 }
@@ -842,8 +826,6 @@ p {
 .review-chip,
 .review-missing,
 .worklog-chip,
-.approval-gate,
-.hold-branch,
 .operator-edge {
   display: inline-block;
   width: fit-content;
@@ -884,6 +866,10 @@ p {
 
 .chip-dashed {
   border-style: dashed;
+}
+
+.chip.gate {
+  display: grid;
 }
 
 .held-badge {
@@ -1574,12 +1560,19 @@ a:focus-visible {
   background: var(--color-canvas);
 }
 
-/* Two cards per row from 800px through 1199px. */
-@media (max-width: 74.999rem) {
-  .operator-nodes {
-    grid-template-columns: repeat(3, minmax(13rem, 1fr));
+/* The process remains fully visible: three stages and two operators per row. */
+@media (max-width: 79.999rem) {
+  .pipeline-stages {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .operator-nodes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Two dashboard cards per row from 800px through 1199px. */
+@media (max-width: 74.999rem) {
   .panel-span-4,
   .panel-span-6,
   .panel-span-8 {
@@ -1594,6 +1587,11 @@ a:focus-visible {
 
 /* One card per row below 800px, preserving the desktop source order. */
 @media (max-width: 49.999rem) {
+  .pipeline-stages,
+  .operator-nodes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .dashboard-header,
   .header-primary,
   .header-secondary {

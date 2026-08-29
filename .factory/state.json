@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T52",
-  "branch": "factory/t52-liveness-log-overflow",
-  "pr": 66,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-29T21:04:03Z"
+  "updated": "2026-08-29T21:07:26Z"
 }

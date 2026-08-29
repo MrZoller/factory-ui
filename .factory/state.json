@@ -5,7 +5,7 @@
   "plan_approved": true,
   "current_task": "T52",
   "branch": "factory/t52-liveness-log-overflow",
-  "pr": null,
+  "pr": 66,
   "hold": false,
-  "updated": "2026-08-29T20:41:32Z"
+  "updated": "2026-08-29T21:02:00Z"
 }

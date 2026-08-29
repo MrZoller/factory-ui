@@ -14,7 +14,10 @@ import { resolveFactoryPath } from "../paths";
 // Re-export types for test convenience
 export type { LogsData, LogTiming, LogSourceAges };
 
-export const MAX_LOG_ENTRIES = 256;
+// The engine normally rotates logs far below this ceiling. Keep enough headroom
+// for long-lived repositories while retaining a fixed upper bound on directory
+// work; selection itself stores only the newest entry for each recognized kind.
+export const MAX_LOG_ENTRIES = 4_096;
 export const MAX_NARRATION_BYTES = 64 * 1024;
 export const MAX_NARRATION_LINES = 100;
 export const MAX_NARRATION_LINE_BYTES = 2_000;
@@ -33,6 +36,7 @@ export const LOGS_WARNING_CODES = [
   "LOG_UNAVAILABLE",
   "DRIVER_LOG_MISSING",
   "LOGS_EMPTY",
+  "LOGS_TOO_MANY_ENTRIES",
   "LOGS_UNAVAILABLE",
 ] as const;
 
@@ -348,11 +352,15 @@ export async function readFactoryLogsWithSelection(
     await verifyDirectory();
     const selected: Partial<Record<LogKind, SelectedLog>> = {};
     let entries = 0;
+    let entriesExceeded = false;
     try {
       const directory = await opendir(logsPath);
       for await (const entry of directory) {
         entries += 1;
-        if (entries > MAX_LOG_ENTRIES) throw new Error("too many log entries");
+        if (entries > MAX_LOG_ENTRIES) {
+          entriesExceeded = true;
+          break;
+        }
         const parsed = entry.isFile() ? parseLogName(entry.name) : null;
         if (parsed === null) {
           if (/^(driver|cycle|shepherd)-/.test(entry.name)) {
@@ -371,6 +379,20 @@ export async function readFactoryLogsWithSelection(
           selected[parsed.kind] = candidate;
       }
       await verifyDirectory();
+      if (entriesExceeded) {
+        return {
+          result: {
+            status: "unavailable",
+            warnings: [
+              warning(
+                "LOGS_TOO_MANY_ENTRIES",
+                "factory logs exceed the bounded directory scan",
+              ),
+            ],
+          },
+          driver: null,
+        };
+      }
 
       const data: LogsData = { narration: "", asOf: {} };
       let trusted: TrustedDriverLog | null = null;

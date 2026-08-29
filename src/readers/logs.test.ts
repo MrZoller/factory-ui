@@ -36,8 +36,8 @@ function hasData<T>(result: {
 
 describe("logs reader", () => {
   describe("constants", () => {
-    test("MAX_LOG_ENTRIES is 256", () => {
-      expect(MAX_LOG_ENTRIES).toBe(256);
+    test("MAX_LOG_ENTRIES is 4096", () => {
+      expect(MAX_LOG_ENTRIES).toBe(4_096);
     });
 
     test("MAX_NARRATION_BYTES is 65536", () => {
@@ -405,17 +405,39 @@ describe("logs reader", () => {
       ).toBe(true);
     });
 
-    test("returns CANNOT_VERIFY when logs exceed MAX_LOG_ENTRIES", async () => {
+    test("selects the newest driver and remains available above the former 256-entry limit", async () => {
       for (let i = 0; i < 257; i++) {
+        writeFileSync(
+          join(logsDir, `driver-20240101-120000-${i}.log`),
+          i === 256 ? "newest\n" : "older\n",
+        );
+      }
+      const result = await readFactoryLogsWithSelection(tempDir);
+
+      expect(result.result.status).toBe("available");
+      expect(result.driver?.path).toBe(
+        join(logsDir, "driver-20240101-120000-256.log"),
+      );
+      if (hasData(result.result)) {
+        expect(result.result.data.narration).toBe("newest\n");
+      }
+    });
+
+    test("rejects directories exceeding MAX_LOG_ENTRIES without returning a trusted driver", async () => {
+      for (let i = 0; i <= MAX_LOG_ENTRIES; i++) {
         writeFileSync(
           join(logsDir, `driver-20240101-120000-${i}.log`),
           "content",
         );
       }
+
       const result = await readFactoryLogsWithSelection(tempDir);
 
-      expect(result.result.status).toBe("unavailable");
-      expect(result.result.warnings[0]?.code).toBe("LOGS_UNAVAILABLE");
+      expect(result.result).toEqual({
+        status: "unavailable",
+        warnings: [expect.objectContaining({ code: "LOGS_TOO_MANY_ENTRIES" })],
+      });
+      expect(result.driver).toBeNull();
     });
 
     test("ignores subdirectories in logs", async () => {

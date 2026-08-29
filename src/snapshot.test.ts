@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { createFactoryFixture } from "./test-support";
+import type { TrustedDriverLog } from "./readers/logs";
 
 import {
   createFleetSnapshot,
@@ -131,6 +132,44 @@ describe("snapshot", () => {
       expect(result.state.status).toBe("available");
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps newest driver data usable through the snapshot above 256 logs", async () => {
+    const fixture = createFactoryFixture();
+    try {
+      for (let i = 0; i < 257; i++) {
+        fixture.writeDriverLog(
+          `driver-20240101-120000-${i}.log`,
+          i === 256 ? "newest driver narration\n" : "older driver narration\n",
+        );
+      }
+      let selectedDriver: TrustedDriverLog | null | undefined;
+
+      const result = await readRepositoryFactoryData(
+        { name: "factory-ui", path: fixture.root },
+        async (driver) => {
+          selectedDriver = driver;
+          return {
+            state: "RUNNING",
+            checkedAt: "2026-08-16T12:00:00.000Z",
+          };
+        },
+      );
+
+      expect(result.logs).toMatchObject({
+        status: "available",
+        data: { narration: "newest driver narration\n" },
+      });
+      expect(selectedDriver?.path).toEndWith(
+        join("logs", "driver-20240101-120000-256.log"),
+      );
+      expect(result.liveness).toEqual({
+        state: "RUNNING",
+        checkedAt: "2026-08-16T12:00:00.000Z",
+      });
+    } finally {
+      fixture.cleanup();
     }
   });
 

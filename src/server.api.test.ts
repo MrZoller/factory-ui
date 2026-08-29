@@ -9,6 +9,7 @@ import type {
 } from "./contracts";
 import { createRequestHandler } from "./server";
 import { readRepositoryFactoryData } from "./snapshot";
+import { MAX_LOG_ENTRIES } from "./readers/logs";
 import {
   CURRENT_SHEPHERD_LOG_NAME,
   createFactoryFixture,
@@ -290,6 +291,53 @@ describe("versioned read-only API", () => {
     expect(body.logs.warnings).not.toContainEqual(
       expect.objectContaining({ code: "LOGS_UNAVAILABLE" }),
     );
+  });
+
+  test("reports over-bound logs as unavailable through the repository API", async () => {
+    const fixture = createFactoryFixture();
+    fixtures.push(fixture);
+    await fixture.writeState({ project: "factory-ui", phase: "build" });
+    for (let i = 0; i <= MAX_LOG_ENTRIES; i++) {
+      fixture.writeDriverLog(
+        `driver-20240101-120000-${i}.log`,
+        "driver narration\n",
+      );
+    }
+
+    const handler = createRequestHandler(
+      config([{ name: "factory-ui", path: fixture.root }]),
+      {
+        repositorySnapshot: async (repository) => {
+          const data = await readRepositoryFactoryData(
+            repository,
+            async () => ({
+              state: "CANNOT_VERIFY",
+              checkedAt: "2026-08-16T12:00:00.000Z",
+            }),
+          );
+          return {
+            ...data,
+            status: "available",
+            project: "factory-ui",
+            phase: "build",
+          };
+        },
+      },
+    );
+    const response = await handler(
+      new Request("http://localhost/api/repo/factory-ui"),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.logs).toEqual({
+      status: "unavailable",
+      warnings: [expect.objectContaining({ code: "LOGS_TOO_MANY_ENTRIES" })],
+    });
+    expect(body.liveness).toEqual({
+      state: "CANNOT_VERIFY",
+      checkedAt: "2026-08-16T12:00:00.000Z",
+    });
   });
 
   test("builds all GitHub links from trusted data", async () => {

@@ -280,6 +280,6 @@ task.
   - deps: none
   - pr: 41
 
-- [ ] T48 (trivial) — parked review minors (batch)
+- [!] T48 (trivial) — parked review minors (batch)
   - PR #54: preserve per-machine model-disclosure open state and summary focus across `/how` peer-update rerenders.
   - PR #54: wrap valid unbroken model display names within compact `/how` disclosure cards.

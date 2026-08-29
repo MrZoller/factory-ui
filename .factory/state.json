@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T51",
-  "branch": "factory/t51-shepherd-log-names",
-  "pr": 65,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-29T20:39:30Z"
+  "updated": "2026-08-29T20:40:07Z"
 }

@@ -197,6 +197,142 @@ describe("snapshot", () => {
     }
   });
 
+  test("enriches an open question with bounded structured details and links from its exact blocked task", async () => {
+    const fixture = createFactoryFixture();
+    try {
+      await Promise.all([
+        fixture.writeState({ project: "factory-ui", phase: "build" }),
+        fixture.writePlan(`- [!] T7 (standard) — Choose the rollout
+  - acceptance: Fixes #17 and Fixes #23
+  - pr: 42
+  - deps: none
+- [!] T70 (standard) — Different task
+  - acceptance: Fixes #70
+  - pr: 70
+  - deps: none`),
+        fixture.writeQuestions(`## Q7 (task T7, open) — Which rollout?
+Context: First paragraph with <b>literal</b> text.
+
+Second paragraph.
+Parked branch: \`factory/t7-rollout\`
+Options considered:
+A — Enable gradually (recommended: limits blast radius)
+B: Enable everywhere
+C - Defer
+For B or C, state whether the migration window is approved.
+**A:**`),
+      ]);
+
+      const snapshot = await readRepositoryFactorySnapshot({
+        name: "factory-ui",
+        path: fixture.root,
+        githubUrl: "https://github.com/example/factory-ui",
+      });
+      const question =
+        snapshot.questions.status === "unavailable"
+          ? undefined
+          : snapshot.questions.data.open[0];
+
+      expect(question).toMatchObject({
+        id: "Q7",
+        context:
+          "First paragraph with <b>literal</b> text.\n\nSecond paragraph.\nParked branch: `factory/t7-rollout`",
+        branch: "factory/t7-rollout",
+        branchUrl:
+          "https://github.com/example/factory-ui/tree/factory/t7-rollout",
+        options: [
+          {
+            label: "A",
+            text: "Enable gradually (recommended: limits blast radius)",
+            recommended: true,
+          },
+          { label: "B", text: "Enable everywhere" },
+          { label: "C", text: "Defer" },
+        ],
+        qualifier:
+          "For B or C, state whether the migration window is approved.",
+        blockedTask: {
+          id: "T7",
+          title: "Choose the rollout",
+          pr: 42,
+          issueNumbers: [17, 23],
+          prUrl: "https://github.com/example/factory-ui/pull/42",
+          issueUrls: [
+            "https://github.com/example/factory-ui/issues/17",
+            "https://github.com/example/factory-ui/issues/23",
+          ],
+        },
+      });
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  test("keeps ambiguous option grammar as the raw question and never invents task or branch links", async () => {
+    const fixture = createFactoryFixture();
+    try {
+      await Promise.all([
+        fixture.writeState({ project: "factory-ui", phase: "build" }),
+        fixture.writePlan(
+          "- [!] T70 (standard) — Different task\n  - deps: none",
+        ),
+        fixture.writeQuestions(`## Q7 (task T7, open) — Choose safely
+Context: Context
+Options considered: A or B, depending on C
+**A:**`),
+      ]);
+      const snapshot = await readRepositoryFactorySnapshot({
+        name: "factory-ui",
+        path: fixture.root,
+        githubUrl: "https://github.com/example/factory-ui",
+      });
+      const question =
+        snapshot.questions.status === "unavailable"
+          ? undefined
+          : snapshot.questions.data.open[0];
+
+      expect(question).toMatchObject({ id: "Q7", context: "Context" });
+      expect(question?.options).toBeUndefined();
+      expect(question?.branch).toBeUndefined();
+      expect(question?.branchUrl).toBeUndefined();
+      expect(question?.blockedTask).toBeUndefined();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  test("preserves a single labelled option and its recommendation explanation", async () => {
+    const fixture = createFactoryFixture();
+    try {
+      await Promise.all([
+        fixture.writeState({ project: "factory-ui", phase: "build" }),
+        fixture.writePlan("- [!] T7 (standard) — Choose\n  - deps: none"),
+        fixture.writeQuestions(`## Q7 (task T7, open) — Choose
+Context: Context
+Options considered: A — Continue (recommended because it preserves compatibility)
+**A:**`),
+      ]);
+      const snapshot = await readRepositoryFactorySnapshot({
+        name: "factory-ui",
+        path: fixture.root,
+      });
+      const question =
+        snapshot.questions.status === "unavailable"
+          ? undefined
+          : snapshot.questions.data.open[0];
+
+      expect(question?.options).toEqual([
+        {
+          label: "A",
+          text: "Continue (recommended because it preserves compatibility)",
+          recommended: true,
+        },
+      ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   test("carries partial bounded model metadata through the snapshot", async () => {
     const fixture = createFactoryFixture();
     try {

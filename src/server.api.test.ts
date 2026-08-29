@@ -82,7 +82,7 @@ describe("versioned read-only API", () => {
         ].join("\n"),
       ),
       fixture.writeQuestions(
-        "## Q7 (task T7, open) — Which schema?\nContext: API contract\nOptions considered: A / B\n**A:**",
+        "## Q7 (task T7, open) — Which schema?\nContext: API contract\nParked branch: `factory/t7-api`\nOptions considered: A — Version one (recommended: compatible) / B — Version two\nFor B, state whether clients have migrated.\n**A:**",
       ),
       fixture.writeWorklog("- 2026-08-16 UTC - T7 API work"),
       fixture.writeRouting({
@@ -158,7 +158,21 @@ describe("versioned read-only API", () => {
       remaining: expect.any(Array),
       nextRunnable: expect.any(Array),
     });
-    expect(body.questions.data.open[0].id).toBe("Q7");
+    expect(body.questions.data.open[0]).toMatchObject({
+      id: "Q7",
+      context: "API contract\nParked branch: `factory/t7-api`",
+      branch: "factory/t7-api",
+      branchUrl: "https://github.com/example/factory-ui/tree/factory/t7-api",
+      options: [
+        {
+          label: "A",
+          text: "Version one (recommended: compatible)",
+          recommended: true,
+        },
+        { label: "B", text: "Version two" },
+      ],
+      qualifier: "For B, state whether clients have migrated.",
+    });
     expect(body.worklog.data.entries[0].text).toContain("T7 API work");
     expect(body.logs.data.narration).toBe("bounded narration\n");
     expect(body.logs.data).toMatchObject({

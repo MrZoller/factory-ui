@@ -107,6 +107,11 @@ Options considered: A / B
             taskId: "T1",
             title: "How to implement feature?",
             text: questions,
+            context: "Need guidance on approach",
+            options: [
+              { label: "A", text: "" },
+              { label: "B", text: "" },
+            ],
           });
         }
       });
@@ -144,6 +149,33 @@ Options considered: A / B
           expect(result.data.open).toHaveLength(1);
           expect(result.data.open[0]!.id).toBe("Q1");
         }
+      });
+
+      test("accepts every protocol status while emitting only open questions without malformed warnings", () => {
+        const questions = `## Q1 (task T1, open) — Open
+Context: Context
+Options considered: A — Proceed
+**A:**
+## Q2 (task T2, answered) — Answered
+Context: Context
+Options considered: A — Proceed
+**A:** Chosen
+## Q3 (task T3, consumed) — Consumed
+Context: Context
+Options considered: A — Proceed
+**A:** Applied
+## Q4 (task T4, withdrawn) — Withdrawn
+Context: Context
+Options considered: A — Proceed
+**A:** Closed externally`;
+
+        const result = parseFactoryQuestions(questions);
+
+        expect(result).toMatchObject({
+          status: "available",
+          data: { open: [{ id: "Q1", taskId: "T1" }] },
+          warnings: [],
+        });
       });
     });
 

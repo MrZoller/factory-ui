@@ -27,7 +27,9 @@ function dashboardDocument(): Document {
     '<p id="generated"></p>',
     '<p id="error"></p>',
     '<button id="refresh" type="button">Refresh</button>',
+    '<span id="question-queue-count">0</span>',
     '<table id="fleet-summary"><tbody></tbody></table>',
+    '<section id="question-queue"><h2 id="question-queue-heading"></h2><div id="question-queue-list"></div></section>',
     '<div id="machine-tabs" role="tablist"></div>',
     '<div id="repositories"></div>',
   ].join("");
@@ -429,6 +431,171 @@ function summaryCells(document: Document, name: string): Array<string | null> {
 }
 
 describe("local dashboard rendering", () => {
+  test("renders ordered structured questions, old-schema fallbacks, and hostile strings as text", () => {
+    const document = dashboardDocument();
+    const hostile = '<img src=x onerror="globalThis.queuePwned=1">';
+    const alpha = richRepository({
+      name: "alpha",
+      planUrl: "https://github.com/example/alpha/blob/HEAD/.factory/plan.md",
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q10",
+              taskId: "T10",
+              title: "Later",
+              text: "source",
+              context: "Structured context",
+              options: [{ label: "A", text: "Proceed", recommended: true }],
+              qualifier: "For A, confirm approval.",
+              branch: "factory/t10-later",
+              branchUrl:
+                "https://github.com/example/alpha/tree/factory/t10-later",
+              blockedTask: {
+                id: "T10",
+                title: "Later task",
+                pr: 10,
+                issueNumbers: [101],
+                prUrl: "https://github.com/example/alpha/pull/10",
+                issueUrls: ["https://github.com/example/alpha/issues/101"],
+              },
+            },
+            { id: "Q2", taskId: "T2", title: hostile, text: hostile },
+          ],
+        },
+        warnings: [],
+      },
+    });
+    const zeta = richRepository({
+      name: "zeta",
+      questions: {
+        status: "available",
+        data: {
+          open: [{ id: "Q1", taskId: "T1", title: "Last", text: "raw" }],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [zeta, alpha]), document, NOW);
+
+    expect(document.querySelector("#question-queue-heading")?.textContent).toBe(
+      "Question queue · 3",
+    );
+    expect(document.querySelector("#question-queue-count")?.textContent).toBe(
+      "3",
+    );
+    expect(
+      Array.from(
+        document.querySelectorAll(".question-queue-entry h3"),
+        (node) => node.textContent,
+      ),
+    ).toEqual([`Q2 · ${hostile}`, "Q10 · Later", "Q1 · Last"]);
+    const structured = document.querySelectorAll<HTMLElement>(
+      ".question-queue-entry",
+    )[1]!;
+    expect(structured.textContent).toContain("mini · alpha");
+    expect(structured.textContent).toContain("Blocked task: T10 · Later task");
+    expect(structured.textContent).toContain(
+      "factory/t10-later · PR #10 · Issue #101",
+    );
+    expect(structured.textContent).toContain("Structured context");
+    expect(structured.textContent).toContain("A · Proceed(recommended)");
+    expect(structured.textContent).toContain("For A, confirm approval.");
+    expect(structured.querySelector("pre")).toBeNull();
+    expect(document.querySelectorAll(".question-queue-entry pre")).toHaveLength(
+      2,
+    );
+    expect(document.querySelector("#question-queue-list .age")).toBeNull();
+    expect(
+      Array.from(
+        structured.querySelectorAll<HTMLAnchorElement>("a"),
+        (link) => link.href,
+      ),
+    ).toEqual([
+      "https://dashboard.test/#machine=mini&repo=alpha&question=Q10",
+      "https://github.com/example/alpha/blob/HEAD/.factory/plan.md",
+      "https://github.com/example/alpha/tree/factory/t10-later",
+      "https://github.com/example/alpha/pull/10",
+      "https://github.com/example/alpha/issues/101",
+    ]);
+    expect(
+      document.querySelectorAll(
+        "#question-queue-list img, #question-queue-list [onerror]",
+      ),
+    ).toHaveLength(0);
+    expect((globalThis as Record<string, unknown>).queuePwned).toBeUndefined();
+  });
+
+  test("caps the globally ordered question queue while retaining its total", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "macbook", origin: "https://macbook.example" };
+    const questionsFor = (repository: string) =>
+      Array.from({ length: 128 }, (_, index) => ({
+        id: `Q${index + 1}`,
+        taskId: `T${index + 1}`,
+        title: `${repository} question ${index + 1}`,
+        text: "open",
+      }));
+    const repositoryWithQuestions = (name: string) =>
+      richRepository({
+        name,
+        questions: {
+          status: "available",
+          data: { open: questionsFor(name) },
+          warnings: [],
+        },
+      });
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      String(input) === "/api/fleet"
+        ? Promise.resolve(
+            jsonResponse(
+              fleet(
+                "mini",
+                [peer],
+                [
+                  repositoryWithQuestions("zeta"),
+                  repositoryWithQuestions("beta"),
+                ],
+              ),
+            ),
+          )
+        : Promise.resolve(
+            jsonResponse(
+              fleet("macbook", [], [repositoryWithQuestions("alpha")]),
+            ),
+          ),
+    );
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    expect(document.querySelector("#question-queue-count")?.textContent).toBe(
+      "384",
+    );
+    expect(document.querySelector("#question-queue-heading")?.textContent).toBe(
+      "Question queue · 384 · showing 256",
+    );
+    expect(document.querySelectorAll(".question-queue-entry")).toHaveLength(
+      256,
+    );
+    expect(
+      Array.from(
+        document.querySelectorAll(".question-queue-entry h3"),
+        (node) => node.textContent,
+      ),
+    ).toEqual([
+      ...Array.from(
+        { length: 128 },
+        (_, index) => `Q${index + 1} · alpha question ${index + 1}`,
+      ),
+      ...Array.from(
+        { length: 128 },
+        (_, index) => `Q${index + 1} · beta question ${index + 1}`,
+      ),
+    ]);
+  });
+
   test("renders every repository work and activity group distinctly", () => {
     const document = dashboardDocument();
     renderFleet(
@@ -1574,10 +1741,12 @@ describe("local dashboard rendering", () => {
         ["Fixes #23", "https://github.com/example/factory-ui/issues/23"],
       ]),
     );
-    links.forEach((link) => {
-      expect(link.target).toBe("_blank");
-      expect(link.rel).toBe("noopener noreferrer");
-    });
+    links
+      .filter((link) => !link.getAttribute("href")?.startsWith("#"))
+      .forEach((link) => {
+        expect(link.target).toBe("_blank");
+        expect(link.rel).toBe("noopener noreferrer");
+      });
   });
 
   test("renders hostile links as plain text", () => {
@@ -1616,7 +1785,7 @@ describe("local dashboard rendering", () => {
       NOW,
     );
 
-    expect(document.querySelectorAll("a")).toHaveLength(0);
+    expect(document.querySelectorAll('a:not([href^="#"])')).toHaveLength(0);
     expect(document.querySelector(".current-panel")?.textContent).toContain(
       "factory-ui",
     );
@@ -1689,7 +1858,9 @@ describe("local dashboard rendering", () => {
     expect(
       document.querySelector<HTMLAnchorElement>(".questions-panel h4 a")?.href,
     ).toBe(`${base}/questions.md`);
-    document.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => {
+    Array.from(
+      document.querySelectorAll<HTMLAnchorElement>('a:not([href^="#"])'),
+    ).forEach((link) => {
       expect(link.target).toBe("_blank");
       expect(link.rel).toBe("noopener noreferrer");
     });
@@ -1795,7 +1966,7 @@ describe("local dashboard rendering", () => {
     expect(document.querySelectorAll("script, img, form, iframe")).toHaveLength(
       0,
     );
-    expect(document.querySelectorAll("a")).toHaveLength(0);
+    expect(document.querySelectorAll('a:not([href^="#"])')).toHaveLength(0);
     expect(document.querySelector("[onerror], [onclick]")).toBeNull();
     expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
   });
@@ -4198,6 +4369,147 @@ describe("repository strips and sub-tabs", () => {
 });
 
 describe("browser peer fan-out", () => {
+  test("aggregates local and valid peer questions, and deep-links to a peer repository", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "macbook", origin: "https://macbook.example" };
+    const local = richRepository({
+      name: "zeta",
+      questions: {
+        status: "available",
+        data: {
+          open: [{ id: "Q9", taskId: "T9", title: "Local", text: "raw" }],
+        },
+        warnings: [],
+      },
+    });
+    const remote = richRepository({
+      name: "alpha",
+      questions: {
+        status: "available",
+        data: {
+          open: [{ id: "Q2", taskId: "T2", title: "Peer", text: "raw" }],
+        },
+        warnings: [],
+      },
+    });
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      Promise.resolve(
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [peer], [local]))
+          : jsonResponse(fleet("remote", [], [remote])),
+      ),
+    );
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    expect(document.querySelector("#question-queue-heading")?.textContent).toBe(
+      "Question queue · 2",
+    );
+    const peerLink = Array.from(
+      document.querySelectorAll<HTMLAnchorElement>(".question-queue-entry a"),
+    ).find((link) => link.textContent === "Q2 · Peer");
+    expect(peerLink?.getAttribute("href")).toBe(
+      "#machine=macbook&repo=alpha&question=Q2",
+    );
+    document.defaultView!.location.hash = peerLink!.getAttribute("href")!;
+    document.defaultView!.dispatchEvent(
+      new document.defaultView!.Event("hashchange"),
+    );
+
+    expect(
+      document.querySelector('#machine-tabs [role="tab"][aria-selected="true"]')
+        ?.textContent,
+    ).toContain("macbook");
+    expect(
+      document.querySelector(".question-queue-entry-linked")?.textContent,
+    ).toContain("Q2 · Peer");
+  });
+
+  test("isolates an unsafe peer question without losing local or valid-peer queue entries", async () => {
+    const document = dashboardDocument();
+    const peers = [
+      { name: "bad", origin: "https://bad.example" },
+      { name: "good", origin: "https://good.example" },
+    ];
+    const local = richRepository({
+      name: "local-project",
+      questions: {
+        status: "available",
+        data: {
+          open: [{ id: "Q1", taskId: "T1", title: "Local", text: "open" }],
+        },
+        warnings: [],
+      },
+    });
+    const unsafePeerRepository = richRepository({
+      name: "bad-project",
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q2",
+              taskId: "T2",
+              title: "Unsafe peer question",
+              text: "open",
+              branch: "factory/t2-unsafe",
+              branchUrl: "javascript:alert(1)",
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+    const validPeerRepository = richRepository({
+      name: "good-project",
+      questions: {
+        status: "available",
+        data: {
+          open: [{ id: "Q3", taskId: "T3", title: "Valid peer", text: "open" }],
+        },
+        warnings: [],
+      },
+    });
+    const pending = new Map<string, (response: Response) => void>();
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === "/api/fleet")
+        return Promise.resolve(jsonResponse(fleet("mini", peers, [local])));
+      return new Promise((resolve) => pending.set(url, resolve));
+    });
+
+    const loading = loadFleet(document, fetcher, { now: () => NOW });
+    await flushPromises();
+    const resolveGood = pending.get("https://good.example/api/fleet");
+    expect(resolveGood).toBeDefined();
+    resolveGood?.(jsonResponse(fleet("good-host", [], [validPeerRepository])));
+    await flushPromises();
+    const resolveBad = pending.get("https://bad.example/api/fleet");
+    expect(resolveBad).toBeDefined();
+    resolveBad?.(jsonResponse(fleet("bad-host", [], [unsafePeerRepository])));
+    await loading;
+
+    const peerPanels = document.querySelectorAll(".peer-machine");
+    expect(peerPanels.item(0).querySelector(".unreachable")?.textContent).toBe(
+      "UNREACHABLE",
+    );
+    expect(peerPanels.item(1).querySelector(".unreachable")).toBeNull();
+    expect(peerPanels.item(1).textContent).toContain("good-project");
+    expect(document.querySelector("#question-queue-count")?.textContent).toBe(
+      "2",
+    );
+    expect(document.querySelector("#question-queue-heading")?.textContent).toBe(
+      "Question queue · 2",
+    );
+    expect(
+      Array.from(
+        document.querySelectorAll(".question-queue-entry h3"),
+        (node) => node.textContent,
+      ),
+    ).toEqual(["Q3 · Valid peer", "Q1 · Local"]);
+    expect(document.body.textContent).not.toContain("Unsafe peer question");
+  });
+
   test("uses fixed timeout and concurrency bounds", () => {
     expect(PEER_FETCH_TIMEOUT_MS).toBe(5_000);
     expect(MAX_CONCURRENT_PEER_FETCHES).toBe(4);

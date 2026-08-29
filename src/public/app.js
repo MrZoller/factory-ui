@@ -17,6 +17,11 @@ const MAX_METRICS_TASKS = 4096;
 const MAX_METRICS_MAP_ENTRIES = 64;
 const MAX_METRICS_KEY_LENGTH = 128;
 const MAX_WARNING_EXCERPT_CODE_POINTS = 200;
+const MAX_QUESTIONS = 128;
+const MAX_QUESTION_QUEUE_ENTRIES = 256;
+const MAX_QUESTION_TEXT_LENGTH = 256 * 1024;
+const MAX_QUESTION_OPTIONS = 26;
+const MAX_QUESTION_OPTION_LENGTH = 8192;
 const COMPLETED_TASK_LIMIT = 8;
 const loadGenerations = new WeakMap();
 const tabControllers = new WeakMap();
@@ -1838,6 +1843,84 @@ function isReaderResult(value) {
   return value.status === "unavailable" || isRecord(value.data);
 }
 
+function isQuestionOption(value) {
+  return (
+    isRecord(value) &&
+    typeof value.label === "string" &&
+    value.label.length > 0 &&
+    value.label.length <= 128 &&
+    typeof value.text === "string" &&
+    value.text.length <= MAX_QUESTION_OPTION_LENGTH &&
+    (value.recommended === undefined || typeof value.recommended === "boolean")
+  );
+}
+
+function isQuestionTask(value, taskId) {
+  return (
+    isRecord(value) &&
+    value.id === taskId &&
+    typeof value.title === "string" &&
+    value.title.length > 0 &&
+    value.title.length <= MAX_QUESTION_OPTION_LENGTH &&
+    (value.pr === undefined ||
+      (Number.isSafeInteger(value.pr) && value.pr > 0)) &&
+    (value.issueNumbers === undefined ||
+      (Array.isArray(value.issueNumbers) &&
+        value.issueNumbers.length <= 32 &&
+        value.issueNumbers.every(
+          (issue) => Number.isSafeInteger(issue) && issue > 0,
+        ))) &&
+    (value.prUrl === undefined || safeGithubUrl(value.prUrl, "pull")) &&
+    (value.issueUrls === undefined ||
+      (Array.isArray(value.issueUrls) &&
+        value.issueUrls.length <= 32 &&
+        value.issueUrls.every((url) => safeGithubUrl(url, "issue"))))
+  );
+}
+
+function isQuestion(value) {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    value.id.length <= 128 &&
+    /^Q[1-9][0-9]*$/.test(value.id) &&
+    typeof value.taskId === "string" &&
+    value.taskId.length <= 128 &&
+    /^T[1-9][0-9]*$/.test(value.taskId) &&
+    typeof value.title === "string" &&
+    value.title.length > 0 &&
+    value.title.length <= MAX_QUESTION_OPTION_LENGTH &&
+    typeof value.text === "string" &&
+    value.text.length <= MAX_QUESTION_TEXT_LENGTH &&
+    (value.context === undefined ||
+      (typeof value.context === "string" &&
+        value.context.length <= MAX_QUESTION_TEXT_LENGTH)) &&
+    (value.qualifier === undefined ||
+      (typeof value.qualifier === "string" &&
+        value.qualifier.length <= MAX_QUESTION_TEXT_LENGTH)) &&
+    (value.options === undefined ||
+      (Array.isArray(value.options) &&
+        value.options.length <= MAX_QUESTION_OPTIONS &&
+        value.options.every(isQuestionOption))) &&
+    (value.branch === undefined ||
+      (typeof value.branch === "string" && value.branch.length <= 200)) &&
+    (value.branchUrl === undefined ||
+      safeGithubUrl(value.branchUrl, "branch")) &&
+    (value.blockedTask === undefined ||
+      isQuestionTask(value.blockedTask, value.taskId))
+  );
+}
+
+function isQuestionsResult(value) {
+  return (
+    isReaderResult(value) &&
+    (value.status === "unavailable" ||
+      (Array.isArray(value.data.open) &&
+        value.data.open.length <= MAX_QUESTIONS &&
+        value.data.open.every(isQuestion)))
+  );
+}
+
 function isBoundedRoutingString(value) {
   return (
     typeof value === "string" &&
@@ -2176,7 +2259,7 @@ function isRepository(value) {
     (value.status === "available" || value.status === "unavailable") &&
     isReaderResult(value.state) &&
     isReaderResult(value.plan) &&
-    isReaderResult(value.questions) &&
+    isQuestionsResult(value.questions) &&
     isReaderResult(value.worklog) &&
     isReaderResult(value.logs) &&
     (value.routing === undefined || isRoutingResult(value.routing)) &&
@@ -2797,10 +2880,21 @@ function createMachineView(identity, index, documentRoot, isPeer) {
   grid.className = `repository-grid${isPeer ? " peer-repositories" : ""}`;
   const routing = renderRoutingStrip(null, documentRoot);
   panel.append(routing, grid);
-  return { identity, index, row, tab, panel, routing, grid, repositories: [] };
+  return {
+    identity,
+    index,
+    row,
+    tab,
+    panel,
+    routing,
+    grid,
+    repositories: [],
+    fleet: null,
+  };
 }
 
 function updateMachineView(view, summary, fleet, now, unreachable = false) {
+  view.fleet = fleet;
   renderSummaryRow(view.row, summary);
   renderTabLabel(view.tab, summary);
   const routing = renderRoutingStrip(fleet, view.grid.ownerDocument);
@@ -2860,9 +2954,10 @@ function updateMachineView(view, summary, fleet, now, unreachable = false) {
   );
 }
 
-function dashboardHash(machine, repository) {
+function dashboardHash(machine, repository, question) {
   const values = { machine };
   if (repository !== undefined) values.repo = repository;
+  if (question !== undefined) values.question = question;
   return `#${new URLSearchParams(values).toString()}`;
 }
 
@@ -2870,7 +2965,11 @@ function hashSelection(windowRoot) {
   const values = new URLSearchParams(
     windowRoot?.location?.hash?.slice(1) ?? "",
   );
-  return { machine: values.get("machine"), repository: values.get("repo") };
+  return {
+    machine: values.get("machine"),
+    repository: values.get("repo"),
+    question: values.get("question"),
+  };
 }
 
 function installTabs(documentRoot, views) {
@@ -2927,6 +3026,7 @@ function installTabs(documentRoot, views) {
   }
 
   function selectFromHash(canonicalize) {
+    if (windowRoot?.location?.hash === "#question-queue") return;
     const selection = hashSelection(windowRoot);
     const foundIndex = views.findIndex(
       (view) => view.identity === selection.machine,
@@ -2948,6 +3048,7 @@ function installTabs(documentRoot, views) {
         `${windowRoot.location.pathname}${windowRoot.location.search}${dashboardHash(
           view.identity,
           selectedRepository(view)?.identity,
+          selection.question ?? undefined,
         )}`,
       );
     }
@@ -3013,7 +3114,10 @@ function installTabs(documentRoot, views) {
       );
     });
   });
-  const onHashChange = () => selectFromHash(true);
+  const onHashChange = () => {
+    selectFromHash(true);
+    renderQuestionQueue(documentRoot, views);
+  };
   windowRoot?.addEventListener("hashchange", onHashChange);
   selectFromHash(true);
 
@@ -3025,6 +3129,196 @@ function installTabs(documentRoot, views) {
       windowRoot?.removeEventListener("hashchange", onHashChange);
     },
   });
+}
+
+function compareQuestionIds(left, right) {
+  const leftDigits = left.slice(1);
+  const rightDigits = right.slice(1);
+  return compareDecimalDigits(leftDigits, rightDigits);
+}
+
+function compareQuestionText(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function questionHash(machine, repository, question) {
+  return dashboardHash(machine, repository, question);
+}
+
+function compareQuestionQueueEntries(left, right) {
+  return (
+    compareQuestionText(left.repository.name, right.repository.name) ||
+    compareQuestionIds(left.question.id, right.question.id) ||
+    compareQuestionText(left.machine, right.machine)
+  );
+}
+
+function insertBoundedQuestionEntry(entries, entry) {
+  if (
+    entries.length === MAX_QUESTION_QUEUE_ENTRIES &&
+    compareQuestionQueueEntries(
+      entry,
+      entries[MAX_QUESTION_QUEUE_ENTRIES - 1],
+    ) >= 0
+  ) {
+    return;
+  }
+  let low = 0;
+  let high = entries.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (compareQuestionQueueEntries(entry, entries[middle]) < 0) high = middle;
+    else low = middle + 1;
+  }
+  entries.splice(low, 0, entry);
+  if (entries.length > MAX_QUESTION_QUEUE_ENTRIES) entries.pop();
+}
+
+function renderQuestionQueue(documentRoot, views) {
+  const list = documentRoot.querySelector("#question-queue-list");
+  const heading = documentRoot.querySelector("#question-queue-heading");
+  const headerCount = documentRoot.querySelector("#question-queue-count");
+  if (!list || !heading) return;
+  const entries = [];
+  let totalEntries = 0;
+  for (const view of views) {
+    for (const repository of view.fleet?.repositories ?? []) {
+      for (const question of readerData(repository.questions)?.open ?? []) {
+        totalEntries += 1;
+        insertBoundedQuestionEntry(entries, {
+          machine: view.identity,
+          repository,
+          question,
+        });
+      }
+    }
+  }
+  heading.textContent =
+    totalEntries > entries.length
+      ? `Question queue · ${totalEntries} · showing ${entries.length}`
+      : `Question queue · ${totalEntries}`;
+  if (headerCount) headerCount.textContent = String(totalEntries);
+  if (entries.length === 0) {
+    list.replaceChildren(
+      textElement(documentRoot, "p", "No open questions", "empty"),
+    );
+    return;
+  }
+  const cards = entries.map(({ machine, repository, question }) => {
+    const item = documentRoot.createElement("article");
+    item.className = "question-queue-entry";
+    const selection = hashSelection(documentRoot.defaultView);
+    if (
+      selection.machine === machine &&
+      selection.repository === repository.name &&
+      selection.question === question.id
+    ) {
+      item.classList.add("question-queue-entry-linked");
+      item.tabIndex = -1;
+    }
+    const title = documentRoot.createElement("h3");
+    const link = textElement(
+      documentRoot,
+      "a",
+      `${question.id} · ${question.title}`,
+    );
+    link.href = questionHash(machine, repository.name, question.id);
+    title.append(link);
+    item.append(title);
+    appendText(
+      item,
+      "p",
+      `${machine} · ${repository.name}`,
+      "question-location",
+    );
+    const task = question.blockedTask;
+    const taskRow = documentRoot.createElement("p");
+    taskRow.className = "question-task";
+    appendText(taskRow, "strong", "Blocked task: ");
+    appendExternalOrText(
+      taskRow,
+      question.taskId,
+      task ? repository.planUrl : undefined,
+      "plan",
+    );
+    if (task) taskRow.append(documentRoot.createTextNode(` · ${task.title}`));
+    item.append(taskRow);
+    const refs = documentRoot.createElement("p");
+    refs.className = "question-links";
+    const references = [];
+    if (question.branch && safeGithubUrl(question.branchUrl, "branch"))
+      references.push([question.branch, question.branchUrl, "branch"]);
+    if (task?.pr) references.push([`PR #${task.pr}`, task.prUrl, "pull"]);
+    for (const [index, issue] of (task?.issueNumbers ?? []).entries())
+      references.push([`Issue #${issue}`, task.issueUrls?.[index], "issue"]);
+    references.forEach(([label, url, kind], index) => {
+      if (index > 0) refs.append(documentRoot.createTextNode(" · "));
+      appendExternalOrText(refs, label, url, kind);
+    });
+    if (references.length > 0) item.append(refs);
+    if (question.context !== undefined) {
+      appendText(item, "h4", "Context", "question-field-label");
+      appendText(item, "p", question.context, "question-context");
+    }
+    if (Array.isArray(question.options) && question.options.length > 0) {
+      appendText(item, "h4", "Options", "question-field-label");
+      const options = documentRoot.createElement("ol");
+      options.className = "question-options";
+      for (const option of question.options) {
+        const row = documentRoot.createElement("li");
+        appendText(row, "strong", option.label, "question-option-label");
+        if (option.text) {
+          row.append(documentRoot.createTextNode(" · "));
+          const marker = option.recommended
+            ? /\(\s*recommended\b[^)]*\)/i.exec(option.text)
+            : null;
+          if (marker?.index !== undefined) {
+            row.append(
+              documentRoot.createTextNode(option.text.slice(0, marker.index)),
+            );
+            appendText(
+              row,
+              "span",
+              marker[0],
+              "chip chip-accent question-recommended",
+            );
+            row.append(
+              documentRoot.createTextNode(
+                option.text.slice(marker.index + marker[0].length),
+              ),
+            );
+          } else {
+            row.append(documentRoot.createTextNode(option.text));
+          }
+        }
+        if (option.recommended && !/\(\s*recommended\b/i.test(option.text))
+          appendText(
+            row,
+            "span",
+            "(recommended)",
+            "chip chip-accent question-recommended",
+          );
+        options.append(row);
+      }
+      item.append(options);
+    }
+    if (question.qualifier !== undefined) {
+      appendText(item, "h4", "Qualifier", "question-field-label");
+      appendText(item, "p", question.qualifier, "question-qualifier");
+    }
+    if (
+      question.context === undefined ||
+      !Array.isArray(question.options) ||
+      question.options.length === 0
+    ) {
+      appendText(item, "pre", question.text, "verbatim question-raw-fallback");
+    }
+    return item;
+  });
+  list.replaceChildren(...cards);
+  list
+    .querySelector(".question-queue-entry-linked")
+    ?.scrollIntoView?.({ block: "start" });
 }
 
 function ensureFleetShell(documentRoot, repositories) {
@@ -3095,6 +3389,7 @@ export function renderFleet(fleet, documentRoot = document, now = new Date()) {
   summaryBody.replaceChildren(...views.map((view) => view.row));
   tabs.replaceChildren(...views.map((view) => view.tab));
   repositories.replaceChildren(...views.map((view) => view.panel));
+  renderQuestionQueue(documentRoot, views);
   installTabs(documentRoot, views);
   machineViews.set(documentRoot, views);
 }
@@ -3156,6 +3451,7 @@ async function fanOutToPeers(
             fleet,
             now,
           );
+          renderQuestionQueue(documentRoot, views);
           installTabs(documentRoot, views);
         }
       } catch (cause) {
@@ -3173,6 +3469,7 @@ async function fanOutToPeers(
             dependencies.now(),
             true,
           );
+          renderQuestionQueue(documentRoot, views);
           installTabs(documentRoot, views);
         }
       }

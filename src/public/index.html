@@ -32,6 +32,9 @@
           <p id="generated" class="age">Waiting for snapshot…</p>
           <nav class="header-actions" aria-label="Dashboard pages">
             <a class="button button-secondary" href="/how">How it works</a>
+            <a class="button button-secondary" href="#question-queue">
+              Questions <span id="question-queue-count">0</span>
+            </a>
             <button id="refresh" class="button button-primary" type="button">
               Refresh
             </button>
@@ -61,6 +64,14 @@
             <tbody></tbody>
           </table>
         </div>
+      </section>
+      <section
+        id="question-queue"
+        class="question-queue-section content-section"
+        aria-labelledby="question-queue-heading"
+      >
+        <h2 id="question-queue-heading">Question queue · 0</h2>
+        <div id="question-queue-list"></div>
       </section>
       <section class="content-section" aria-labelledby="repositories-heading">
         <h2 id="repositories-heading">Repositories</h2>

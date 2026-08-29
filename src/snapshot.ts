@@ -9,6 +9,7 @@ import {
   type RepositorySnapshot,
   type PlanData,
   type PlanTask,
+  type QuestionsData,
 } from "./contracts";
 import {
   checkRepositoryLiveness,
@@ -108,6 +109,7 @@ export async function readRepositoryFactorySnapshot(
   const prUrl = createPullRequestUrl(repositoryUrl, state?.pr);
   const branchUrl = createBranchUrl(repositoryUrl, state?.branch);
   const plan = enrichPlanLinks(data.plan, repositoryUrl);
+  const questions = enrichQuestionLinks(data.questions, plan, repositoryUrl);
   const specUrl = createFactoryDocumentUrl(
     repositoryUrl,
     "spec.md",
@@ -131,6 +133,7 @@ export async function readRepositoryFactorySnapshot(
   return {
     ...data,
     plan,
+    questions,
     status: available ? "available" : "unavailable",
     ...(available
       ? { project: state.project, phase: state.phase }
@@ -142,6 +145,46 @@ export async function readRepositoryFactorySnapshot(
     ...(planUrl === undefined ? {} : { planUrl }),
     ...(worklogUrl === undefined ? {} : { worklogUrl }),
     ...(questionsUrl === undefined ? {} : { questionsUrl }),
+  };
+}
+
+function enrichQuestionLinks(
+  result: ReaderResult<QuestionsData>,
+  plan: ReaderResult<PlanData>,
+  githubUrl: string | undefined,
+): ReaderResult<QuestionsData> {
+  if (result.status === "unavailable") return result;
+  const blocked = plan.status === "unavailable" ? [] : plan.data.blocked;
+  return {
+    ...result,
+    data: {
+      open: result.data.open.map((question) => {
+        const task = blocked.find(
+          (candidate) => candidate.id === question.taskId,
+        );
+        const branchUrl = createBranchUrl(githubUrl, question.branch);
+        return {
+          ...question,
+          ...(branchUrl === undefined ? {} : { branchUrl }),
+          ...(task === undefined
+            ? {}
+            : {
+                blockedTask: {
+                  id: task.id,
+                  title: task.title,
+                  ...(task.pr === undefined ? {} : { pr: task.pr }),
+                  ...(task.issueNumbers === undefined
+                    ? {}
+                    : { issueNumbers: task.issueNumbers }),
+                  ...(task.prUrl === undefined ? {} : { prUrl: task.prUrl }),
+                  ...(task.issueUrls === undefined
+                    ? {}
+                    : { issueUrls: task.issueUrls }),
+                },
+              }),
+        };
+      }),
+    },
   };
 }
 

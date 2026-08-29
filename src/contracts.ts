@@ -126,6 +126,27 @@ export interface OpenQuestion {
   taskId: string;
   title: string;
   text: string;
+  context?: string;
+  options?: QuestionOption[];
+  qualifier?: string;
+  branch?: string;
+  branchUrl?: string;
+  blockedTask?: QuestionTask;
+}
+
+export interface QuestionOption {
+  label: string;
+  text: string;
+  recommended?: boolean;
+}
+
+export interface QuestionTask {
+  id: string;
+  title: string;
+  pr?: number;
+  issueNumbers?: number[];
+  prUrl?: string;
+  issueUrls?: string[];
 }
 
 export interface QuestionsData {

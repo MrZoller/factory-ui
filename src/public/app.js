@@ -18,6 +18,7 @@ const MAX_METRICS_MAP_ENTRIES = 64;
 const MAX_METRICS_KEY_LENGTH = 128;
 const MAX_WARNING_EXCERPT_CODE_POINTS = 200;
 const MAX_QUESTIONS = 128;
+const MAX_QUESTION_QUEUE_ENTRIES = 256;
 const MAX_QUESTION_TEXT_LENGTH = 256 * 1024;
 const MAX_QUESTION_OPTIONS = 26;
 const MAX_QUESTION_OPTION_LENGTH = 8192;
@@ -3144,27 +3145,59 @@ function questionHash(machine, repository, question) {
   return dashboardHash(machine, repository, question);
 }
 
+function compareQuestionQueueEntries(left, right) {
+  return (
+    compareQuestionText(left.repository.name, right.repository.name) ||
+    compareQuestionIds(left.question.id, right.question.id) ||
+    compareQuestionText(left.machine, right.machine)
+  );
+}
+
+function insertBoundedQuestionEntry(entries, entry) {
+  if (
+    entries.length === MAX_QUESTION_QUEUE_ENTRIES &&
+    compareQuestionQueueEntries(
+      entry,
+      entries[MAX_QUESTION_QUEUE_ENTRIES - 1],
+    ) >= 0
+  ) {
+    return;
+  }
+  let low = 0;
+  let high = entries.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (compareQuestionQueueEntries(entry, entries[middle]) < 0) high = middle;
+    else low = middle + 1;
+  }
+  entries.splice(low, 0, entry);
+  if (entries.length > MAX_QUESTION_QUEUE_ENTRIES) entries.pop();
+}
+
 function renderQuestionQueue(documentRoot, views) {
   const list = documentRoot.querySelector("#question-queue-list");
   const heading = documentRoot.querySelector("#question-queue-heading");
   const headerCount = documentRoot.querySelector("#question-queue-count");
   if (!list || !heading) return;
   const entries = [];
+  let totalEntries = 0;
   for (const view of views) {
     for (const repository of view.fleet?.repositories ?? []) {
       for (const question of readerData(repository.questions)?.open ?? []) {
-        entries.push({ machine: view.identity, repository, question });
+        totalEntries += 1;
+        insertBoundedQuestionEntry(entries, {
+          machine: view.identity,
+          repository,
+          question,
+        });
       }
     }
   }
-  entries.sort(
-    (left, right) =>
-      compareQuestionText(left.repository.name, right.repository.name) ||
-      compareQuestionIds(left.question.id, right.question.id) ||
-      compareQuestionText(left.machine, right.machine),
-  );
-  heading.textContent = `Question queue · ${entries.length}`;
-  if (headerCount) headerCount.textContent = String(entries.length);
+  heading.textContent =
+    totalEntries > entries.length
+      ? `Question queue · ${totalEntries} · showing ${entries.length}`
+      : `Question queue · ${totalEntries}`;
+  if (headerCount) headerCount.textContent = String(totalEntries);
   if (entries.length === 0) {
     list.replaceChildren(
       textElement(documentRoot, "p", "No open questions", "empty"),

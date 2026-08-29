@@ -74,8 +74,18 @@ describe("logs reader", () => {
       expect(parseLogName("cycle-20240101-120000-0.log")).toBeNull();
     });
 
-    test("returns null for shepherd with sequence", () => {
+    test("returns null for shepherd suffix arities other than PID plus pass", () => {
+      expect(parseLogName("shepherd-20240101-120000.log")).toBeNull();
       expect(parseLogName("shepherd-20240101-120000-0.log")).toBeNull();
+      expect(parseLogName("shepherd-20240101-120000-1-2-3.log")).toBeNull();
+    });
+
+    test("returns null for driver with a pass", () => {
+      expect(parseLogName("driver-20240101-120000-1-2.log")).toBeNull();
+    });
+
+    test("returns null for cycle with PID and pass", () => {
+      expect(parseLogName("cycle-20240101-120000-1-2.log")).toBeNull();
     });
 
     test("returns null for invalid kind", () => {
@@ -122,6 +132,11 @@ describe("logs reader", () => {
       expect(parseLogName("driver-20240132-120000-0.log")).toBeNull();
     });
 
+    test("returns null for dates that overflow their calendar month", () => {
+      expect(parseLogName("driver-20230229-120000-0.log")).toBeNull();
+      expect(parseLogName("driver-20240431-120000-0.log")).toBeNull();
+    });
+
     test("returns null for invalid hour 24", () => {
       expect(parseLogName("driver-20240101-240000-0.log")).toBeNull();
     });
@@ -146,6 +161,12 @@ describe("logs reader", () => {
       expect(parseLogName("driver-20240101-120000-a.log")).toBeNull();
     });
 
+    test("returns null for noncanonical shepherd PID or pass", () => {
+      expect(parseLogName("shepherd-20240101-120000-065536-9.log")).toBeNull();
+      expect(parseLogName("shepherd-20240101-120000-65536-09.log")).toBeNull();
+      expect(parseLogName("shepherd-20240101-120000-65536--9.log")).toBeNull();
+    });
+
     test("parses valid driver log name", () => {
       const result = parseLogName("driver-20240115-143022-0.log");
       expect(result).toEqual({
@@ -153,6 +174,7 @@ describe("logs reader", () => {
         stamp: "20240115143022",
         startedAt: expect.any(Date),
         sequence: 0n,
+        pass: 0n,
       });
       if (result) {
         expect(result.startedAt.toISOString()).toBe("2024-01-15T14:30:22.000Z");
@@ -166,24 +188,44 @@ describe("logs reader", () => {
         stamp: "20240115143022",
         startedAt: expect.any(Date),
         sequence: 0n,
+        pass: 0n,
       });
       if (result) {
         expect(result.startedAt.toISOString()).toBe("2024-01-15T14:30:22.000Z");
       }
     });
 
-    test("parses valid shepherd log name", () => {
-      const result = parseLogName("shepherd-20240115-143022.log");
-      expect(result).toEqual({
-        kind: "shepherd",
-        stamp: "20240115143022",
-        startedAt: expect.any(Date),
-        sequence: 0n,
-      });
-      if (result) {
-        expect(result.startedAt.toISOString()).toBe("2024-01-15T14:30:22.000Z");
-      }
-    });
+    test.each([
+      [
+        "shepherd-20260821-001915-65536-9.log",
+        "20260821001915",
+        "2026-08-21T00:19:15.000Z",
+        65536n,
+        9n,
+      ],
+      [
+        "shepherd-20260821-004405-65536-11.log",
+        "20260821004405",
+        "2026-08-21T00:44:05.000Z",
+        65536n,
+        11n,
+      ],
+    ])(
+      "parses real shepherd log name %s",
+      (name, stamp, startedAt, sequence, pass) => {
+        const result = parseLogName(name);
+        expect(result).toEqual({
+          kind: "shepherd",
+          stamp,
+          startedAt: expect.any(Date),
+          sequence,
+          pass,
+        });
+        if (result) {
+          expect(result.startedAt.toISOString()).toBe(startedAt);
+        }
+      },
+    );
 
     test("parses driver with non-zero sequence", () => {
       const result = parseLogName("driver-20240115-143022-42.log");
@@ -236,7 +278,10 @@ describe("logs reader", () => {
     test("selects only recognized kinds: driver, cycle, shepherd", async () => {
       writeFileSync(join(logsDir, "driver-20240101-120000-0.log"), "driver");
       writeFileSync(join(logsDir, "cycle-20240101-120000.log"), "cycle");
-      writeFileSync(join(logsDir, "shepherd-20240101-120000.log"), "shepherd");
+      writeFileSync(
+        join(logsDir, "shepherd-20240101-120000-1-1.log"),
+        "shepherd",
+      );
       // Use a name that starts with a recognized prefix but doesn't match the full pattern
       writeFileSync(join(logsDir, "driver-20240101.log"), "unknown");
 
@@ -288,7 +333,10 @@ describe("logs reader", () => {
     });
 
     test("returns partial when only shepherd log exists (no driver)", async () => {
-      writeFileSync(join(logsDir, "shepherd-20240101-120000.log"), "content");
+      writeFileSync(
+        join(logsDir, "shepherd-20240101-120000-1-1.log"),
+        "content",
+      );
 
       const result = await readFactoryLogsWithSelection(tempDir);
 
@@ -461,14 +509,73 @@ describe("logs reader", () => {
     });
 
     test("selects latest shepherd log", async () => {
-      writeFileSync(join(logsDir, "shepherd-20240101-120000.log"), "old");
-      writeFileSync(join(logsDir, "shepherd-20240102-120000.log"), "new");
+      writeFileSync(join(logsDir, "shepherd-20240101-120000-1-1.log"), "old");
+      writeFileSync(join(logsDir, "shepherd-20240102-120000-1-1.log"), "new");
 
       const result = await readFactoryLogsWithSelection(tempDir);
 
       expect((result.result as any).data.shepherd?.startedAt).toBe(
         "2024-01-02T12:00:00.000Z",
       );
+    });
+
+    test("selects the newest equal-timestamp shepherd PID and pass with observable timing", async () => {
+      const driverPath = join(logsDir, "driver-20260821-000000-1.log");
+      const lowerPidPath = join(
+        logsDir,
+        "shepherd-20260821-001915-65535-99.log",
+      );
+      const lowerPassPath = join(
+        logsDir,
+        "shepherd-20260821-001915-65536-9.log",
+      );
+      const selectedPath = join(
+        logsDir,
+        "shepherd-20260821-001915-65536-11.log",
+      );
+      writeFileSync(driverPath, "driver narration\n");
+      writeFileSync(lowerPidPath, "older PID");
+      writeFileSync(lowerPassPath, "older pass");
+      writeFileSync(selectedPath, "newest pass");
+      utimesSync(
+        driverPath,
+        new Date("2026-08-21T00:30:00.000Z"),
+        new Date("2026-08-21T00:30:00.000Z"),
+      );
+      utimesSync(
+        lowerPidPath,
+        new Date("2026-08-21T02:00:00.000Z"),
+        new Date("2026-08-21T02:00:00.000Z"),
+      );
+      utimesSync(
+        lowerPassPath,
+        new Date("2026-08-21T01:30:00.000Z"),
+        new Date("2026-08-21T01:30:00.000Z"),
+      );
+      utimesSync(
+        selectedPath,
+        new Date("2026-08-21T01:00:00.000Z"),
+        new Date("2026-08-21T01:00:00.000Z"),
+      );
+
+      const result = await readFactoryLogsWithSelection(tempDir);
+
+      expect(result.result.status).toBe("available");
+      expect((result.result as any).data.narration).toBe("driver narration\n");
+      expect((result.result as any).data.shepherd).toEqual({
+        startedAt: "2026-08-21T00:19:15.000Z",
+        lastActivityAt: "2026-08-21T01:00:00.000Z",
+        durationMs: 2445000,
+      });
+      expect((result.result as any).data.asOf).toMatchObject({
+        shepherd: "2026-08-21T01:00:00.000Z",
+        overall: "2026-08-21T01:00:00.000Z",
+      });
+      expect(
+        result.result.warnings.some(
+          (warning) => warning.code === "LOG_NAME_INVALID",
+        ),
+      ).toBe(false);
     });
 
     test("returns available when selected log is stable", async () => {
@@ -484,7 +591,7 @@ describe("logs reader", () => {
     test("exposes asOf timestamps per source", async () => {
       const driverPath = join(logsDir, "driver-20240101-120000-0.log");
       const cyclePath = join(logsDir, "cycle-20240102-120000.log");
-      const shepherdPath = join(logsDir, "shepherd-20240103-120000.log");
+      const shepherdPath = join(logsDir, "shepherd-20240103-120000-1-1.log");
       writeFileSync(driverPath, "content");
       writeFileSync(cyclePath, "content");
       writeFileSync(shepherdPath, "content");
@@ -1329,7 +1436,10 @@ describe("logs reader", () => {
     test("handles multiple log kinds together", async () => {
       writeFileSync(join(logsDir, "driver-20240101-120000-0.log"), "driver");
       writeFileSync(join(logsDir, "cycle-20240101-120000.log"), "cycle");
-      writeFileSync(join(logsDir, "shepherd-20240101-120000.log"), "shepherd");
+      writeFileSync(
+        join(logsDir, "shepherd-20240101-120000-1-1.log"),
+        "shepherd",
+      );
 
       const result = await readFactoryLogsWithSelection(tempDir);
 

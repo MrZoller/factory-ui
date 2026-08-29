@@ -43,6 +43,7 @@ export interface ParsedLogName {
   stamp: string;
   startedAt: Date;
   sequence: bigint;
+  pass: bigint;
 }
 
 export interface SelectedLog {
@@ -71,7 +72,7 @@ export interface LogReaderDependencies {
 }
 
 const LOG_NAME =
-  /^(driver|cycle|shepherd)-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})(?:-(0|[1-9]\d*))?\.log$/;
+  /^(driver|cycle|shepherd)-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})(?:-(0|[1-9]\d*))?(?:-(0|[1-9]\d*))?\.log$/;
 
 export function warning(code: string, message: string): ReaderWarning {
   return { code, message };
@@ -80,7 +81,8 @@ export function warning(code: string, message: string): ReaderWarning {
 export function parseLogName(name: string): ParsedLogName | null {
   const match = LOG_NAME.exec(name);
   if (match === null) return null;
-  const [, kind, year, month, day, hour, minute, second, sequence] = match;
+  const [, kind, year, month, day, hour, minute, second, sequence, pass] =
+    match;
   if (
     kind === undefined ||
     year === undefined ||
@@ -89,7 +91,9 @@ export function parseLogName(name: string): ParsedLogName | null {
     hour === undefined ||
     minute === undefined ||
     second === undefined ||
-    (kind === "driver") !== (sequence !== undefined)
+    (kind === "driver" && (sequence === undefined || pass !== undefined)) ||
+    (kind === "cycle" && (sequence !== undefined || pass !== undefined)) ||
+    (kind === "shepherd" && (sequence === undefined || pass === undefined))
   ) {
     return null;
   }
@@ -112,6 +116,7 @@ export function parseLogName(name: string): ParsedLogName | null {
     stamp: `${year}${month}${day}${hour}${minute}${second}`,
     startedAt,
     sequence: sequence === undefined ? 0n : BigInt(sequence),
+    pass: pass === undefined ? 0n : BigInt(pass),
   };
 }
 
@@ -121,6 +126,8 @@ function isNewer(candidate: SelectedLog, current?: SelectedLog): boolean {
     return candidate.parsed.stamp > current.parsed.stamp;
   if (candidate.parsed.sequence !== current.parsed.sequence)
     return candidate.parsed.sequence > current.parsed.sequence;
+  if (candidate.parsed.pass !== current.parsed.pass)
+    return candidate.parsed.pass > current.parsed.pass;
   return candidate.name > current.name;
 }
 

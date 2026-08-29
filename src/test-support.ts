@@ -2,6 +2,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// Current engine shepherd names include both the driver PID and shepherd pass.
+export const CURRENT_SHEPHERD_LOG_NAME =
+  "shepherd-20260821-004405-65536-11.log";
+
 export interface FactoryFixture {
   root: string;
   factoryPath: string;

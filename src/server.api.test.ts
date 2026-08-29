@@ -8,7 +8,11 @@ import type {
   RepositorySource,
 } from "./contracts";
 import { createRequestHandler } from "./server";
-import { createFactoryFixture, type FactoryFixture } from "./test-support";
+import {
+  CURRENT_SHEPHERD_LOG_NAME,
+  createFactoryFixture,
+  type FactoryFixture,
+} from "./test-support";
 
 const generatedAt = new Date("2026-08-16T12:00:00.000Z");
 const fixtures: FactoryFixture[] = [];
@@ -117,7 +121,7 @@ describe("versioned read-only API", () => {
       "bounded narration\n",
     );
     fixture.writeCycleLog("cycle-20260816-113000.log", "cycle\n");
-    fixture.writeShepherdLog("shepherd-20260816-114000.log", "review\n");
+    fixture.writeShepherdLog(CURRENT_SHEPHERD_LOG_NAME, "review\n");
 
     const handler = createRequestHandler(
       config([
@@ -190,6 +194,9 @@ describe("versioned read-only API", () => {
       },
       asOf: { overall: expect.any(String) },
     });
+    expect(body.logs.warnings).not.toContainEqual(
+      expect.objectContaining({ code: "LOG_NAME_INVALID" }),
+    );
     expect(body.routing).toEqual({
       status: "available",
       data: {

@@ -35,8 +35,8 @@ describe("liveness", () => {
       expect(MAX_LSOF_OUTPUT_BYTES).toBe(64 * 1024);
     });
 
-    test("MAX_LOG_ENTRIES is 256", () => {
-      expect(MAX_LOG_ENTRIES).toBe(256);
+    test("MAX_LOG_ENTRIES is 4096", () => {
+      expect(MAX_LOG_ENTRIES).toBe(4_096);
     });
   });
 
@@ -279,15 +279,57 @@ describe("liveness", () => {
         );
       });
 
-      test("returns CANNOT_VERIFY when logs exceed MAX_LOG_ENTRIES", async () => {
+      test("probes the newest driver above the former 256-entry limit and reports tee as RUNNING", async () => {
         for (let i = 0; i < 257; i++) {
           writeFileSync(
             join(logsDir, `driver-20240101-120000-${i}.log`),
             "content",
           );
         }
-        const result = await checkRepositoryLiveness(tempDir);
+        const mockRunner: LivenessDependencies["runner"] = vi.fn(
+          async (): Promise<ProbeResult> => ({
+            exitCode: 0,
+            stdout: "p0\nctee\n",
+            stderr: "",
+          }),
+        );
+
+        const result = await checkRepositoryLiveness(tempDir, {
+          runner: mockRunner,
+        });
+
+        expect(result.state).toBe("RUNNING");
+        expect(mockRunner).toHaveBeenCalledWith(
+          LSOF_EXECUTABLE,
+          ["-Fpc", "--", join(logsDir, "driver-20240101-120000-256.log")],
+          {
+            timeoutMs: LSOF_TIMEOUT_MS,
+            maxOutputBytes: MAX_LSOF_OUTPUT_BYTES,
+          },
+        );
+      });
+
+      test("does not probe when logs exceed MAX_LOG_ENTRIES", async () => {
+        for (let i = 0; i <= MAX_LOG_ENTRIES; i++) {
+          writeFileSync(
+            join(logsDir, `driver-20240101-120000-${i}.log`),
+            "content",
+          );
+        }
+        const mockRunner: LivenessDependencies["runner"] = vi.fn(
+          async (): Promise<ProbeResult> => ({
+            exitCode: 0,
+            stdout: "p0\nctee\n",
+            stderr: "",
+          }),
+        );
+
+        const result = await checkRepositoryLiveness(tempDir, {
+          runner: mockRunner,
+        });
+
         expect(result.state).toBe("CANNOT_VERIFY");
+        expect(mockRunner).not.toHaveBeenCalled();
       });
 
       test("ignores malformed driver log names, uses valid one", async () => {

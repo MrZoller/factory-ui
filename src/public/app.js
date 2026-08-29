@@ -1490,6 +1490,8 @@ export const WARNING_EXPLANATIONS = Object.freeze({
   LOG_UNAVAILABLE: "A selected log could not be read safely.",
   DRIVER_LOG_MISSING: "No recognized driver log is available for liveness.",
   LOGS_EMPTY: "No recognized factory logs are available.",
+  LOGS_TOO_MANY_ENTRIES:
+    "The factory logs directory exceeds the bounded scan; archive old top-level logs.",
   LOGS_UNAVAILABLE: "The factory logs directory could not be read safely.",
   ROUTING_INVALID_UTF8: "The routing file is not valid UTF-8 text.",
   ROUTING_INVALID_JSON: "The routing file is not valid JSON.",

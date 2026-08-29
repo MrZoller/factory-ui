@@ -69,7 +69,8 @@ network.
   The reader also tolerates legacy `## YYYY-MM-DD — <title>` headings (and the
   equivalent hyphen surrounded by spaces); stamped bullets remain the protocol
   form.
-- Logs: at most 256 directory entries are considered; narration is capped at
+- Logs: at most 4,096 directory entries are scanned while retaining only the
+  newest recognized driver, cycle, and shepherd entry; narration is capped at
   64 KiB, 100 lines, and 2,000 bytes per line.
 - Agent routing: `.factory/logs/routing.json` is capped at 256 KiB, 64 agents,
   128 characters per agent name, and 1,024 characters per model/provider
@@ -87,8 +88,10 @@ network.
 - Browser fan-out: at most four peer requests run concurrently, each with a
   five-second timeout. Peer failures are isolated and shown as `UNREACHABLE`.
 
-Inputs beyond a limit become unavailable or partial with warnings; the service
-does not silently expand its read surface.
+Inputs beyond a limit become unavailable or partial with warnings; exceeding
+the log-directory scan has its own diagnostic rather than masquerading as a
+missing or failed liveness probe. The service does not silently expand its read
+surface.
 
 ## `.factory` read surface
 
@@ -250,8 +253,10 @@ machines have been deployed or verified.
   name resolves in the browser, its ACL permits the port, and its origin is
   listed as a peer on the receiving host. A CORS error usually means the peer
   lists are not symmetric.
-- **Liveness is `CANNOT_VERIFY`:** install `lsof` and ensure it is executable.
-  Do not interpret uncertainty as `STOPPED`.
+- **Liveness is `CANNOT_VERIFY`:** inspect repository warnings first. A log-scan
+  limit warning means old top-level logs should be archived; without that
+  warning, install `lsof` and ensure it is executable. Do not interpret
+  uncertainty as `STOPPED`.
 - **Repository is partial/unavailable:** inspect that clone's bounded
   `.factory` files. The service reads only its documented fixed paths and does
   not follow alternate request-selected files.

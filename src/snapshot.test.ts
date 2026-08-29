@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { createFactoryFixture } from "./test-support";
+import { MAX_LOG_ENTRIES, type TrustedDriverLog } from "./readers/logs";
 
 import {
   createFleetSnapshot,
@@ -131,6 +132,80 @@ describe("snapshot", () => {
       expect(result.state.status).toBe("available");
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps newest driver data usable through the snapshot above 256 logs", async () => {
+    const fixture = createFactoryFixture();
+    try {
+      for (let i = 0; i < 257; i++) {
+        fixture.writeDriverLog(
+          `driver-20240101-120000-${i}.log`,
+          i === 256 ? "newest driver narration\n" : "older driver narration\n",
+        );
+      }
+      let selectedDriver: TrustedDriverLog | null | undefined;
+
+      const result = await readRepositoryFactoryData(
+        { name: "factory-ui", path: fixture.root },
+        async (driver) => {
+          selectedDriver = driver;
+          return {
+            state: "RUNNING",
+            checkedAt: "2026-08-16T12:00:00.000Z",
+          };
+        },
+      );
+
+      expect(result.logs).toMatchObject({
+        status: "available",
+        data: { narration: "newest driver narration\n" },
+      });
+      expect(selectedDriver?.path).toEndWith(
+        join("logs", "driver-20240101-120000-256.log"),
+      );
+      expect(result.liveness).toEqual({
+        state: "RUNNING",
+        checkedAt: "2026-08-16T12:00:00.000Z",
+      });
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  test("propagates an over-bound logs directory as unavailable without a trusted driver", async () => {
+    const fixture = createFactoryFixture();
+    try {
+      for (let i = 0; i <= MAX_LOG_ENTRIES; i++) {
+        fixture.writeDriverLog(
+          `driver-20240101-120000-${i}.log`,
+          "driver narration\n",
+        );
+      }
+      let selectedDriver: TrustedDriverLog | null | undefined;
+
+      const result = await readRepositoryFactoryData(
+        { name: "factory-ui", path: fixture.root },
+        async (driver) => {
+          selectedDriver = driver;
+          return {
+            state: "CANNOT_VERIFY",
+            checkedAt: "2026-08-16T12:00:00.000Z",
+          };
+        },
+      );
+
+      expect(result.logs).toEqual({
+        status: "unavailable",
+        warnings: [expect.objectContaining({ code: "LOGS_TOO_MANY_ENTRIES" })],
+      });
+      expect(selectedDriver).toBeNull();
+      expect(result.liveness).toEqual({
+        state: "CANNOT_VERIFY",
+        checkedAt: "2026-08-16T12:00:00.000Z",
+      });
+    } finally {
+      fixture.cleanup();
     }
   });
 

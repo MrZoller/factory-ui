@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T50",
-  "branch": "factory/t50-question-queue",
-  "pr": 62,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-29T20:16:02Z"
+  "updated": "2026-08-29T20:25:00Z"
 }

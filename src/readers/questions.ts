@@ -1,5 +1,6 @@
 import {
   type OpenQuestion,
+  type QuestionOption,
   type QuestionsData,
   type ReaderResult,
   type ReaderWarning,
@@ -29,7 +30,8 @@ export const QUESTIONS_WARNING_CODES = [
 ] as const;
 
 const QUESTION_HEADING =
-  /^## (Q[1-9][0-9]*) \(task (T[1-9][0-9]*), (open|answered)\) — (.+)$/;
+  /^## (Q[1-9][0-9]*) \(task (T[1-9][0-9]*), (open|answered|consumed|withdrawn)\) — (.+)$/;
+const PARKED_BRANCH = /(?:^|\s)Parked branch: `([^`]+)`(?:[.\s]|$)/;
 
 interface SourceLine {
   value: string;
@@ -66,6 +68,118 @@ function addWarning(
       message: "additional question warnings were omitted",
     });
   }
+}
+
+function bodyField(
+  lines: SourceLine[],
+  start: number,
+  end: number,
+  prefix: string,
+): string | undefined {
+  if (start < 0 || end <= start) return undefined;
+  const first = lines[start]?.value.slice(prefix.length).trim() ?? "";
+  const rest = lines
+    .slice(start + 1, end)
+    .map((line) => line.value)
+    .join("\n");
+  const value = `${first}${rest ? `\n${rest}` : ""}`.trim();
+  return value || undefined;
+}
+
+function parseOptions(value: string | undefined): QuestionOption[] | undefined {
+  if (!value) return undefined;
+  const labelledLines = value
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((line) => /^\s*([A-Z])\s*(?:—|-|:)\s*(.*)$/.exec(line));
+  let segments: string[];
+  if (labelledLines.length > 1) {
+    segments = [];
+    for (const line of labelledLines) {
+      const label = line?.[1];
+      const detail = line?.[2];
+      if (label === undefined || detail === undefined) return undefined;
+      segments.push(`${label} — ${detail}`);
+    }
+  } else {
+    segments = value.split(/\s+\/\s+|\s*;\s+(?=[A-Z](?:\s*(?:—|-|:)|\s))/);
+  }
+  if (segments.length < 1 || segments.length > 26) return undefined;
+  const options: QuestionOption[] = [];
+  for (const segment of segments) {
+    const match = /^([A-Z])(?:\s*(?:—|-|:)\s*([\s\S]*)|\s*)$/.exec(
+      segment.trim(),
+    );
+    if (!match) return undefined;
+    const label = match[1];
+    const rawText = match[2] ?? "";
+    if (label === undefined) return undefined;
+    const raw = rawText.trim();
+    const recommended = /\(\s*recommended\b/i.test(raw);
+    options.push({
+      label,
+      text: raw,
+      ...(recommended ? { recommended: true } : {}),
+    });
+  }
+  return options;
+}
+
+export function parseQuestionDetails(
+  text: string,
+): Omit<OpenQuestion, "id" | "taskId" | "title" | "text"> {
+  const lines = sourceLines(text).slice(1);
+  const contextIndex = lines.findIndex((line) =>
+    line.value.startsWith("Context:"),
+  );
+  const optionsIndex = lines.findIndex((line) =>
+    line.value.startsWith("Options considered:"),
+  );
+  const answerIndex = lines.findIndex((line) =>
+    line.value.startsWith("**A:**"),
+  );
+  const qualifierIndex = lines.findIndex(
+    (line, index) =>
+      index > optionsIndex &&
+      index < answerIndex &&
+      /^(?:Qualifier(?: prompt)?:|Please\b|For\s+[A-Z](?:\s*(?:,|or|and)\s*[A-Z])*\s*,?\s+state whether\b)/i.test(
+        line.value,
+      ),
+  );
+  const context = bodyField(
+    lines,
+    contextIndex,
+    optionsIndex >= 0 ? optionsIndex : lines.length,
+    "Context:",
+  );
+  const optionsText = bodyField(
+    lines,
+    optionsIndex,
+    qualifierIndex >= 0
+      ? qualifierIndex
+      : answerIndex >= 0
+        ? answerIndex
+        : lines.length,
+    "Options considered:",
+  );
+  const qualifierLine = lines[qualifierIndex]?.value ?? "";
+  const qualifierPrefix = qualifierLine.match(
+    /^(?:Qualifier(?: prompt)?:\s*)/i,
+  )?.[0];
+  const qualifier = bodyField(
+    lines,
+    qualifierIndex,
+    answerIndex >= 0 ? answerIndex : lines.length,
+    qualifierPrefix ?? "",
+  );
+  const options = parseOptions(optionsText);
+  const branch = PARKED_BRANCH.exec(context ?? "")?.[1];
+  return {
+    ...(context === undefined ? {} : { context }),
+    ...(options === undefined ? {} : { options }),
+    ...(qualifier === undefined ? {} : { qualifier }),
+    ...(branch === undefined ? {} : { branch }),
+  };
 }
 
 export function parseFactoryQuestions(
@@ -150,13 +264,18 @@ export function parseFactoryQuestions(
       current.index + 1,
       boundaries[boundary + 1]?.index ?? lines.length,
     );
-    const hasContext = bodyLines.some((line) =>
+    const contextIndex = bodyLines.findIndex((line) =>
       line.value.startsWith("Context:"),
     );
-    const hasOptions = bodyLines.some((line) =>
+    const optionsIndex = bodyLines.findIndex((line) =>
       line.value.startsWith("Options considered:"),
     );
-    const hasAnswer = bodyLines.some((line) => line.value.startsWith("**A:**"));
+    const answerIndex = bodyLines.findIndex((line) =>
+      line.value.startsWith("**A:**"),
+    );
+    const hasContext = contextIndex >= 0;
+    const hasOptions = optionsIndex >= 0;
+    const hasAnswer = answerIndex >= 0;
     if (!hasContext || !hasOptions || !hasAnswer) {
       addWarning(
         warnings,
@@ -166,7 +285,13 @@ export function parseFactoryQuestions(
         current.line.value,
       );
     }
-    open.push({ id, taskId, title, text: textSlice });
+    open.push({
+      id,
+      taskId,
+      title,
+      text: textSlice,
+      ...parseQuestionDetails(textSlice),
+    });
   }
 
   for (const duplicateLines of identifiers.values()) {

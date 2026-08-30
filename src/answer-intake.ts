@@ -272,6 +272,17 @@ function validOutcome(value: unknown, id: string): value is AnswerOutcome {
   if (value.reason !== undefined && !validPrivateString(value.reason))
     return false;
   if (value.option === undefined && value.text === undefined) return false;
+  // Rejected records are terminal at preparation time: unlike accepted
+  // records they deliberately have no prepare/settle stamps, only a reason.
+  // Recognize that complete shape before the shared transient-state checks.
+  if (
+    status === "rejected" &&
+    value.preparedAt === undefined &&
+    value.settledAt === undefined &&
+    value.reason !== undefined
+  ) {
+    return true;
+  }
   if (
     (status === "pending" &&
       (value.preparedAt !== undefined ||
@@ -297,7 +308,14 @@ export async function submitAnswer(
   input: SubmitAnswerInput,
   dependencies: AnswerIntakeDependencies = {},
 ): Promise<AnswerSubmissionResult> {
-  const request = validateAnswerRequest(input);
+  // The public input carries trusted server-only routing fields in addition to
+  // the wire schema. Validate only the latter; validating the whole object
+  // would reject every legitimate submission for having those required fields.
+  const request = validateAnswerRequest({
+    question: input.question,
+    ...(input.option === undefined ? {} : { option: input.option }),
+    ...(input.text === undefined ? {} : { text: input.text }),
+  });
   if (request === null || !validPrivateString(input.actor)) {
     throw new Error("invalid answer submission");
   }

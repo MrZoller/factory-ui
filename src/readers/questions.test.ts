@@ -177,6 +177,56 @@ Options considered: A — Proceed
           warnings: [],
         });
       });
+
+      test("exposes an exact valid filed-at timestamp and retains legacy entries before the marker", () => {
+        const result = parseFactoryQuestions(`## Q1 (task T1, open) — Legacy
+Context: Context
+Options considered: A — Go
+**A:**
+<!-- factory-question-timestamps-required-below -->
+## Q2 (task T2, open, filed-at 2026-08-30T03:04:05Z) — Timestamped
+Context: Context
+Options considered: A — Go
+**A:**`);
+        expect(result).toMatchObject({
+          status: "available",
+          data: {
+            open: [{ id: "Q1" }, { id: "Q2", filedAt: "2026-08-30T03:04:05Z" }],
+          },
+        });
+      });
+
+      test("requires a valid calendar timestamp below the marker while preserving legacy grammar above it", () => {
+        for (const filedAt of [
+          "2026-02-30T03:04:05Z",
+          "2026-08-30T24:04:05Z",
+          "2026-08-30T03:04:05+00:00",
+          "2026-08-30T03:04:05.123Z",
+        ]) {
+          const result =
+            parseFactoryQuestions(`<!-- factory-question-timestamps-required-below -->
+## Q1 (task T1, open, filed-at ${filedAt}) — Bad
+Context: Context
+Options considered: A — Go
+**A:**`);
+          expect(result).toMatchObject({
+            status: "partial",
+            data: { open: [] },
+          });
+          expect(result.warnings).toContainEqual(
+            expect.objectContaining({ code: "QUESTIONS_MALFORMED_ENTRY" }),
+          );
+        }
+        const missing =
+          parseFactoryQuestions(`<!-- factory-question-timestamps-required-below -->
+## Q1 (task T1, open) — Missing
+Context: Context
+Options considered: A — Go
+**A:**`);
+        expect(missing.warnings).toContainEqual(
+          expect.objectContaining({ code: "QUESTIONS_MALFORMED_ENTRY" }),
+        );
+      });
     });
 
     describe("entry parsing - missing protocol fields", () => {

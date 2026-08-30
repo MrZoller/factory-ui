@@ -23,6 +23,183 @@ afterEach(() => {
   for (const fixture of fixtures.splice(0)) fixture.cleanup();
 });
 
+describe("answer delivery API", () => {
+  const answerId = "123e4567-e89b-42d3-a456-426614174000";
+  const secret = "shared-secret";
+  const source = {
+    machine: "mini",
+    repositories: [{ name: "owned", path: "/trusted/owned" }],
+    peers: [{ name: "legion", origin: "http://100.100.0.2:7777" }],
+    developmentOrigins: ["http://localhost:3000"],
+    bind: "127.0.0.1",
+    port: 7777,
+    answerIntake: { actor: "Verified Actor", secret },
+  };
+  function request(path = "/api/repo/owned/answers", init: RequestInit = {}) {
+    return new Request(`http://localhost${path}`, init);
+  }
+  const headers = {
+    Authorization: `Bearer ${secret}`,
+    "Content-Type": "application/json",
+    "Idempotency-Key": answerId,
+  };
+
+  test("authenticates before reading an invalid body and does not disclose ownership or secret", async () => {
+    const submit = vi.fn();
+    const handler = createRequestHandler(source, { submitAnswer: submit });
+    const bad = await handler(
+      request("/api/repo/not-owned/answers", {
+        method: "POST",
+        body: "{not-json",
+      }),
+    );
+    const unauthenticated = await handler(
+      request(undefined, {
+        method: "POST",
+        body: "{not-json",
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    expect(bad.status).toBe(404);
+    expect(unauthenticated.status).toBe(401);
+    expect(await unauthenticated.text()).not.toContain(secret);
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  test("enforces answer method, content type, body bound, exact fields, and configured actor", async () => {
+    const submit = vi.fn(async () => ({
+      status: "pending" as const,
+      id: answerId,
+    }));
+    const handler = createRequestHandler(source, { submitAnswer: submit });
+    expect(
+      (await handler(request(undefined, { method: "GET", headers }))).status,
+    ).toBe(405);
+    expect(
+      (
+        await handler(
+          request(undefined, {
+            method: "POST",
+            headers: { ...headers, "Content-Type": "text/plain" },
+            body: "{}",
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await handler(
+          request(undefined, {
+            method: "POST",
+            headers: { ...headers, "Content-Length": "999999" },
+            body: "{}",
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await handler(
+          request(undefined, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ question: "Q1", option: "A", extra: true }),
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    const response = await handler(
+      request(undefined, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ question: "Q1", option: "A" }),
+      }),
+    );
+    expect(response.status).toBe(202);
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repositoryPath: "/trusted/owned",
+        actor: "Verified Actor",
+        secret,
+        question: "Q1",
+      }),
+    );
+  });
+
+  test("serves outcomes, CORS preflight, no-store, and generic errors without secret or path disclosure", async () => {
+    const handler = createRequestHandler(source, {
+      answerOutcome: async () => ({
+        schemaVersion: 1,
+        id: answerId,
+        status: "rejected",
+        question: "Q1",
+        option: "A",
+        actor: "Verified Actor",
+        source: "factory-ui",
+        submittedAt: "2026-08-30T12:00:00.000Z",
+        reason: "question terminal",
+      }),
+    });
+    const outcome = await handler(
+      request(`/api/repo/owned/answers/${answerId}`, {
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          Origin: "http://100.100.0.2:7777",
+        },
+      }),
+    );
+    expect(outcome.status).toBe(200);
+    expect(outcome.headers.get("cache-control")).toBe("no-store");
+    expect(outcome.headers.get("access-control-allow-origin")).toBe(
+      "http://100.100.0.2:7777",
+    );
+    const denied = await handler(
+      request(undefined, {
+        method: "OPTIONS",
+        headers: { Origin: "https://evil.test" },
+      }),
+    );
+    expect(denied.status).toBe(204);
+    expect(denied.headers.get("access-control-allow-origin")).toBeNull();
+    expect(denied.headers.get("access-control-allow-headers")).toContain(
+      "Idempotency-Key",
+    );
+  });
+
+  test("deduplicates concurrent and retried keys, rejects conflicts, and bounds settled records", async () => {
+    let release!: () => void;
+    const submitted = new Promise<{ status: "pending"; id: string }>(
+      (resolve) => {
+        release = () => resolve({ status: "pending", id: answerId });
+      },
+    );
+    const submit = vi.fn(() => submitted);
+    const handler = createRequestHandler(source, { submitAnswer: submit });
+    const body = JSON.stringify({ question: "Q1", option: "A" });
+    const first = handler(
+      request(undefined, { method: "POST", headers, body }),
+    );
+    const second = handler(
+      request(undefined, { method: "POST", headers, body }),
+    );
+    release();
+    expect((await first).status).toBe(202);
+    expect((await second).status).toBe(202);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        await handler(
+          request(undefined, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ question: "Q2", option: "A" }),
+          }),
+        )
+      ).status,
+    ).toBe(409);
+  });
+});
+
 function unavailable(name: string): RepositoryFactorySnapshot {
   const warning = { code: "UNAVAILABLE", message: "source unavailable" };
   return {

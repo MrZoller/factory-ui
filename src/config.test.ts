@@ -1288,6 +1288,32 @@ describe("config", () => {
       const result = parseConfig(input);
       expect(result.peers).toHaveLength(32);
     });
+
+    test("accepts a bounded answer actor but rejects control characters and overflow", () => {
+      expect(
+        parseConfig({ ...baseInput, answerActor: "Chris Zoller" }).answerActor,
+      ).toBe("Chris Zoller");
+      for (const answerActor of [
+        "",
+        " actor ",
+        "bad\nactor",
+        "x".repeat(513),
+      ]) {
+        expect(() => parseConfig({ ...baseInput, answerActor })).toThrow(
+          "answerActor must be a non-empty string",
+        );
+      }
+    });
+
+    test("keeps answer intake disabled when no actor is configured and never parses a secret", () => {
+      const parsed = parseConfig({
+        ...baseInput,
+        FACTORY_ANSWER_SECRET: "not-config",
+      });
+      expect(parsed).not.toHaveProperty("answerActor");
+      expect(parsed).not.toHaveProperty("answerIntake");
+      expect(JSON.stringify(parsed)).not.toContain("not-config");
+    });
   });
 
   describe("loadConfig", () => {
@@ -1404,6 +1430,69 @@ describe("config", () => {
       // Should succeed since file size is <= 64KB
       const result = await loadConfig(tempFile);
       expect(result.machine).toBe("test-machine");
+    });
+
+    test("requires the runtime-only secret before accepting an enabled answer intake", async () => {
+      await Bun.write(
+        tempFile,
+        JSON.stringify({
+          machine: "test-machine",
+          repositories: [
+            {
+              name: "repo1",
+              path: tempDir,
+              githubUrl: "https://github.com/test/repo",
+            },
+          ],
+          peers: [],
+          answerActor: "Chris",
+        }),
+      );
+      const previous = process.env.FACTORY_ANSWER_SECRET;
+      delete process.env.FACTORY_ANSWER_SECRET;
+      try {
+        await expect(loadConfig(tempFile)).rejects.toThrow(
+          "FACTORY_ANSWER_SECRET must be non-empty",
+        );
+      } finally {
+        if (previous === undefined) delete process.env.FACTORY_ANSWER_SECRET;
+        else process.env.FACTORY_ANSWER_SECRET = previous;
+      }
+    });
+
+    test("attaches the environment secret only at runtime, not to parsed config", async () => {
+      await Bun.write(
+        tempFile,
+        JSON.stringify({
+          machine: "test-machine",
+          repositories: [
+            {
+              name: "repo1",
+              path: tempDir,
+              githubUrl: "https://github.com/test/repo",
+            },
+          ],
+          peers: [],
+          answerActor: "Chris",
+        }),
+      );
+      const previous = process.env.FACTORY_ANSWER_SECRET;
+      process.env.FACTORY_ANSWER_SECRET = "runtime-secret";
+      try {
+        const loaded = await loadConfig(tempFile);
+        expect(loaded.answerIntake).toEqual({
+          actor: "Chris",
+          secret: "runtime-secret",
+        });
+        expect(
+          JSON.stringify(
+            parseConfig(JSON.parse(await Bun.file(tempFile).text())),
+          ),
+        ).not.toContain("runtime-secret");
+      } finally {
+        if (previous === undefined) delete process.env.FACTORY_ANSWER_SECRET;
+        else process.env.FACTORY_ANSWER_SECRET = previous;
+      }
     });
   });
 });

@@ -22,6 +22,14 @@ const MAX_QUESTION_QUEUE_ENTRIES = 256;
 const MAX_QUESTION_TEXT_LENGTH = 256 * 1024;
 const MAX_QUESTION_OPTIONS = 26;
 const MAX_QUESTION_OPTION_LENGTH = 8192;
+const MAX_ANSWER_TEXT_LENGTH = 10_000;
+const MAX_ANSWER_RESPONSE_BYTES = 64 * 1024;
+const MAX_STORED_ANSWER_LIFECYCLES = 128;
+export const ANSWER_POLL_INTERVAL_MS = 5_000;
+const ANSWER_STORAGE_KEY = "factory-ui.answer-lifecycle.v1";
+const ANSWER_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ASCII_CONTROL = /[\u0000-\u001f\u007f]/;
 const COMPLETED_TASK_LIMIT = 8;
 const loadGenerations = new WeakMap();
 const tabControllers = new WeakMap();
@@ -29,6 +37,8 @@ const machineViews = new WeakMap();
 const loadStates = new WeakMap();
 const dashboardControllers = new WeakMap();
 const disclosureStates = new WeakMap();
+const answerStores = new WeakMap();
+const answerRuntimes = new WeakMap();
 
 function disclosureState(documentRoot, machine, repository) {
   let machines = disclosureStates.get(documentRoot);
@@ -1894,6 +1904,7 @@ function isQuestion(value) {
     value.title.length <= MAX_QUESTION_OPTION_LENGTH &&
     typeof value.text === "string" &&
     value.text.length <= MAX_QUESTION_TEXT_LENGTH &&
+    (value.filedAt === undefined || isFiledAt(value.filedAt)) &&
     (value.context === undefined ||
       (typeof value.context === "string" &&
         value.context.length <= MAX_QUESTION_TEXT_LENGTH)) &&
@@ -1910,6 +1921,25 @@ function isQuestion(value) {
       safeGithubUrl(value.branchUrl, "branch")) &&
     (value.blockedTask === undefined ||
       isQuestionTask(value.blockedTask, value.taskId))
+  );
+}
+
+function isFiledAt(value) {
+  const fields =
+    typeof value === "string"
+      ? /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d+)?Z$/.exec(
+          value,
+        )
+      : null;
+  if (fields === null || Number.isNaN(Date.parse(value))) return false;
+  const date = new Date(value);
+  return (
+    date.getUTCFullYear() === Number(fields[1]) &&
+    date.getUTCMonth() + 1 === Number(fields[2]) &&
+    date.getUTCDate() === Number(fields[3]) &&
+    date.getUTCHours() === Number(fields[4]) &&
+    date.getUTCMinutes() === Number(fields[5]) &&
+    date.getUTCSeconds() === Number(fields[6])
   );
 }
 
@@ -2860,7 +2890,7 @@ function createRepositoryView(
   return { identity: repository.name, row, tab, panel };
 }
 
-function createMachineView(identity, index, documentRoot, isPeer) {
+function createMachineView(identity, index, documentRoot, isPeer, origin) {
   const row = documentRoot.createElement("tr");
   const tab = documentRoot.createElement("button");
   const panel = documentRoot.createElement("section");
@@ -2884,6 +2914,7 @@ function createMachineView(identity, index, documentRoot, isPeer) {
   panel.append(routing, grid);
   return {
     identity,
+    origin,
     index,
     row,
     tab,
@@ -3176,147 +3207,752 @@ function insertBoundedQuestionEntry(entries, entry) {
   if (entries.length > MAX_QUESTION_QUEUE_ENTRIES) entries.pop();
 }
 
+function answerKey(machine, repository, question) {
+  return `${machine}\u0000${repository}\u0000${question}`;
+}
+
+function validLifecycleString(value, maximum) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maximum &&
+    !ASCII_CONTROL.test(value)
+  );
+}
+
+function validateStoredLifecycle(value) {
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    !validLifecycleString(value.machine, 128) ||
+    !validLifecycleString(value.repository, 128) ||
+    typeof value.question !== "string" ||
+    !/^Q[1-9][0-9]*$/.test(value.question) ||
+    !ANSWER_UUID.test(String(value.id)) ||
+    !["pending", "inflight", "accepted", "rejected"].includes(value.status) ||
+    (value.actor !== undefined && !validLifecycleString(value.actor, 512)) ||
+    (value.reason !== undefined && !validLifecycleString(value.reason, 512))
+  ) {
+    return null;
+  }
+  if (
+    (value.status === "accepted" && value.actor === undefined) ||
+    (value.status === "rejected" && value.reason === undefined) ||
+    (["pending", "inflight"].includes(value.status) &&
+      (value.actor !== undefined || value.reason !== undefined))
+  ) {
+    return null;
+  }
+  return {
+    version: 1,
+    machine: value.machine,
+    repository: value.repository,
+    question: value.question,
+    id: value.id,
+    status: value.status,
+    ...(value.actor === undefined ? {} : { actor: value.actor }),
+    ...(value.reason === undefined ? {} : { reason: value.reason }),
+    resumed: true,
+  };
+}
+
+function getAnswerStore(documentRoot) {
+  let store = answerStores.get(documentRoot);
+  if (store) return store;
+  store = new Map();
+  try {
+    const raw =
+      documentRoot.defaultView?.localStorage?.getItem(ANSWER_STORAGE_KEY);
+    const values = raw === null || raw === undefined ? [] : JSON.parse(raw);
+    if (
+      Array.isArray(values) &&
+      values.length <= MAX_STORED_ANSWER_LIFECYCLES
+    ) {
+      for (const value of values) {
+        const lifecycle = validateStoredLifecycle(value);
+        if (lifecycle !== null) {
+          store.set(
+            answerKey(
+              lifecycle.machine,
+              lifecycle.repository,
+              lifecycle.question,
+            ),
+            lifecycle,
+          );
+        }
+      }
+    }
+  } catch {
+    // Storage is an optional durability aid; the current session still works.
+  }
+  answerStores.set(documentRoot, store);
+  return store;
+}
+
+function persistAnswerStore(documentRoot) {
+  const records = [...getAnswerStore(documentRoot).values()]
+    .filter((state) => ANSWER_UUID.test(String(state.id)))
+    .slice(-MAX_STORED_ANSWER_LIFECYCLES)
+    .map((state) => ({
+      version: 1,
+      machine: state.machine,
+      repository: state.repository,
+      question: state.question,
+      id: state.id,
+      status: state.status,
+      ...(state.actor === undefined ? {} : { actor: state.actor }),
+      ...(state.reason === undefined ? {} : { reason: state.reason }),
+    }));
+  try {
+    documentRoot.defaultView?.localStorage?.setItem(
+      ANSWER_STORAGE_KEY,
+      JSON.stringify(records),
+    );
+  } catch {
+    // Private mode and full/disabled storage must not disable answering.
+  }
+}
+
+function answerRuntime(documentRoot) {
+  let runtime = answerRuntimes.get(documentRoot);
+  if (runtime) return runtime;
+  runtime = {
+    fetcher: globalThis.fetch.bind(globalThis),
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    randomUUID: () => globalThis.crypto.randomUUID(),
+    stopped: false,
+  };
+  answerRuntimes.set(documentRoot, runtime);
+  return runtime;
+}
+
+function answerEndpoint(view, repository, id) {
+  const path = `/api/repo/${encodeURIComponent(repository)}/answers${id ? `/${id}` : ""}`;
+  return view.origin === undefined ? path : new URL(path, view.origin).href;
+}
+
+async function readAnswerResponse(response, allowNotFound = false) {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_ANSWER_RESPONSE_BYTES) {
+    throw new Error("Answer response is too large");
+  }
+  let text = "";
+  if (response.body) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > MAX_ANSWER_RESPONSE_BYTES) {
+          await reader.cancel();
+          throw new Error("Answer response is too large");
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+      text += decoder.decode();
+    } catch (cause) {
+      if (
+        cause instanceof Error &&
+        cause.message === "Answer response is too large"
+      ) {
+        throw cause;
+      }
+      throw new Error("Invalid answer response");
+    }
+  }
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new Error("Invalid answer response");
+  }
+  if (!response.ok && !(allowNotFound && response.status === 404)) {
+    const message =
+      isRecord(value) && validLifecycleString(value.error, 512)
+        ? value.error
+        : `Answer request failed (${response.status})`;
+    throw new Error(message);
+  }
+  return value;
+}
+
+function rerenderQuestionQueue(documentRoot) {
+  const views = machineViews.get(documentRoot);
+  if (views) renderQuestionQueue(documentRoot, views);
+}
+
+function clearAnswerPoll(documentRoot, state) {
+  if (state.pollTimer !== undefined) {
+    answerRuntime(documentRoot).clearTimeout(state.pollTimer);
+    state.pollTimer = undefined;
+  }
+}
+
+function terminalAnswer(documentRoot, state, status, detail) {
+  clearAnswerPoll(documentRoot, state);
+  state.status = status;
+  state.secret = "";
+  state.polling = false;
+  state.resumed = false;
+  state.error = undefined;
+  if (status === "accepted") state.actor = detail;
+  else state.reason = detail;
+  persistAnswerStore(documentRoot);
+  rerenderQuestionQueue(documentRoot);
+}
+
+function validAnswerOutcome(value, id, question) {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    value.id !== id ||
+    value.question !== question ||
+    value.source !== "factory-ui" ||
+    !["pending", "inflight", "accepted", "rejected"].includes(value.status) ||
+    !validLifecycleString(value.actor, 512) ||
+    !isTimestamp(value.submittedAt)
+  ) {
+    return false;
+  }
+  return (
+    (value.status !== "rejected" && value.reason === undefined) ||
+    (value.status === "rejected" && validLifecycleString(value.reason, 512))
+  );
+}
+
+function scheduleAnswerPoll(documentRoot, view, state) {
+  const runtime = answerRuntime(documentRoot);
+  clearAnswerPoll(documentRoot, state);
+  if (
+    runtime.stopped ||
+    state.polling ||
+    !state.secret ||
+    !ANSWER_UUID.test(String(state.id)) ||
+    ["accepted", "rejected"].includes(state.status)
+  ) {
+    return;
+  }
+  state.pollTimer = runtime.setTimeout(
+    () => void pollAnswer(documentRoot, view, state),
+    ANSWER_POLL_INTERVAL_MS,
+  );
+}
+
+async function pollAnswer(documentRoot, view, state) {
+  const runtime = answerRuntime(documentRoot);
+  if (state.polling || runtime.stopped || !state.secret) return;
+  state.polling = true;
+  state.error = undefined;
+  rerenderQuestionQueue(documentRoot);
+  try {
+    const response = await runtime.fetcher(
+      answerEndpoint(view, state.repository, state.id),
+      { headers: { Authorization: `Bearer ${state.secret}` } },
+    );
+    const value = await readAnswerResponse(response, true);
+    if (isRecord(value) && value.status === "unknown-record") {
+      state.polling = false;
+      state.secret = "";
+      state.resumed = true;
+      state.error = "Outcome record not found";
+      rerenderQuestionQueue(documentRoot);
+      return;
+    }
+    if (!validAnswerOutcome(value, state.id, state.question)) {
+      throw new Error("Invalid answer outcome");
+    }
+    state.polling = false;
+    if (value.status === "accepted") {
+      terminalAnswer(documentRoot, state, "accepted", value.actor);
+      return;
+    }
+    if (value.status === "rejected") {
+      terminalAnswer(documentRoot, state, "rejected", value.reason);
+      return;
+    }
+    state.status = value.status;
+    persistAnswerStore(documentRoot);
+    rerenderQuestionQueue(documentRoot);
+    scheduleAnswerPoll(documentRoot, view, state);
+  } catch (cause) {
+    state.polling = false;
+    state.secret = "";
+    state.resumed = true;
+    state.error = cause instanceof Error ? cause.message : "Tracking failed";
+    rerenderQuestionQueue(documentRoot);
+  }
+}
+
+async function submitAnswerFromQueue(documentRoot, view, state) {
+  if (state.sending) return;
+  const runtime = answerRuntime(documentRoot);
+  state.sending = true;
+  state.error = undefined;
+  if (!state.idempotencyKey) state.idempotencyKey = runtime.randomUUID();
+  rerenderQuestionQueue(documentRoot);
+  try {
+    const response = await runtime.fetcher(
+      answerEndpoint(view, state.repository),
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${state.secret}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": state.idempotencyKey,
+        },
+        body: JSON.stringify(state.payload),
+      },
+    );
+    const value = await readAnswerResponse(response);
+    if (
+      !isRecord(value) ||
+      value.status !== "pending" ||
+      !ANSWER_UUID.test(String(value.id))
+    ) {
+      throw new Error("Invalid answer submission response");
+    }
+    state.id = value.id;
+    state.status = "pending";
+    state.sending = false;
+    state.resumed = false;
+    persistAnswerStore(documentRoot);
+    rerenderQuestionQueue(documentRoot);
+    scheduleAnswerPoll(documentRoot, view, state);
+  } catch (cause) {
+    state.sending = false;
+    state.error = cause instanceof Error ? cause.message : "Submission failed";
+    rerenderQuestionQueue(documentRoot);
+  }
+}
+
+function renderAnswerLifecycle(parent, documentRoot, view, state) {
+  const lifecycle = documentRoot.createElement("section");
+  lifecycle.className = "answer-lifecycle";
+  if (state.status === "accepted") {
+    appendText(
+      lifecycle,
+      "strong",
+      "applied/consumed",
+      "answer-status chip chip-good",
+    );
+    appendText(
+      lifecycle,
+      "p",
+      `Answered by ${state.actor} via factory-ui`,
+      "answer-attribution",
+    );
+  } else if (state.status === "rejected") {
+    appendText(
+      lifecycle,
+      "strong",
+      "rejected",
+      "answer-status chip chip-danger",
+    );
+    appendText(lifecycle, "p", state.reason, "answer-reason");
+  } else {
+    appendText(
+      lifecycle,
+      "strong",
+      "pending application",
+      "answer-status chip chip-info",
+    );
+    if (state.error) appendText(lifecycle, "p", state.error, "answer-error");
+    if (state.resumed || !state.secret) {
+      const resume = documentRoot.createElement("div");
+      resume.className = "answer-resume";
+      const label = appendText(resume, "label", "Shared secret");
+      const password = documentRoot.createElement("input");
+      password.type = "password";
+      password.autocomplete = "current-password";
+      password.value = state.secret ?? "";
+      password.addEventListener("input", () => {
+        state.secret = password.value;
+      });
+      label.append(password);
+      const button = appendText(
+        resume,
+        "button",
+        state.polling ? "Tracking…" : "Resume tracking",
+        "button button-secondary",
+      );
+      button.type = "button";
+      button.disabled = state.polling;
+      button.addEventListener("click", () => {
+        state.secret = password.value;
+        if (!state.secret) {
+          state.error = "Shared secret is required";
+          rerenderQuestionQueue(documentRoot);
+          return;
+        }
+        state.resumed = false;
+        void pollAnswer(documentRoot, view, state);
+      });
+      resume.append(button);
+      lifecycle.append(resume);
+    }
+  }
+  parent.append(lifecycle);
+}
+
+function renderAnswerForm(parent, documentRoot, view, question, state) {
+  const form = documentRoot.createElement("div");
+  form.className = "answer-form";
+  if (state.stage === "review" || state.payload) {
+    appendText(form, "h4", "Review answer", "question-field-label");
+    if (state.payload?.option)
+      appendText(
+        form,
+        "p",
+        `Option: ${state.payload.option}`,
+        "answer-review-value",
+      );
+    if (state.payload?.text)
+      appendText(
+        form,
+        "p",
+        `Text: ${state.payload.text}`,
+        "answer-review-value",
+      );
+    if (state.error) appendText(form, "p", state.error, "answer-error");
+    const actions = documentRoot.createElement("div");
+    actions.className = "answer-actions";
+    const confirm = appendText(
+      actions,
+      "button",
+      state.sending
+        ? "Submitting…"
+        : state.idempotencyKey
+          ? "Retry submission"
+          : "Confirm submission",
+      "button button-primary",
+    );
+    confirm.type = "button";
+    confirm.disabled = state.sending;
+    confirm.addEventListener(
+      "click",
+      () => void submitAnswerFromQueue(documentRoot, view, state),
+    );
+    if (!state.idempotencyKey) {
+      const cancel = appendText(
+        actions,
+        "button",
+        "Cancel",
+        "button button-secondary",
+      );
+      cancel.type = "button";
+      cancel.addEventListener("click", () => {
+        state.stage = "edit";
+        state.payload = undefined;
+        state.error = undefined;
+        rerenderQuestionQueue(documentRoot);
+      });
+    }
+    form.append(actions);
+    parent.append(form);
+    return;
+  }
+
+  appendText(form, "h4", "Answer", "question-field-label");
+  if (question.options.length > 0) {
+    const options = documentRoot.createElement("fieldset");
+    appendText(options, "legend", "Select an option", "answer-label");
+    for (const option of question.options) {
+      const label = documentRoot.createElement("label");
+      label.className = "answer-option";
+      const input = documentRoot.createElement("input");
+      input.type = "radio";
+      input.name = `answer-${view.identity}-${state.repository}-${question.id}`;
+      input.value = option.label;
+      input.checked = state.option === option.label;
+      input.addEventListener("change", () => {
+        state.option = option.label;
+      });
+      label.append(
+        input,
+        documentRoot.createTextNode(`${option.label} · ${option.text}`),
+      );
+      options.append(label);
+    }
+    form.append(options);
+  }
+  const textLabel = appendText(
+    form,
+    "label",
+    question.qualifier ?? "Optional answer text",
+    "answer-label",
+  );
+  const text = documentRoot.createElement("input");
+  text.type = "text";
+  text.maxLength = MAX_ANSWER_TEXT_LENGTH;
+  text.value = state.text ?? "";
+  text.addEventListener("input", () => {
+    state.text = text.value;
+  });
+  textLabel.append(text);
+  const secretLabel = appendText(
+    form,
+    "label",
+    "Shared secret",
+    "answer-label",
+  );
+  const secret = documentRoot.createElement("input");
+  secret.type = "password";
+  secret.autocomplete = "current-password";
+  secret.value = state.secret ?? "";
+  secret.addEventListener("input", () => {
+    state.secret = secret.value;
+  });
+  secretLabel.append(secret);
+  if (state.error) appendText(form, "p", state.error, "answer-error");
+  const review = appendText(
+    form,
+    "button",
+    "Review answer",
+    "button button-primary",
+  );
+  review.type = "button";
+  review.addEventListener("click", () => {
+    const answerText = text.value.trim();
+    state.text = text.value;
+    state.secret = secret.value;
+    if (!state.option && !answerText) {
+      state.error = "Select an option or enter answer text";
+    } else if (answerText && ASCII_CONTROL.test(text.value)) {
+      state.error = "Answer text cannot contain ASCII control characters";
+    } else if (!state.secret) {
+      state.error = "Shared secret is required";
+    } else {
+      state.error = undefined;
+      state.payload = {
+        question: question.id,
+        ...(state.option ? { option: state.option } : {}),
+        ...(answerText ? { text: answerText } : {}),
+      };
+      state.stage = "review";
+    }
+    rerenderQuestionQueue(documentRoot);
+  });
+  parent.append(form);
+}
+
 function renderQuestionQueue(documentRoot, views) {
   const list = documentRoot.querySelector("#question-queue-list");
   const heading = documentRoot.querySelector("#question-queue-heading");
   const headerCount = documentRoot.querySelector("#question-queue-count");
   if (!list || !heading) return;
   const entries = [];
-  let totalEntries = 0;
+  let openEntries = 0;
+  let trackedEntries = 0;
+  const visibleKeys = new Set();
+  const answerStore = getAnswerStore(documentRoot);
   for (const view of views) {
     for (const repository of view.fleet?.repositories ?? []) {
       for (const question of readerData(repository.questions)?.open ?? []) {
-        totalEntries += 1;
+        visibleKeys.add(answerKey(view.identity, repository.name, question.id));
+        openEntries += 1;
         insertBoundedQuestionEntry(entries, {
           machine: view.identity,
+          view,
           repository,
           question,
         });
       }
     }
   }
+  for (const state of answerStore.values()) {
+    if (
+      visibleKeys.has(
+        answerKey(state.machine, state.repository, state.question),
+      )
+    ) {
+      continue;
+    }
+    const view = views.find(
+      (candidate) => candidate.identity === state.machine,
+    );
+    if (!view || !state.id) continue;
+    trackedEntries += 1;
+    insertBoundedQuestionEntry(entries, {
+      machine: state.machine,
+      view,
+      repository: { name: state.repository },
+      question: {
+        id: state.question,
+        title: "Answer lifecycle",
+        taskId: "Unknown",
+      },
+      lifecycleOnly: true,
+    });
+  }
+  const totalEntries = openEntries + trackedEntries;
+  const countLabel =
+    trackedEntries > 0
+      ? `${openEntries} open · ${trackedEntries} tracked`
+      : String(openEntries);
   heading.textContent =
     totalEntries > entries.length
-      ? `Question queue · ${totalEntries} · showing ${entries.length}`
-      : `Question queue · ${totalEntries}`;
-  if (headerCount) headerCount.textContent = String(totalEntries);
+      ? `Question queue · ${countLabel} · showing ${entries.length}`
+      : `Question queue · ${countLabel}`;
+  if (headerCount) headerCount.textContent = String(openEntries);
   if (entries.length === 0) {
     list.replaceChildren(
       textElement(documentRoot, "p", "No open questions", "empty"),
     );
     return;
   }
-  const cards = entries.map(({ machine, repository, question }) => {
-    const item = documentRoot.createElement("article");
-    item.className = "question-queue-entry";
-    const selection = hashSelection(documentRoot.defaultView);
-    if (
-      selection.machine === machine &&
-      selection.repository === repository.name &&
-      selection.question === question.id
-    ) {
-      item.classList.add("question-queue-entry-linked");
-      item.tabIndex = -1;
-    }
-    const title = documentRoot.createElement("h3");
-    const link = textElement(
-      documentRoot,
-      "a",
-      `${question.id} · ${question.title}`,
-    );
-    link.href = questionHash(machine, repository.name, question.id);
-    title.append(link);
-    item.append(title);
-    appendText(
-      item,
-      "p",
-      `${machine} · ${repository.name}`,
-      "question-location",
-    );
-    const task = question.blockedTask;
-    const taskRow = documentRoot.createElement("p");
-    taskRow.className = "question-task";
-    appendText(taskRow, "strong", "Blocked task: ");
-    appendExternalOrText(
-      taskRow,
-      question.taskId,
-      task ? repository.planUrl : undefined,
-      "plan",
-    );
-    if (task) taskRow.append(documentRoot.createTextNode(` · ${task.title}`));
-    item.append(taskRow);
-    const refs = documentRoot.createElement("p");
-    refs.className = "question-links";
-    const references = [];
-    if (question.branch && safeGithubUrl(question.branchUrl, "branch"))
-      references.push([question.branch, question.branchUrl, "branch"]);
-    if (task?.pr) references.push([`PR #${task.pr}`, task.prUrl, "pull"]);
-    for (const [index, issue] of (task?.issueNumbers ?? []).entries())
-      references.push([`Issue #${issue}`, task.issueUrls?.[index], "issue"]);
-    references.forEach(([label, url, kind], index) => {
-      if (index > 0) refs.append(documentRoot.createTextNode(" · "));
-      appendExternalOrText(refs, label, url, kind);
-    });
-    if (references.length > 0) item.append(refs);
-    if (question.context !== undefined) {
-      appendText(item, "h4", "Context", "question-field-label");
-      appendText(item, "p", question.context, "question-context");
-    }
-    if (Array.isArray(question.options) && question.options.length > 0) {
-      appendText(item, "h4", "Options", "question-field-label");
-      const options = documentRoot.createElement("ol");
-      options.className = "question-options";
-      for (const option of question.options) {
-        const row = documentRoot.createElement("li");
-        appendText(row, "strong", option.label, "question-option-label");
-        if (option.text) {
-          row.append(documentRoot.createTextNode(" · "));
-          const marker = option.recommended
-            ? /\(\s*recommended\b[^)]*\)/i.exec(option.text)
-            : null;
-          if (marker?.index !== undefined) {
-            row.append(
-              documentRoot.createTextNode(option.text.slice(0, marker.index)),
-            );
+  const cards = entries.map(
+    ({ machine, view, repository, question, lifecycleOnly }) => {
+      const item = documentRoot.createElement("article");
+      item.className = "question-queue-entry";
+      const selection = hashSelection(documentRoot.defaultView);
+      if (
+        selection.machine === machine &&
+        selection.repository === repository.name &&
+        selection.question === question.id
+      ) {
+        item.classList.add("question-queue-entry-linked");
+        item.tabIndex = -1;
+      }
+      const title = documentRoot.createElement("h3");
+      const link = textElement(
+        documentRoot,
+        "a",
+        `${question.id} · ${question.title}`,
+      );
+      link.href = questionHash(machine, repository.name, question.id);
+      title.append(link);
+      item.append(title);
+      appendText(
+        item,
+        "p",
+        `${machine} · ${repository.name}`,
+        "question-location",
+      );
+      const key = answerKey(machine, repository.name, question.id);
+      let answerState = answerStore.get(key);
+      if (lifecycleOnly) {
+        if (answerState)
+          renderAnswerLifecycle(item, documentRoot, view, answerState);
+        return item;
+      }
+      const task = question.blockedTask;
+      const taskRow = documentRoot.createElement("p");
+      taskRow.className = "question-task";
+      appendText(taskRow, "strong", "Blocked task: ");
+      appendExternalOrText(
+        taskRow,
+        question.taskId,
+        task ? repository.planUrl : undefined,
+        "plan",
+      );
+      if (task) taskRow.append(documentRoot.createTextNode(` · ${task.title}`));
+      item.append(taskRow);
+      const refs = documentRoot.createElement("p");
+      refs.className = "question-links";
+      const references = [];
+      if (question.branch && safeGithubUrl(question.branchUrl, "branch"))
+        references.push([question.branch, question.branchUrl, "branch"]);
+      if (task?.pr) references.push([`PR #${task.pr}`, task.prUrl, "pull"]);
+      for (const [index, issue] of (task?.issueNumbers ?? []).entries())
+        references.push([`Issue #${issue}`, task.issueUrls?.[index], "issue"]);
+      references.forEach(([label, url, kind], index) => {
+        if (index > 0) refs.append(documentRoot.createTextNode(" · "));
+        appendExternalOrText(refs, label, url, kind);
+      });
+      if (references.length > 0) item.append(refs);
+      if (question.context !== undefined) {
+        appendText(item, "h4", "Context", "question-field-label");
+        appendText(item, "p", question.context, "question-context");
+      }
+      if (Array.isArray(question.options) && question.options.length > 0) {
+        appendText(item, "h4", "Options", "question-field-label");
+        const options = documentRoot.createElement("ol");
+        options.className = "question-options";
+        for (const option of question.options) {
+          const row = documentRoot.createElement("li");
+          appendText(row, "strong", option.label, "question-option-label");
+          if (option.text) {
+            row.append(documentRoot.createTextNode(" · "));
+            const marker = option.recommended
+              ? /\(\s*recommended\b[^)]*\)/i.exec(option.text)
+              : null;
+            if (marker?.index !== undefined) {
+              row.append(
+                documentRoot.createTextNode(option.text.slice(0, marker.index)),
+              );
+              appendText(
+                row,
+                "span",
+                marker[0],
+                "chip chip-accent question-recommended",
+              );
+              row.append(
+                documentRoot.createTextNode(
+                  option.text.slice(marker.index + marker[0].length),
+                ),
+              );
+            } else {
+              row.append(documentRoot.createTextNode(option.text));
+            }
+          }
+          if (option.recommended && !/\(\s*recommended\b/i.test(option.text))
             appendText(
               row,
               "span",
-              marker[0],
+              "(recommended)",
               "chip chip-accent question-recommended",
             );
-            row.append(
-              documentRoot.createTextNode(
-                option.text.slice(marker.index + marker[0].length),
-              ),
-            );
-          } else {
-            row.append(documentRoot.createTextNode(option.text));
-          }
+          options.append(row);
         }
-        if (option.recommended && !/\(\s*recommended\b/i.test(option.text))
-          appendText(
-            row,
-            "span",
-            "(recommended)",
-            "chip chip-accent question-recommended",
-          );
-        options.append(row);
+        item.append(options);
       }
-      item.append(options);
-    }
-    if (question.qualifier !== undefined) {
-      appendText(item, "h4", "Qualifier", "question-field-label");
-      appendText(item, "p", question.qualifier, "question-qualifier");
-    }
-    if (
-      question.context === undefined ||
-      !Array.isArray(question.options) ||
-      question.options.length === 0
-    ) {
-      appendText(item, "pre", question.text, "verbatim question-raw-fallback");
-    }
-    return item;
-  });
+      if (question.qualifier !== undefined) {
+        appendText(item, "h4", "Qualifier", "question-field-label");
+        appendText(item, "p", question.qualifier, "question-qualifier");
+      }
+      if (
+        question.context === undefined ||
+        !Array.isArray(question.options) ||
+        question.options.length === 0
+      ) {
+        appendText(
+          item,
+          "pre",
+          question.text,
+          "verbatim question-raw-fallback",
+        );
+      }
+      const structured =
+        question.context !== undefined && Array.isArray(question.options);
+      if (answerState?.id) {
+        renderAnswerLifecycle(item, documentRoot, view, answerState);
+        if (
+          answerState.secret &&
+          ["pending", "inflight"].includes(answerState.status)
+        ) {
+          scheduleAnswerPoll(documentRoot, view, answerState);
+        }
+      } else if (structured) {
+        if (!answerState) {
+          answerState = {
+            machine,
+            repository: repository.name,
+            question: question.id,
+            stage: "edit",
+            text: "",
+            secret: "",
+          };
+          answerStore.set(key, answerState);
+        }
+        renderAnswerForm(item, documentRoot, view, question, answerState);
+      }
+      return item;
+    },
+  );
   list.replaceChildren(...cards);
   list
     .querySelector(".question-queue-entry-linked")
@@ -3363,15 +3999,22 @@ export function renderFleet(fleet, documentRoot = document, now = new Date()) {
   );
   error.textContent = "";
   const machines = [
-    { identity: fleet.hostname, fleet, isPeer: false },
+    { identity: fleet.hostname, fleet, isPeer: false, origin: undefined },
     ...(Array.isArray(fleet.peers) ? fleet.peers : []).map((peer) => ({
       identity: peer.name,
       fleet: null,
       isPeer: true,
+      origin: peer.origin,
     })),
   ];
   const views = machines.map((item, index) =>
-    createMachineView(item.identity, index, documentRoot, item.isPeer),
+    createMachineView(
+      item.identity,
+      index,
+      documentRoot,
+      item.isPeer,
+      item.origin,
+    ),
   );
   views.forEach((view, index) => {
     updateMachineView(
@@ -3608,7 +4251,16 @@ export function startDashboard(
       dependencyOverrides.clearInterval ??
       globalThis.clearInterval.bind(globalThis),
     now: dependencyOverrides.now ?? (() => new Date()),
+    randomUUID:
+      dependencyOverrides.randomUUID ?? (() => globalThis.crypto.randomUUID()),
   };
+  answerRuntimes.set(documentRoot, {
+    fetcher,
+    setTimeout: dependencies.setTimeout,
+    clearTimeout: dependencies.clearTimeout,
+    randomUUID: dependencies.randomUUID,
+    stopped: false,
+  });
   const intervalMilliseconds = refreshSeconds(documentRoot.defaultView) * 1_000;
   const state = loadStates.get(documentRoot) ?? {};
   state.refreshIntervalMilliseconds = intervalMilliseconds;
@@ -3669,6 +4321,13 @@ export function startDashboard(
       documentRoot
         .querySelector("#refresh")
         ?.removeEventListener("click", onRefreshClick);
+      const runtime = answerRuntimes.get(documentRoot);
+      if (runtime) runtime.stopped = true;
+      for (const state of getAnswerStore(documentRoot).values()) {
+        clearAnswerPoll(documentRoot, state);
+        state.secret = "";
+      }
+      answerRuntimes.delete(documentRoot);
     },
   };
   dashboardControllers.set(documentRoot, controller);

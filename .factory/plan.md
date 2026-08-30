@@ -284,7 +284,7 @@ task.
   - deps: none
   - pr: 41
 
-- [R] T48 (standard) — parked review minors (batch)
+- [x] T48 (standard) — parked review minors (batch)
   - PR #54: preserve per-machine model-disclosure open state and summary focus across `/how` peer-update rerenders.
   - PR #54: wrap valid unbroken model display names within compact `/how` disclosure cards.
   - PR #62: enrich a queued open question with blocked-task metadata only when its task ID has exactly one blocked-plan match.

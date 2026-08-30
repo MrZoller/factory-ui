@@ -284,7 +284,7 @@ task.
   - deps: none
   - pr: 41
 
-- [~] T48 (standard) — parked review minors (batch)
+- [R] T48 (standard) — parked review minors (batch)
   - PR #54: preserve per-machine model-disclosure open state and summary focus across `/how` peer-update rerenders.
   - PR #54: wrap valid unbroken model display names within compact `/how` disclosure cards.
   - PR #62: enrich a queued open question with blocked-task metadata only when its task ID has exactly one blocked-plan match.
@@ -292,3 +292,4 @@ task.
   - PR #71: document the owner-approved, configuration-disabled answer-intake exception to the service's otherwise read-only convention in `AGENTS.md`.
   - PR #71: reclaim crash-left temporary idempotency files before they consume the bounded reservation capacity.
   - PR #71: correct the README trust-boundary summary to disclose uncertain-state retention of confirmed payloads and idempotency keys while preserving the no-secret guarantee.
+  - pr: 72

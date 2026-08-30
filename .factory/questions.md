@@ -23,3 +23,9 @@ Options considered: A — use the file mtime as an explicitly approximate age / 
 **A:** B — omit the age display until the question grammar records a per-question filed-at timestamp; that timestamp is being requested in MrZoller/opencode-factory#83 so age becomes real data on a later grammar rev. T50 proceeds now without age: order entries deterministically (repo, then question id) and show no fabricated age (Chris, 2026-08-29).
 
 <!-- factory-question-timestamps-required-below -->
+
+## Q4 (task T49, open, filed-at 2026-08-30T14:03:37Z) — How should retries resolve an ambiguous answer-helper failure?
+Context: The re-review confirmed that `factory-answers` can durably publish a pending record and then fail before factory-ui receives its UUID, so automatically releasing the idempotency reservation can create a duplicate on retry. Parked branch: `factory/t49-answer-delivery`; resolving this changes whether recovery is manual in factory-ui or requires another engine-contract extension.
+Options considered: A — retain the reservation on every ambiguous helper failure and require operator verification before cleanup (recommended; fail closed and at-most-once) / B — extend the engine intake contract with a client-supplied idempotency key before shipping T49
+For A, confirm that manual inspection and cleanup of a rare stranded reservation is acceptable.
+**A:**

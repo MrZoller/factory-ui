@@ -1,9 +1,11 @@
 # factory-ui
 
-Read-only tailnet web dashboard for an opencode software-factory fleet. Each
-machine reads configured local clones and serves their bounded `.factory`
-status. The browser fetches peers directly; there is no registry, database,
-server-side peer proxy, or write/control API.
+Tailnet web dashboard for an opencode software-factory fleet. Each machine
+reads configured local clones and serves their bounded `.factory` status. The
+browser fetches peers directly; there is no registry, database, or server-side
+peer proxy. The only control API submits authenticated answer records through
+the factory engine's fixed `factory-answers` helper; factory-ui never edits
+`questions.md` directly.
 
 ## Install and launch
 
@@ -28,6 +30,20 @@ clone paths, and GitHub URLs. A repository path must be an existing,
 canonicalizable local directory. Repository names, roots, peer names, and peer
 origins must each be unique.
 
+To enable answering, set a non-secret `answerActor` in each machine's config
+and provide the shared credential only in the server process environment:
+
+```sh
+FACTORY_ANSWER_SECRET='replace-me' bun run serve --config factory-ui.config.json
+```
+
+`answerActor` is the attribution asserted by that server. It is never accepted
+from the browser. Omitting `answerActor` keeps answer routes disabled; setting
+it without a non-empty `FACTORY_ANSWER_SECRET` fails before listen. The secret
+must match the clone's engine answer-intake credential. It is entered in the
+browser for submission and lifecycle tracking but is never logged or stored by
+factory-ui.
+
 For three-machine operation, give every machine its own file:
 
 | Machine | `machine` | `bind`                         | Example clone root               | `peers`         |
@@ -36,11 +52,14 @@ For three-machine operation, give every machine its own file:
 | macbook | `macbook` | macbook's literal Tailscale IP | `/Users/chris/code/factory-ui`   | mini, legion    |
 | legion  | `legion`  | legion's literal Tailscale IP  | `/home/factory/code/factory-ui`  | mini, macbook   |
 
-Use MagicDNS names in peer origins, for example
-`http://mini:7777`, but use a literal IP in `bind`. Every machine must list the
-other dashboard origins: this symmetry lets browsers opened on any dashboard
-pass CORS when they fan out to the other two. `developmentOrigins` is optional
-and accepts only explicit localhost or loopback origins.
+Use MagicDNS names in peer origins, for example `http://mini:7777`, but use a
+literal IP in `bind`. Every machine must list the other dashboard origins: this
+symmetry lets browsers opened on any dashboard pass CORS when they fan out and
+when they send answers directly to the repository-owning peer. Peer answers
+are never proxied through the dashboard initially opened. `developmentOrigins`
+is optional and accepts only explicit localhost or loopback origins. Peer CORS
+preflights allow the answer route's `Authorization`, `Content-Type`, and
+`Idempotency-Key` headers only for configured dashboard/development origins.
 
 ### Bind and access boundary
 
@@ -49,12 +68,19 @@ loopback addresses and literal Tailscale-range addresses (`100.64.0.0/10` or
 `fd7a:115c:a1e0::/48`). Hostnames, wildcard addresses, public addresses,
 mapped/bracketed addresses, and zone-qualified IPv6 are rejected.
 
-Tailnet membership and Tailscale ACLs are the v1 access-control boundary.
+Tailnet membership and Tailscale ACLs protect dashboard reachability, while a
+shared answer credential protects the write channel.
 Allow the selected machines and users to reach TCP port 7777, and confirm
 MagicDNS resolves each peer name. Access to this dashboard is
 repository-equivalent trust: factory state, questions, worklogs, and narration
 may contain sensitive repository context. Do not expose it to a broader
 network.
+
+The configured actor and shared credential provide cooperative identity, not
+per-person cryptographic identity: anyone with the credential can submit as
+that server's actor. Give the credential only to repository-equivalent trusted
+operators and configure an actor name that accurately describes that group or
+machine.
 
 ## Fixed safety limits
 
@@ -87,11 +113,62 @@ network.
   ambiguous result is `CANNOT_VERIFY`, never evidence that the driver stopped.
 - Browser fan-out: at most four peer requests run concurrently, each with a
   five-second timeout. Peer failures are isolated and shown as `UNREACHABLE`.
+- Browser answer lifecycle storage: at most 128 strictly validated records;
+  only repository/machine/question identifiers, outcome UUID, status, actor,
+  and rejection reason are retained. Secrets and draft answer text are not
+  persisted. Outcome polling uses one five-second timer per active answer and
+  stops at an accepted or rejected outcome.
+- Server answer idempotency: at most 512 private records per repository under
+  `<git-common-dir>/factory/factory-ui-answer-idempotency/`. Records contain
+  only the UUID key, a SHA-256 payload fingerprint, reservation/completion
+  status, and the engine outcome UUID after completion; they are mode `0600`
+  in a mode-`0700` directory. Secrets and answer text are never stored there.
+  The service fails closed when the store is full or cannot be verified.
 
 Inputs beyond a limit become unavailable or partial with warnings; exceeding
 the log-directory scan has its own diagnostic rather than masquerading as a
 missing or failed liveness probe. The service does not silently expand its read
-surface.
+surface. Answer delivery is the sole exception to read-only operation: it runs
+the fixed `factory-answers` executable from `PATH`, with the configured clone
+as its working directory and `FACTORY_ANSWER_SECRET` passed only in the helper
+environment. Install the opencode-factory helper at that fixed command name;
+factory-ui does not accept a configurable executable or helper arguments.
+
+## Answer delivery and lifecycle
+
+The question queue accepts structured open questions. A submission contains a
+selected option and/or non-empty single-line text, never an actor. The browser
+requires an explicit review followed by confirm, sends a UUID idempotency key,
+and reuses that key if delivery must be retried. Local repositories use the
+relative owning endpoint; peer repositories use the peer's configured origin
+directly.
+
+The engine owns application. `pending` and `inflight` records display as
+`pending application`; an accepted outcome displays `applied/consumed` and the
+verified `Answered by <actor> via factory-ui` attribution. A terminal-question
+race or other engine refusal displays `rejected` with the engine reason and is
+never presented as success. Pending and terminal metadata remains visible if
+the open question disappears or the page reloads. Because the credential is
+not persisted, reloaded pending records require the password and **Resume
+tracking**. Factory-ui submits only to the intake spool and polls outcomes; it
+never writes, rewrites, or removes entries in `.factory/questions.md`.
+
+The server reserves each idempotency key durably before invoking
+`factory-answers`. A completed same-key, same-payload retry, including after a
+server restart, returns the original pending outcome UUID without invoking the
+helper again; a changed payload conflicts. Every observed helper failure is
+ambiguous because the engine may have published the record before the failure
+became visible, so the server retains the reservation and returns `503` rather
+than risking a duplicate submission. This is an intentional at-most-once crash
+disposition: the same key is never automatically resubmitted without operator
+verification. Before the first request, the browser stores the idempotency key
+and answer payload (never the shared secret) in local storage so a reload can
+check the same reservation; if that durable browser write fails, no request is
+sent. Such a reservation, and a full store, require operator
+inspection. Remove a reserved UUID record only after confirming from the
+engine intake/outcomes that no submission occurred; then retry with the same
+key. Completed records may be retired when their clients will no longer retry
+them. Factory-ui provides no automatic expiry or cleanup.
 
 ## `.factory` read surface
 

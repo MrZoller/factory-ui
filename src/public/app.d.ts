@@ -22,8 +22,11 @@ export function startDashboard(
     setInterval?: typeof globalThis.setInterval;
     clearInterval?: typeof globalThis.clearInterval;
     now?: () => Date;
+    randomUUID?: () => string;
   },
 ): { cleanup(): void };
+export const ANSWER_POLL_INTERVAL_MS: 5000;
+export const ANSWER_FETCH_TIMEOUT_MS: 5000;
 export const PEER_FETCH_TIMEOUT_MS: 5000;
 export const MAX_CONCURRENT_PEER_FETCHES: 4;
 export const WARNING_EXPLANATIONS: Readonly<Record<string, string>>;

@@ -2,10 +2,12 @@ import { describe, expect, test, vi } from "bun:test";
 import { Window } from "happy-dom";
 
 import {
+  ANSWER_FETCH_TIMEOUT_MS,
   loadFleet,
   MAX_CONCURRENT_PEER_FETCHES,
   PEER_FETCH_TIMEOUT_MS,
   renderFleet,
+  startDashboard,
   UNKNOWN_WARNING_EXPLANATION,
   WARNING_EXPLANATIONS,
 } from "./app.js";
@@ -63,6 +65,21 @@ function fakeTimers() {
         .filter(([, timer]) => timer.milliseconds === milliseconds)
         .map(([id, timer]) => ({ id, callback: timer.callback }));
     },
+  };
+}
+
+function dashboardDependencies(
+  timers: ReturnType<typeof fakeTimers>,
+  extras: { now?: () => Date; randomUUID?: () => string } = {},
+) {
+  return {
+    setTimeout: timers.setTimeout as unknown as typeof globalThis.setTimeout,
+    clearTimeout:
+      timers.clearTimeout as unknown as typeof globalThis.clearTimeout,
+    setInterval: timers.setInterval as unknown as typeof globalThis.setInterval,
+    clearInterval:
+      timers.clearInterval as unknown as typeof globalThis.clearInterval,
+    ...extras,
   };
 }
 
@@ -420,6 +437,921 @@ describe("driver liveness freshness", () => {
 
     const stale = activityPanel(document).querySelector(".age.stale");
     expect(stale?.textContent).toBe("Liveness checked Unknown — may be stale");
+  });
+});
+
+describe("answer lifecycle queue", () => {
+  function answerableRepository(overrides = {}, filedAt?: string) {
+    return richRepository({
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q9",
+              taskId: "T8",
+              title: "Choose <img src=x onerror=1>",
+              text: "raw",
+              ...(filedAt === undefined ? {} : { filedAt }),
+              context: "Context",
+              options: [
+                { label: "A", text: "Proceed", recommended: true },
+                { label: "B", text: "Stop" },
+              ],
+              qualifier: "Why?",
+            },
+          ],
+        },
+        warnings: [],
+      },
+      ...overrides,
+    });
+  }
+
+  test("accepts optional fractional filed-at seconds and rejects invalid calendar dates", async () => {
+    const fractional = answerableRepository({}, "2026-08-30T03:04:05.123456Z");
+    const accepted = dashboardDocument();
+    await expect(
+      loadFleet(accepted, async () =>
+        jsonResponse(fleet("mini", [], [fractional])),
+      ),
+    ).resolves.toBe(true);
+    expect(accepted.querySelector("#question-queue-count")?.textContent).toBe(
+      "1",
+    );
+
+    const invalid = answerableRepository({}, "2026-02-30T03:04:05.1Z");
+    const rejected = dashboardDocument();
+    await expect(
+      loadFleet(rejected, async () =>
+        jsonResponse(fleet("mini", [], [invalid])),
+      ),
+    ).resolves.toBe(false);
+    expect(rejected.querySelector("#question-queue-count")?.textContent).toBe(
+      "0",
+    );
+  });
+
+  test("renders option, free text qualifier, review confirmation, and cancel without executing input", () => {
+    const document = dashboardDocument();
+    renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
+    expect(document.querySelector(".answer-label")?.textContent).toContain(
+      "Select an option",
+    );
+    expect(document.querySelectorAll("img")).toHaveLength(0);
+    const text = document.querySelector<HTMLInputElement>(
+      ".answer-form input[type=text]",
+    )!;
+    const secret = document.querySelector<HTMLInputElement>(
+      ".answer-form input[type=password]",
+    )!;
+    const option = document.querySelector<HTMLInputElement>(
+      ".answer-option input",
+    )!;
+    option.checked = true;
+    option.dispatchEvent(new document.defaultView!.Event("change"));
+    text.value = "because";
+    text.dispatchEvent(new document.defaultView!.Event("input"));
+    secret.value = "shared";
+    secret.dispatchEvent(new document.defaultView!.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Review answer")!
+      .click();
+    expect(document.querySelector(".answer-form")?.textContent).toContain(
+      "Review answer",
+    );
+    expect(document.querySelector(".answer-form")?.textContent).toContain(
+      "Option: A",
+    );
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Cancel")!
+      .click();
+    expect(document.querySelector(".answer-form")?.textContent).toContain(
+      "Select an option",
+    );
+  });
+
+  test("keeps the T50 open header count separate from lifecycle-only cards and renders hostile terminal text inert", () => {
+    const document = dashboardDocument();
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: "Q99",
+          id: "123e4567-e89b-42d3-a456-426614174000",
+          status: "rejected",
+          reason: "<img src=x onerror=1> terminal",
+        },
+      ]),
+    );
+    renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
+    expect(document.querySelector("#question-queue-count")?.textContent).toBe(
+      "1",
+    );
+    expect(
+      document.querySelector("#question-queue-heading")?.textContent,
+    ).toContain("1 open · 1 tracked");
+    expect(document.querySelector(".answer-reason")?.textContent).toBe(
+      "<img src=x onerror=1> terminal",
+    );
+    expect(document.querySelectorAll("img")).toHaveLength(0);
+  });
+
+  test("fans peer delivery directly to its configured origin rather than through the local server", async () => {
+    const document = dashboardDocument();
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/fleet")
+        return jsonResponse(
+          fleet(
+            "mini",
+            [{ name: "legion", origin: "https://legion.tailnet:7777" }],
+            [answerableRepository()],
+          ),
+        );
+      return jsonResponse(fleet("legion", [], [answerableRepository()]));
+    });
+    await loadFleet(document, fetcher);
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://legion.tailnet:7777/api/fleet",
+      expect.any(Object),
+    );
+  });
+
+  test("submits local answers once with the exact wire request and retains its idempotency key for retry", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    let attempts = 0;
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/fleet")
+          return jsonResponse(fleet("mini", [], [answerableRepository()]));
+        attempts += 1;
+        return attempts === 1
+          ? jsonResponse({ error: "temporary" }, 503)
+          : jsonResponse({ status: "pending", id: answerId }, 202);
+      },
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, {
+        randomUUID: () => answerId,
+        now: () => NOW,
+      }),
+    );
+    await flushPromises();
+    const view = document.defaultView!;
+    const option = document.querySelector<HTMLInputElement>(
+      ".answer-option input",
+    )!;
+    option.checked = true;
+    option.dispatchEvent(new view.Event("change"));
+    const text = document.querySelector<HTMLInputElement>(
+      ".answer-form input[type=text]",
+    )!;
+    text.value = "because";
+    text.dispatchEvent(new view.Event("input"));
+    const secret = document.querySelector<HTMLInputElement>(
+      ".answer-form input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new view.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Review answer")!
+      .click();
+    const confirm = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Confirm submission",
+    )!;
+    confirm.click();
+    confirm.click();
+    await flushPromises();
+    const retry = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Check submission status",
+    )!;
+    retry.click();
+    await flushPromises();
+    const posts = fetcher.mock.calls.filter(([input]) =>
+      String(input).includes("/answers"),
+    );
+    expect(posts).toHaveLength(2);
+    expect(
+      posts.map(([, init]) => [
+        String(init?.method),
+        init?.body,
+        new Headers(init?.headers).get("authorization"),
+        new Headers(init?.headers).get("content-type"),
+        new Headers(init?.headers).get("idempotency-key"),
+      ]),
+    ).toEqual([
+      [
+        "POST",
+        '{"question":"Q9","option":"A","text":"because"}',
+        "Bearer shared",
+        "application/json",
+        answerId,
+      ],
+      [
+        "POST",
+        '{"question":"Q9","option":"A","text":"because"}',
+        "Bearer shared",
+        "application/json",
+        answerId,
+      ],
+    ]);
+    expect(document.querySelector(".answer-status")?.textContent).toBe(
+      "pending application",
+    );
+    expect(
+      document.defaultView!.localStorage.getItem(
+        "factory-ui.answer-lifecycle.v1",
+      ),
+    ).not.toContain("shared");
+    controller.cleanup();
+  });
+
+  test("bounds a stalled answer submission and re-enables the form", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    let signal: AbortSignal | null | undefined;
+    const fetcher = vi.fn(
+      (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        if (String(input) === "/api/fleet") {
+          return Promise.resolve(
+            jsonResponse(fleet("mini", [], [answerableRepository()])),
+          );
+        }
+        signal = init?.signal;
+        return new Promise(() => undefined);
+      },
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, {
+        randomUUID: () => "123e4567-e89b-42d3-a456-426614174000",
+        now: () => NOW,
+      }),
+    );
+    await flushPromises();
+    const view = document.defaultView!;
+    const option = document.querySelector<HTMLInputElement>(
+      ".answer-option input",
+    )!;
+    option.checked = true;
+    option.dispatchEvent(new view.Event("change"));
+    const secret = document.querySelector<HTMLInputElement>(
+      ".answer-form input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new view.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Review answer")!
+      .click();
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Confirm submission")!
+      .click();
+    await flushPromises();
+
+    expect(signal).toBeInstanceOf(AbortSignal);
+    timers.callbacksAt(ANSWER_FETCH_TIMEOUT_MS).at(-1)?.callback();
+    await flushPromises();
+
+    expect(signal?.aborted).toBe(true);
+    expect(document.querySelector(".answer-error")?.textContent).toBe(
+      "Answer request timed out",
+    );
+    expect(
+      Array.from(document.querySelectorAll("button")).find(
+        (button) => button.textContent === "Check submission status",
+      )?.disabled,
+    ).toBe(false);
+    controller.cleanup();
+  });
+
+  test("bounds a stalled answer outcome poll and clears tracking", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: "Q9",
+          id: answerId,
+          status: "pending",
+        },
+      ]),
+    );
+    let signal: AbortSignal | null | undefined;
+    const fetcher = vi.fn(
+      (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        if (String(input) === "/api/fleet") {
+          return Promise.resolve(
+            jsonResponse(fleet("mini", [], [answerableRepository()])),
+          );
+        }
+        signal = init?.signal;
+        return new Promise(() => undefined);
+      },
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, { now: () => NOW }),
+    );
+    await flushPromises();
+    const secret = document.querySelector<HTMLInputElement>(
+      ".answer-resume input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new document.defaultView!.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Resume tracking")!
+      .click();
+    await flushPromises();
+    timers.callbacksAt(ANSWER_FETCH_TIMEOUT_MS).at(-1)?.callback();
+    await flushPromises();
+
+    expect(signal?.aborted).toBe(true);
+    expect(document.querySelector(".answer-error")?.textContent).toBe(
+      "Answer request timed out",
+    );
+    expect(
+      document.querySelector<HTMLInputElement>("input[type=password]")?.value,
+    ).toBe("");
+    controller.cleanup();
+  });
+
+  test("restores an ambiguous submission reservation in a fresh session without its secret", async () => {
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    const firstDocument = dashboardDocument();
+    const firstTimers = fakeTimers();
+    const firstFetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [], [answerableRepository()]))
+          : jsonResponse(
+              {
+                error:
+                  "Submission status uncertain; operator verification required",
+              },
+              init?.method === "POST" ? 503 : 500,
+            ),
+    );
+    const firstController = startDashboard(
+      firstDocument,
+      firstFetcher,
+      dashboardDependencies(firstTimers, {
+        randomUUID: () => answerId,
+        now: () => NOW,
+      }),
+    );
+    await flushPromises();
+    const firstView = firstDocument.defaultView!;
+    const option = firstDocument.querySelector<HTMLInputElement>(
+      ".answer-option input",
+    )!;
+    option.checked = true;
+    option.dispatchEvent(new firstView.Event("change"));
+    const text = firstDocument.querySelector<HTMLInputElement>(
+      ".answer-form input[type=text]",
+    )!;
+    text.value = "because";
+    text.dispatchEvent(new firstView.Event("input"));
+    const secret = firstDocument.querySelector<HTMLInputElement>(
+      ".answer-form input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new firstView.Event("input"));
+    Array.from(firstDocument.querySelectorAll("button"))
+      .find((button) => button.textContent === "Review answer")!
+      .click();
+    Array.from(firstDocument.querySelectorAll("button"))
+      .find((button) => button.textContent === "Confirm submission")!
+      .click();
+    await flushPromises();
+
+    const firstPosts = firstFetcher.mock.calls.filter(
+      ([, init]) => String(init?.method).toUpperCase() === "POST",
+    );
+    expect(firstPosts).toHaveLength(1);
+    const stored = firstView.localStorage.getItem(
+      "factory-ui.answer-lifecycle.v1",
+    );
+    expect(stored).toContain(
+      '"payload":{"question":"Q9","option":"A","text":"because"}',
+    );
+    expect(stored).toContain(`"idempotencyKey":"${answerId}"`);
+    expect(stored).not.toContain("shared");
+    firstController.cleanup();
+
+    const secondDocument = dashboardDocument();
+    secondDocument.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      stored!,
+    );
+    const secondTimers = fakeTimers();
+    const secondFetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input) === "/api/fleet"
+          ? jsonResponse(
+              fleet(
+                "mini",
+                [],
+                [
+                  answerableRepository({
+                    questions: {
+                      status: "available",
+                      data: { open: [] },
+                      warnings: [],
+                    },
+                  }),
+                ],
+              ),
+            )
+          : jsonResponse(
+              { status: "pending", id: answerId },
+              init?.method === "POST" ? 202 : 500,
+            ),
+    );
+    const secondController = startDashboard(
+      secondDocument,
+      secondFetcher,
+      dashboardDependencies(secondTimers, { now: () => NOW }),
+    );
+    await flushPromises();
+
+    expect(secondDocument.querySelector(".answer-error")?.textContent).toBe(
+      "Submission status uncertain; operator verification required",
+    );
+    expect(secondDocument.querySelector(".answer-form")?.textContent).toContain(
+      "Option: A",
+    );
+    expect(secondDocument.querySelector(".answer-form")?.textContent).toContain(
+      "Text: because",
+    );
+    expect(
+      secondDocument.querySelector("#question-queue-heading")?.textContent,
+    ).toContain("0 open · 1 tracked");
+    const resumedSecret = secondDocument.querySelector<HTMLInputElement>(
+      "input[type=password]",
+    )!;
+    expect(resumedSecret.value).toBe("");
+    resumedSecret.value = "shared";
+    resumedSecret.dispatchEvent(new secondDocument.defaultView!.Event("input"));
+    Array.from(secondDocument.querySelectorAll("button"))
+      .find((button) => button.textContent === "Check submission status")!
+      .click();
+    await flushPromises();
+
+    const secondPosts = secondFetcher.mock.calls.filter(
+      ([, init]) => String(init?.method).toUpperCase() === "POST",
+    );
+    expect(secondPosts).toHaveLength(1);
+    expect(secondPosts[0]?.[1]?.body).toBe(
+      '{"question":"Q9","option":"A","text":"because"}',
+    );
+    expect(
+      new Headers(secondPosts[0]?.[1]?.headers).get("idempotency-key"),
+    ).toBe(answerId);
+    expect(new Headers(secondPosts[0]?.[1]?.headers).get("authorization")).toBe(
+      "Bearer shared",
+    );
+    secondController.cleanup();
+  });
+
+  test("retains an actively submitted uncertain reservation when storage is at capacity", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: "Q9",
+          status: "uncertain",
+          payload: { question: "Q9", option: "A" },
+          idempotencyKey: answerId,
+        },
+        ...Array.from({ length: 127 }, (_, index) => ({
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: `Q${index + 10}`,
+          id: `123e4567-e89b-42d3-a456-${String(index).padStart(12, "0")}`,
+          status: "pending",
+        })),
+      ]),
+    );
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [], [answerableRepository()]))
+          : jsonResponse(
+              { error: "temporary" },
+              init?.method === "POST" ? 503 : 500,
+            ),
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, {
+        randomUUID: () => answerId,
+        now: () => NOW,
+      }),
+    );
+    await flushPromises();
+    const view = document.defaultView!;
+    const secret = document.querySelector<HTMLInputElement>(
+      ".answer-form input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new view.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Check submission status")!
+      .click();
+    await flushPromises();
+
+    const stored = document.defaultView!.localStorage.getItem(
+      "factory-ui.answer-lifecycle.v1",
+    )!;
+    const records = JSON.parse(stored) as Array<Record<string, unknown>>;
+    expect(records).toHaveLength(128);
+    expect(records).toContainEqual({
+      version: 1,
+      machine: "mini",
+      repository: "factory-ui",
+      question: "Q9",
+      status: "uncertain",
+      payload: { question: "Q9", option: "A" },
+      idempotencyKey: answerId,
+    });
+    expect(stored).not.toContain("shared");
+    controller.cleanup();
+  });
+
+  test("ignores malformed uncertain reservations without restoring secrets or posting", async () => {
+    const valid = {
+      version: 1,
+      machine: "mini",
+      repository: "factory-ui",
+      question: "Q9",
+      status: "uncertain",
+      payload: { question: "Q9", option: "A", text: "because" },
+      idempotencyKey: "123e4567-e89b-42d3-a456-426614174000",
+    };
+    const cases = [
+      { payload: { ...valid.payload, question: "Q8" } },
+      { idempotencyKey: "not-a-uuid" },
+      { payload: { ...valid.payload, option: "AA" } },
+      { payload: { ...valid.payload, text: "bad\ntext" } },
+      { payload: { ...valid.payload, text: "x".repeat(10_001) } },
+      { id: "123e4567-e89b-42d3-a456-426614174001" },
+      { actor: "operator" },
+      { reason: "no" },
+      { secret: "injected-secret" },
+    ];
+
+    for (const overrides of cases) {
+      const document = dashboardDocument();
+      document.defaultView!.localStorage.setItem(
+        "factory-ui.answer-lifecycle.v1",
+        JSON.stringify([{ ...valid, ...overrides }]),
+      );
+      const fetcher = vi.fn(
+        async (input: RequestInfo | URL, _init?: RequestInit) =>
+          String(input) === "/api/fleet"
+            ? jsonResponse(fleet("mini", [], [answerableRepository()]))
+            : jsonResponse({ status: "pending" }, 202),
+      );
+      const controller = startDashboard(
+        document,
+        fetcher,
+        dashboardDependencies(fakeTimers(), { now: () => NOW }),
+      );
+      await flushPromises();
+
+      expect(document.querySelector(".answer-review-value") === null).toBe(
+        true,
+      );
+      expect(
+        document.querySelector<HTMLInputElement>(
+          ".answer-form input[type=password]",
+        )?.value,
+      ).toBe("");
+      expect(
+        fetcher.mock.calls.filter(
+          ([, init]) => String(init?.method).toUpperCase() === "POST",
+        ),
+      ).toHaveLength(0);
+      controller.cleanup();
+    }
+  });
+
+  test("does not post an answer when durable storage rejects its pre-submit reservation", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [], [answerableRepository()]))
+          : jsonResponse(
+              { status: "pending" },
+              init?.method === "POST" ? 202 : 500,
+            ),
+    );
+    const storage = document.defaultView!.localStorage;
+    Object.defineProperty(storage, "setItem", {
+      configurable: true,
+      value: () => {
+        throw new Error("storage full");
+      },
+    });
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, {
+        randomUUID: () => "123e4567-e89b-42d3-a456-426614174000",
+        now: () => NOW,
+      }),
+    );
+    await flushPromises();
+    const view = document.defaultView!;
+    const option = document.querySelector<HTMLInputElement>(
+      ".answer-option input",
+    )!;
+    option.checked = true;
+    option.dispatchEvent(new view.Event("change"));
+    const secret = document.querySelector<HTMLInputElement>(
+      ".answer-form input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new view.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Review answer")!
+      .click();
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Confirm submission")!
+      .click();
+    await flushPromises();
+
+    expect(
+      fetcher.mock.calls.filter(
+        ([, init]) => String(init?.method).toUpperCase() === "POST",
+      ),
+    ).toHaveLength(0);
+    controller.cleanup();
+  });
+
+  test("posts peer answers to the owner and polls pending through inflight to accepted", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    let polls = 0;
+    const peer = "https://legion.tailnet:7777";
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "/api/fleet")
+          return jsonResponse(
+            fleet("mini", [{ name: "legion", origin: peer }], []),
+          );
+        if (url === `${peer}/api/fleet`)
+          return jsonResponse(fleet("legion", [], [answerableRepository()]));
+        if (init?.method === "POST")
+          return jsonResponse({ status: "pending", id: answerId }, 202);
+        polls += 1;
+        return jsonResponse(
+          polls === 1
+            ? {
+                schemaVersion: 1,
+                id: answerId,
+                status: "inflight",
+                question: "Q9",
+                option: "A",
+                actor: "Verified",
+                source: "factory-ui",
+                submittedAt: "2026-08-30T12:00:00.000Z",
+                preparedAt: "2026-08-30T12:00:01.000Z",
+              }
+            : {
+                schemaVersion: 1,
+                id: answerId,
+                status: "accepted",
+                question: "Q9",
+                option: "A",
+                actor: "Verified",
+                source: "factory-ui",
+                submittedAt: "2026-08-30T12:00:00.000Z",
+                preparedAt: "2026-08-30T12:00:01.000Z",
+                settledAt: "2026-08-30T12:00:02.000Z",
+              },
+        );
+      },
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, {
+        randomUUID: () => answerId,
+        now: () => NOW,
+      }),
+    );
+    await flushPromises();
+    const view = document.defaultView!;
+    const option = document.querySelector<HTMLInputElement>(
+      ".answer-option input",
+    )!;
+    option.checked = true;
+    option.dispatchEvent(new view.Event("change"));
+    const secret = document.querySelector<HTMLInputElement>(
+      ".answer-form input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new view.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Review answer")!
+      .click();
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Confirm submission")!
+      .click();
+    await flushPromises();
+    expect(fetcher).toHaveBeenCalledWith(
+      `${peer}/api/repo/factory-ui/answers`,
+      expect.objectContaining({ method: "POST" }),
+    );
+    timers.callbacksAt(5_000).forEach(({ callback }) => callback());
+    await flushPromises();
+    expect(document.querySelector(".answer-status")?.textContent).toBe(
+      "pending application",
+    );
+    timers.callbacksAt(5_000).forEach(({ callback }) => callback());
+    await flushPromises();
+    expect(document.querySelector(".answer-status")?.textContent).toBe(
+      "applied/consumed",
+    );
+    expect(document.querySelector(".answer-attribution")?.textContent).toBe(
+      "Answered by Verified via factory-ui",
+    );
+    controller.cleanup();
+  });
+
+  test("renders terminal rejection exactly and resumes persisted pending records without mislabeling unknown outcomes", async () => {
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    const document = dashboardDocument();
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: "Q9",
+          id: answerId,
+          status: "pending",
+        },
+      ]),
+    );
+    renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
+    expect(document.querySelector(".answer-resume")?.textContent).toContain(
+      "Resume tracking",
+    );
+    expect(document.querySelector(".answer-status")?.textContent).toBe(
+      "pending application",
+    );
+    expect(document.querySelector(".answer-status")?.textContent).not.toBe(
+      "rejected",
+    );
+    const rejected = dashboardDocument();
+    rejected.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: "Q9",
+          id: answerId,
+          status: "rejected",
+          reason: "question is terminal",
+        },
+      ]),
+    );
+    renderFleet(fleet("mini", [], [answerableRepository()]), rejected, NOW);
+    expect(rejected.querySelector(".answer-status")?.textContent).toBe(
+      "rejected",
+    );
+    expect(rejected.querySelector(".answer-reason")?.textContent).toBe(
+      "question is terminal",
+    );
+  });
+
+  test("keeps an unknown polled outcome pending rather than calling it rejected", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: "Q9",
+          id: answerId,
+          status: "pending",
+        },
+      ]),
+    );
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === "/api/fleet"
+        ? jsonResponse(fleet("mini", [], [answerableRepository()]))
+        : jsonResponse({ status: "unknown-record" }, 404),
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, { now: () => NOW }),
+    );
+    await flushPromises();
+    const password = document.querySelector<HTMLInputElement>(
+      ".answer-resume input[type=password]",
+    )!;
+    password.value = "shared";
+    password.dispatchEvent(new document.defaultView!.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Resume tracking")!
+      .click();
+    await flushPromises();
+    expect(document.querySelector(".answer-status")?.textContent).toBe(
+      "pending application",
+    );
+    expect(document.querySelector(".answer-error")?.textContent).toBe(
+      "Outcome record not found",
+    );
+    expect(document.querySelector(".answer-status")?.textContent).not.toBe(
+      "rejected",
+    );
+    controller.cleanup();
+  });
+
+  test("preserves in-progress review state across refresh rerender and cleanup cancels answer polling", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/fleet")
+          return jsonResponse(fleet("mini", [], [answerableRepository()]));
+        if (init?.method === "POST")
+          return jsonResponse({ status: "pending", id: answerId }, 202);
+        return jsonResponse({ status: "unknown-record" }, 404);
+      },
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, {
+        randomUUID: () => answerId,
+        now: () => NOW,
+      }),
+    );
+    await flushPromises();
+    const view = document.defaultView!;
+    const option = document.querySelector<HTMLInputElement>(
+      ".answer-option input",
+    )!;
+    option.checked = true;
+    option.dispatchEvent(new view.Event("change"));
+    const secret = document.querySelector<HTMLInputElement>(
+      ".answer-form input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new view.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Review answer")!
+      .click();
+    renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
+    expect(document.querySelector(".answer-form")?.textContent).toContain(
+      "Review answer",
+    );
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Confirm submission")!
+      .click();
+    await flushPromises();
+    expect(timers.callbacksAt(5_000)).toHaveLength(1);
+    controller.cleanup();
+    expect(timers.callbacksAt(5_000)).toHaveLength(0);
   });
 });
 

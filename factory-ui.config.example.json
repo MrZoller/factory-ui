@@ -1,6 +1,7 @@
 {
   "machine": "mini",
   "bind": "100.64.0.10",
+  "answerActor": "factory-operator",
   "repositories": [
     {
       "name": "factory-ui",

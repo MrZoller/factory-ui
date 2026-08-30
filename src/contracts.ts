@@ -17,6 +17,44 @@ export interface PeerConfig {
   origin: string;
 }
 
+export interface AnswerIntakeConfig {
+  actor: string;
+  secret: string;
+}
+
+export interface AnswerRequest {
+  question: string;
+  option?: string;
+  text?: string;
+}
+
+export interface AnswerSubmissionResult {
+  status: "pending";
+  id: string;
+}
+
+export type AnswerOutcomeStatus =
+  "pending" | "inflight" | "accepted" | "rejected";
+
+export interface AnswerOutcome {
+  schemaVersion: 1;
+  id: string;
+  status: AnswerOutcomeStatus;
+  question: string;
+  option?: string;
+  text?: string;
+  actor: string;
+  source: "factory-ui";
+  submittedAt: string;
+  preparedAt?: string;
+  settledAt?: string;
+  reason?: string;
+}
+
+export interface UnknownAnswerOutcome {
+  status: "unknown-record";
+}
+
 export interface AppConfigSource {
   machine: string;
   repositories: RepositorySource[];
@@ -24,6 +62,8 @@ export interface AppConfigSource {
   port: number;
   bind?: string;
   developmentOrigins?: string[];
+  answerActor?: string;
+  answerIntake?: AnswerIntakeConfig;
 }
 
 export interface AppConfig extends AppConfigSource {
@@ -125,6 +165,7 @@ export interface OpenQuestion {
   id: string;
   taskId: string;
   title: string;
+  filedAt?: string;
   text: string;
   context?: string;
   options?: QuestionOption[];

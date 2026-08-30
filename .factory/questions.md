@@ -28,4 +28,4 @@ Options considered: A — use the file mtime as an explicitly approximate age / 
 Context: The re-review confirmed that `factory-answers` can durably publish a pending record and then fail before factory-ui receives its UUID, so automatically releasing the idempotency reservation can create a duplicate on retry. Parked branch: `factory/t49-answer-delivery`; resolving this changes whether recovery is manual in factory-ui or requires another engine-contract extension.
 Options considered: A — retain the reservation on every ambiguous helper failure and require operator verification before cleanup (recommended; fail closed and at-most-once) / B — extend the engine intake contract with a client-supplied idempotency key before shipping T49
 For A, confirm that manual inspection and cleanup of a rare stranded reservation is acceptable.
-**A:**
+**A:** A — retain the idempotency reservation on every ambiguous helper failure and require operator verification before cleanup; fail closed, at-most-once. Manual inspection and cleanup of a rare stranded reservation is acceptable (Chris, 2026-08-30).

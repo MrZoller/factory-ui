@@ -3220,6 +3220,25 @@ function validLifecycleString(value, maximum) {
   );
 }
 
+function validateStoredAnswerPayload(value, question) {
+  if (
+    !isRecord(value) ||
+    value.question !== question ||
+    (value.option !== undefined && !/^[A-Z]$/.test(value.option)) ||
+    (value.text !== undefined &&
+      (!validLifecycleString(value.text, MAX_ANSWER_TEXT_LENGTH) ||
+        ASCII_CONTROL.test(value.text))) ||
+    (value.option === undefined && value.text === undefined)
+  ) {
+    return null;
+  }
+  return {
+    question,
+    ...(value.option === undefined ? {} : { option: value.option }),
+    ...(value.text === undefined ? {} : { text: value.text }),
+  };
+}
+
 function validateStoredLifecycle(value) {
   if (
     !isRecord(value) ||
@@ -3228,14 +3247,40 @@ function validateStoredLifecycle(value) {
     !validLifecycleString(value.repository, 128) ||
     typeof value.question !== "string" ||
     !/^Q[1-9][0-9]*$/.test(value.question) ||
-    !ANSWER_UUID.test(String(value.id)) ||
-    !["pending", "inflight", "accepted", "rejected"].includes(value.status) ||
+    !["uncertain", "pending", "inflight", "accepted", "rejected"].includes(
+      value.status,
+    ) ||
     (value.actor !== undefined && !validLifecycleString(value.actor, 512)) ||
     (value.reason !== undefined && !validLifecycleString(value.reason, 512))
   ) {
     return null;
   }
+  if (value.status === "uncertain") {
+    const payload = validateStoredAnswerPayload(value.payload, value.question);
+    if (
+      value.id !== undefined ||
+      value.actor !== undefined ||
+      value.reason !== undefined ||
+      !ANSWER_UUID.test(String(value.idempotencyKey)) ||
+      payload === null
+    ) {
+      return null;
+    }
+    return {
+      version: 1,
+      machine: value.machine,
+      repository: value.repository,
+      question: value.question,
+      status: "uncertain",
+      idempotencyKey: value.idempotencyKey,
+      payload,
+      stage: "review",
+      secret: "",
+      error: "Submission status uncertain; operator verification required",
+    };
+  }
   if (
+    !ANSWER_UUID.test(String(value.id)) ||
     (value.status === "accepted" && value.actor === undefined) ||
     (value.status === "rejected" && value.reason === undefined) ||
     (["pending", "inflight"].includes(value.status) &&
@@ -3291,25 +3336,43 @@ function getAnswerStore(documentRoot) {
 
 function persistAnswerStore(documentRoot) {
   const records = [...getAnswerStore(documentRoot).values()]
-    .filter((state) => ANSWER_UUID.test(String(state.id)))
+    .filter(
+      (state) =>
+        ANSWER_UUID.test(String(state.id)) ||
+        (state.status === "uncertain" &&
+          ANSWER_UUID.test(String(state.idempotencyKey)) &&
+          state.payload !== undefined),
+    )
     .slice(-MAX_STORED_ANSWER_LIFECYCLES)
-    .map((state) => ({
-      version: 1,
-      machine: state.machine,
-      repository: state.repository,
-      question: state.question,
-      id: state.id,
-      status: state.status,
-      ...(state.actor === undefined ? {} : { actor: state.actor }),
-      ...(state.reason === undefined ? {} : { reason: state.reason }),
-    }));
-  try {
-    documentRoot.defaultView?.localStorage?.setItem(
-      ANSWER_STORAGE_KEY,
-      JSON.stringify(records),
+    .map((state) =>
+      state.status === "uncertain"
+        ? {
+            version: 1,
+            machine: state.machine,
+            repository: state.repository,
+            question: state.question,
+            status: state.status,
+            payload: state.payload,
+            idempotencyKey: state.idempotencyKey,
+          }
+        : {
+            version: 1,
+            machine: state.machine,
+            repository: state.repository,
+            question: state.question,
+            id: state.id,
+            status: state.status,
+            ...(state.actor === undefined ? {} : { actor: state.actor }),
+            ...(state.reason === undefined ? {} : { reason: state.reason }),
+          },
     );
+  try {
+    const storage = documentRoot.defaultView?.localStorage;
+    if (!storage) return false;
+    storage.setItem(ANSWER_STORAGE_KEY, JSON.stringify(records));
+    return true;
   } catch {
-    // Private mode and full/disabled storage must not disable answering.
+    return false;
   }
 }
 
@@ -3493,6 +3556,13 @@ async function submitAnswerFromQueue(documentRoot, view, state) {
   state.sending = true;
   state.error = undefined;
   if (!state.idempotencyKey) state.idempotencyKey = runtime.randomUUID();
+  state.status = "uncertain";
+  if (!persistAnswerStore(documentRoot)) {
+    state.sending = false;
+    state.error = "Browser storage unavailable; submission not sent";
+    rerenderQuestionQueue(documentRoot);
+    return;
+  }
   rerenderQuestionQueue(documentRoot);
   try {
     const response = await runtime.fetcher(
@@ -3617,6 +3687,22 @@ function renderAnswerForm(parent, documentRoot, view, question, state) {
         `Text: ${state.payload.text}`,
         "answer-review-value",
       );
+    if (state.idempotencyKey) {
+      const secretLabel = appendText(
+        form,
+        "label",
+        "Shared secret",
+        "answer-label",
+      );
+      const secret = documentRoot.createElement("input");
+      secret.type = "password";
+      secret.autocomplete = "current-password";
+      secret.value = state.secret ?? "";
+      secret.addEventListener("input", () => {
+        state.secret = secret.value;
+      });
+      secretLabel.append(secret);
+    }
     if (state.error) appendText(form, "p", state.error, "answer-error");
     const actions = documentRoot.createElement("div");
     actions.className = "answer-actions";

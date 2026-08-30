@@ -161,7 +161,10 @@ ambiguous because the engine may have published the record before the failure
 became visible, so the server retains the reservation and returns `503` rather
 than risking a duplicate submission. This is an intentional at-most-once crash
 disposition: the same key is never automatically resubmitted without operator
-verification. Such a reservation, and a full store, require operator
+verification. Before the first request, the browser stores the idempotency key
+and answer payload (never the shared secret) in local storage so a reload can
+check the same reservation; if that durable browser write fails, no request is
+sent. Such a reservation, and a full store, require operator
 inspection. Remove a reserved UUID record only after confirming from the
 engine intake/outcomes that no submission occurred; then retry with the same
 key. Completed records may be retired when their clients will no longer retry

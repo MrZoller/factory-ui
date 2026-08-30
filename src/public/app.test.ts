@@ -672,6 +672,182 @@ describe("answer lifecycle queue", () => {
     controller.cleanup();
   });
 
+  test("restores an ambiguous submission reservation in a fresh session without its secret", async () => {
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    const firstDocument = dashboardDocument();
+    const firstTimers = fakeTimers();
+    const firstFetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [], [answerableRepository()]))
+          : jsonResponse(
+              {
+                error:
+                  "Submission status uncertain; operator verification required",
+              },
+              init?.method === "POST" ? 503 : 500,
+            ),
+    );
+    const firstController = startDashboard(
+      firstDocument,
+      firstFetcher,
+      dashboardDependencies(firstTimers, {
+        randomUUID: () => answerId,
+        now: () => NOW,
+      }),
+    );
+    await flushPromises();
+    const firstView = firstDocument.defaultView!;
+    const option = firstDocument.querySelector<HTMLInputElement>(
+      ".answer-option input",
+    )!;
+    option.checked = true;
+    option.dispatchEvent(new firstView.Event("change"));
+    const text = firstDocument.querySelector<HTMLInputElement>(
+      ".answer-form input[type=text]",
+    )!;
+    text.value = "because";
+    text.dispatchEvent(new firstView.Event("input"));
+    const secret = firstDocument.querySelector<HTMLInputElement>(
+      ".answer-form input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new firstView.Event("input"));
+    Array.from(firstDocument.querySelectorAll("button"))
+      .find((button) => button.textContent === "Review answer")!
+      .click();
+    Array.from(firstDocument.querySelectorAll("button"))
+      .find((button) => button.textContent === "Confirm submission")!
+      .click();
+    await flushPromises();
+
+    const firstPosts = firstFetcher.mock.calls.filter(
+      ([, init]) => String(init?.method).toUpperCase() === "POST",
+    );
+    expect(firstPosts).toHaveLength(1);
+    const stored = firstView.localStorage.getItem(
+      "factory-ui.answer-lifecycle.v1",
+    );
+    expect(stored).toContain(
+      '"payload":{"question":"Q9","option":"A","text":"because"}',
+    );
+    expect(stored).toContain(`"idempotencyKey":"${answerId}"`);
+    expect(stored).not.toContain("shared");
+    firstController.cleanup();
+
+    const secondDocument = dashboardDocument();
+    secondDocument.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      stored!,
+    );
+    const secondTimers = fakeTimers();
+    const secondFetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [], [answerableRepository()]))
+          : jsonResponse(
+              { status: "pending", id: answerId },
+              init?.method === "POST" ? 202 : 500,
+            ),
+    );
+    const secondController = startDashboard(
+      secondDocument,
+      secondFetcher,
+      dashboardDependencies(secondTimers, { now: () => NOW }),
+    );
+    await flushPromises();
+
+    expect(secondDocument.querySelector(".answer-error")?.textContent).toBe(
+      "Submission status uncertain; operator verification required",
+    );
+    expect(secondDocument.querySelector(".answer-form")?.textContent).toContain(
+      "Option: A",
+    );
+    expect(secondDocument.querySelector(".answer-form")?.textContent).toContain(
+      "Text: because",
+    );
+    const resumedSecret = secondDocument.querySelector<HTMLInputElement>(
+      "input[type=password]",
+    )!;
+    expect(resumedSecret.value).toBe("");
+    resumedSecret.value = "shared";
+    resumedSecret.dispatchEvent(new secondDocument.defaultView!.Event("input"));
+    Array.from(secondDocument.querySelectorAll("button"))
+      .find((button) => button.textContent === "Check submission status")!
+      .click();
+    await flushPromises();
+
+    const secondPosts = secondFetcher.mock.calls.filter(
+      ([, init]) => String(init?.method).toUpperCase() === "POST",
+    );
+    expect(secondPosts).toHaveLength(1);
+    expect(secondPosts[0]?.[1]?.body).toBe(
+      '{"question":"Q9","option":"A","text":"because"}',
+    );
+    expect(
+      new Headers(secondPosts[0]?.[1]?.headers).get("idempotency-key"),
+    ).toBe(answerId);
+    expect(new Headers(secondPosts[0]?.[1]?.headers).get("authorization")).toBe(
+      "Bearer shared",
+    );
+    secondController.cleanup();
+  });
+
+  test("does not post an answer when durable storage rejects its pre-submit reservation", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [], [answerableRepository()]))
+          : jsonResponse(
+              { status: "pending" },
+              init?.method === "POST" ? 202 : 500,
+            ),
+    );
+    const storage = document.defaultView!.localStorage;
+    Object.defineProperty(storage, "setItem", {
+      configurable: true,
+      value: () => {
+        throw new Error("storage full");
+      },
+    });
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, {
+        randomUUID: () => "123e4567-e89b-42d3-a456-426614174000",
+        now: () => NOW,
+      }),
+    );
+    await flushPromises();
+    const view = document.defaultView!;
+    const option = document.querySelector<HTMLInputElement>(
+      ".answer-option input",
+    )!;
+    option.checked = true;
+    option.dispatchEvent(new view.Event("change"));
+    const secret = document.querySelector<HTMLInputElement>(
+      ".answer-form input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new view.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Review answer")!
+      .click();
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Confirm submission")!
+      .click();
+    await flushPromises();
+
+    expect(
+      fetcher.mock.calls.filter(
+        ([, init]) => String(init?.method).toUpperCase() === "POST",
+      ),
+    ).toHaveLength(0);
+    controller.cleanup();
+  });
+
   test("posts peer answers to the owner and polls pending through inflight to accepted", async () => {
     const document = dashboardDocument();
     const timers = fakeTimers();

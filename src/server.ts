@@ -204,7 +204,7 @@ export function createRequestHandler(
       fingerprint: string;
       result: Promise<
         | { status: "result"; value: AnswerSubmissionResult }
-        | { status: "conflict" | "unavailable" }
+        | { status: "conflict" | "uncertain" | "unavailable" }
       >;
     }
   >();
@@ -328,14 +328,13 @@ export function createRequestHandler(
                               },
                             };
                           }
-                          if (
-                            reservation.status === "reserved" ||
-                            reservation.status === "full"
-                          ) {
+                          if (reservation.status === "reserved") {
+                            return { status: "uncertain" as const };
+                          }
+                          if (reservation.status === "full") {
                             return { status: "unavailable" as const };
                           }
 
-                          let submitted = false;
                           try {
                             const value = await submit({
                               ...requestValue,
@@ -343,7 +342,6 @@ export function createRequestHandler(
                               actor: answerIntake.actor,
                               secret: answerIntake.secret,
                             });
-                            submitted = true;
                             await idempotencyStore.complete(
                               intakeRoute.repository.path,
                               idempotencyKey,
@@ -352,14 +350,10 @@ export function createRequestHandler(
                             );
                             return { status: "result" as const, value };
                           } catch {
-                            if (!submitted) {
-                              await idempotencyStore.release(
-                                intakeRoute.repository.path,
-                                idempotencyKey,
-                                fingerprint,
-                              );
-                            }
-                            return { status: "unavailable" as const };
+                            // The helper may have published before its failure
+                            // became observable. Retain the reservation so an
+                            // automatic retry can never duplicate the answer.
+                            return { status: "uncertain" as const };
                           }
                         } catch {
                           return { status: "unavailable" as const };
@@ -385,7 +379,12 @@ export function createRequestHandler(
                         ? Response.json(submission.value, { status: 202 })
                         : submission.status === "conflict"
                           ? jsonError(409, "Idempotency key conflict")
-                          : jsonError(503, "Answer intake unavailable");
+                          : submission.status === "uncertain"
+                            ? jsonError(
+                                503,
+                                "Submission status uncertain; operator verification required",
+                              )
+                            : jsonError(503, "Answer intake unavailable");
                   }
                 }
               }

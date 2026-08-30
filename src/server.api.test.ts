@@ -62,17 +62,6 @@ class TestAnswerIdempotencyStore implements AnswerIdempotencyStore {
       id,
     });
   }
-
-  async release(
-    repositoryPath: string,
-    key: string,
-    fingerprint: string,
-  ): Promise<void> {
-    const recordKey = `${repositoryPath}\0${key}`;
-    if (this.records.get(recordKey)?.fingerprint === fingerprint) {
-      this.records.delete(recordKey);
-    }
-  }
 }
 
 afterEach(() => {
@@ -265,14 +254,12 @@ describe("answer delivery API", () => {
     ).toBe(409);
   });
 
-  test("releases a failed submission so the same key can retry the helper", async () => {
-    const submit = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("temporary"))
-      .mockResolvedValueOnce({ status: "pending", id: answerId });
-    const handler = createRequestHandler(source, {
+  test("retains an ambiguous failed submission across restart", async () => {
+    const store = new TestAnswerIdempotencyStore();
+    const submit = vi.fn().mockRejectedValue(new Error("ambiguous"));
+    const firstHandler = createRequestHandler(source, {
       submitAnswer: submit,
-      answerIdempotencyStore: new TestAnswerIdempotencyStore(),
+      answerIdempotencyStore: store,
     });
     const init = {
       method: "POST",
@@ -280,9 +267,24 @@ describe("answer delivery API", () => {
       body: JSON.stringify({ question: "Q1", option: "A" }),
     };
 
-    expect((await handler(request(undefined, init))).status).toBe(503);
-    expect((await handler(request(undefined, init))).status).toBe(202);
-    expect(submit).toHaveBeenCalledTimes(2);
+    const first = await firstHandler(request(undefined, init));
+    expect(first.status).toBe(503);
+    expect(await first.json()).toEqual({
+      error: "Submission status uncertain; operator verification required",
+    });
+    expect(submit).toHaveBeenCalledTimes(1);
+
+    const restartedSubmit = vi.fn();
+    const restartedHandler = createRequestHandler(source, {
+      submitAnswer: restartedSubmit,
+      answerIdempotencyStore: store,
+    });
+    const retry = await restartedHandler(request(undefined, init));
+    expect(retry.status).toBe(503);
+    expect(await retry.json()).toEqual({
+      error: "Submission status uncertain; operator verification required",
+    });
+    expect(restartedSubmit).not.toHaveBeenCalled();
   });
 
   test("returns a completed durable result from a fresh handler without resubmitting", async () => {

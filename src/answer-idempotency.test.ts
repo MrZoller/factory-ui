@@ -71,7 +71,7 @@ describe("durable answer idempotency store", () => {
     expect(readdirSync(storePath)).toEqual([key]);
   });
 
-  test("keeps reservations across restarts, detects conflicts, and releases observed failures", async () => {
+  test("keeps reservations across restarts and detects conflicts", async () => {
     const key = randomUUID();
     const store = new DurableAnswerIdempotencyStore();
     expect(await store.reserve(repository, key, fingerprint)).toEqual({
@@ -86,11 +86,6 @@ describe("durable answer idempotency store", () => {
     ).toEqual({ status: "reserved" });
     expect(await store.reserve(repository, key, "0".repeat(64))).toEqual({
       status: "conflict",
-    });
-
-    await store.release(repository, key, fingerprint);
-    expect(await store.reserve(repository, key, fingerprint)).toEqual({
-      status: "acquired",
     });
   });
 

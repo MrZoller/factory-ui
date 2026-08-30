@@ -629,7 +629,7 @@ describe("answer lifecycle queue", () => {
     confirm.click();
     await flushPromises();
     const retry = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.textContent === "Retry submission",
+      (button) => button.textContent === "Check submission status",
     )!;
     retry.click();
     await flushPromises();

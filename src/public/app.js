@@ -3626,7 +3626,7 @@ function renderAnswerForm(parent, documentRoot, view, question, state) {
       state.sending
         ? "Submitting…"
         : state.idempotencyKey
-          ? "Retry submission"
+          ? "Check submission status"
           : "Confirm submission",
       "button button-primary",
     );

@@ -40,11 +40,6 @@ export interface AnswerIdempotencyStore {
     fingerprint: string,
     id: string,
   ): Promise<void>;
-  release(
-    repositoryPath: string,
-    key: string,
-    fingerprint: string,
-  ): Promise<void>;
 }
 
 type StoredRecord =
@@ -334,30 +329,5 @@ export class DurableAnswerIdempotencyStore implements AnswerIdempotencyStore {
     } finally {
       await removeIfPresent(temporary);
     }
-  }
-
-  async release(
-    repositoryPath: string,
-    key: string,
-    fingerprint: string,
-  ): Promise<void> {
-    const directory = await storeDirectory(repositoryPath);
-    const target = join(directory, key);
-    let existing: StoredRecord;
-    try {
-      existing = await readPrivateRecord(target);
-    } catch (error) {
-      if (isRecord(error) && error.code === "ENOENT") return;
-      throw error;
-    }
-    if (
-      existing.key !== key ||
-      existing.fingerprint !== fingerprint ||
-      existing.status !== "reserved"
-    ) {
-      throw new Error("idempotency reservation changed");
-    }
-    await unlink(target);
-    await syncDirectory(directory);
   }
 }

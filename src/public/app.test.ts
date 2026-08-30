@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "bun:test";
 import { Window } from "happy-dom";
 
 import {
+  ANSWER_FETCH_TIMEOUT_MS,
   loadFleet,
   MAX_CONCURRENT_PEER_FETCHES,
   PEER_FETCH_TIMEOUT_MS,
@@ -669,6 +670,122 @@ describe("answer lifecycle queue", () => {
         "factory-ui.answer-lifecycle.v1",
       ),
     ).not.toContain("shared");
+    controller.cleanup();
+  });
+
+  test("bounds a stalled answer submission and re-enables the form", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    let signal: AbortSignal | null | undefined;
+    const fetcher = vi.fn(
+      (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        if (String(input) === "/api/fleet") {
+          return Promise.resolve(
+            jsonResponse(fleet("mini", [], [answerableRepository()])),
+          );
+        }
+        signal = init?.signal;
+        return new Promise(() => undefined);
+      },
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, {
+        randomUUID: () => "123e4567-e89b-42d3-a456-426614174000",
+        now: () => NOW,
+      }),
+    );
+    await flushPromises();
+    const view = document.defaultView!;
+    const option = document.querySelector<HTMLInputElement>(
+      ".answer-option input",
+    )!;
+    option.checked = true;
+    option.dispatchEvent(new view.Event("change"));
+    const secret = document.querySelector<HTMLInputElement>(
+      ".answer-form input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new view.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Review answer")!
+      .click();
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Confirm submission")!
+      .click();
+    await flushPromises();
+
+    expect(signal).toBeInstanceOf(AbortSignal);
+    timers.callbacksAt(ANSWER_FETCH_TIMEOUT_MS).at(-1)?.callback();
+    await flushPromises();
+
+    expect(signal?.aborted).toBe(true);
+    expect(document.querySelector(".answer-error")?.textContent).toBe(
+      "Answer request timed out",
+    );
+    expect(
+      Array.from(document.querySelectorAll("button")).find(
+        (button) => button.textContent === "Check submission status",
+      )?.disabled,
+    ).toBe(false);
+    controller.cleanup();
+  });
+
+  test("bounds a stalled answer outcome poll and clears tracking", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: "Q9",
+          id: answerId,
+          status: "pending",
+        },
+      ]),
+    );
+    let signal: AbortSignal | null | undefined;
+    const fetcher = vi.fn(
+      (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        if (String(input) === "/api/fleet") {
+          return Promise.resolve(
+            jsonResponse(fleet("mini", [], [answerableRepository()])),
+          );
+        }
+        signal = init?.signal;
+        return new Promise(() => undefined);
+      },
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, { now: () => NOW }),
+    );
+    await flushPromises();
+    const secret = document.querySelector<HTMLInputElement>(
+      ".answer-resume input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new document.defaultView!.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Resume tracking")!
+      .click();
+    await flushPromises();
+    timers.callbacksAt(ANSWER_FETCH_TIMEOUT_MS).at(-1)?.callback();
+    await flushPromises();
+
+    expect(signal?.aborted).toBe(true);
+    expect(document.querySelector(".answer-error")?.textContent).toBe(
+      "Answer request timed out",
+    );
+    expect(
+      document.querySelector<HTMLInputElement>("input[type=password]")?.value,
+    ).toBe("");
     controller.cleanup();
   });
 

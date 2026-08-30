@@ -1,4 +1,5 @@
 export const PEER_FETCH_TIMEOUT_MS = 5_000;
+export const ANSWER_FETCH_TIMEOUT_MS = 5_000;
 export const MAX_CONCURRENT_PEER_FETCHES = 4;
 
 const API_SCHEMA_VERSION = 1;
@@ -3449,6 +3450,25 @@ async function readAnswerResponse(response, allowNotFound = false) {
   return value;
 }
 
+async function fetchAnswerWithTimeout(runtime, input, init) {
+  const controller = new AbortController();
+  let timeout;
+  const timeoutFailure = new Promise((_, reject) => {
+    timeout = runtime.setTimeout(() => {
+      controller.abort();
+      reject(new Error("Answer request timed out"));
+    }, ANSWER_FETCH_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([
+      runtime.fetcher(input, { ...init, signal: controller.signal }),
+      timeoutFailure,
+    ]);
+  } finally {
+    runtime.clearTimeout(timeout);
+  }
+}
+
 function rerenderQuestionQueue(documentRoot) {
   const views = machineViews.get(documentRoot);
   if (views) renderQuestionQueue(documentRoot, views);
@@ -3518,7 +3538,8 @@ async function pollAnswer(documentRoot, view, state) {
   state.error = undefined;
   rerenderQuestionQueue(documentRoot);
   try {
-    const response = await runtime.fetcher(
+    const response = await fetchAnswerWithTimeout(
+      runtime,
       answerEndpoint(view, state.repository, state.id),
       { headers: { Authorization: `Bearer ${state.secret}` } },
     );
@@ -3571,7 +3592,8 @@ async function submitAnswerFromQueue(documentRoot, view, state) {
   }
   rerenderQuestionQueue(documentRoot);
   try {
-    const response = await runtime.fetcher(
+    const response = await fetchAnswerWithTimeout(
+      runtime,
       answerEndpoint(view, state.repository),
       {
         method: "POST",

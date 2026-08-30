@@ -112,6 +112,88 @@ describe("durable answer idempotency store", () => {
     expect(readdirSync(storePath)).not.toContain(extra);
   });
 
+  test("reclaims crash-left new and legacy temporary records before checking capacity", async () => {
+    mkdirSync(storePath, { recursive: true, mode: 0o700 });
+    for (
+      let index = 0;
+      index < MAX_ANSWER_IDEMPOTENCY_RECORDS - 1;
+      index += 1
+    ) {
+      const key = randomUUID();
+      writeFileSync(
+        join(storePath, key),
+        `${JSON.stringify({ key, fingerprint, status: "reserved" })}\n`,
+        { mode: 0o600 },
+      );
+    }
+    const crashLeftNew = `.tmp-${randomUUID()}`;
+    const crashLeftLegacy = randomUUID();
+    writeFileSync(
+      join(storePath, crashLeftNew),
+      `${JSON.stringify({ key: randomUUID(), fingerprint, status: "reserved" })}\n`,
+      { mode: 0o600 },
+    );
+    writeFileSync(
+      join(storePath, crashLeftLegacy),
+      `${JSON.stringify({ key: randomUUID(), fingerprint, status: "reserved" })}\n`,
+      { mode: 0o600 },
+    );
+    const key = randomUUID();
+
+    expect(
+      await new DurableAnswerIdempotencyStore().reserve(
+        repository,
+        key,
+        fingerprint,
+      ),
+    ).toEqual({
+      status: "acquired",
+    });
+    expect(readdirSync(storePath)).toHaveLength(MAX_ANSWER_IDEMPOTENCY_RECORDS);
+    expect(readdirSync(storePath)).not.toContain(crashLeftNew);
+    expect(readdirSync(storePath)).not.toContain(crashLeftLegacy);
+  });
+
+  test("keeps active temporary writes safe while concurrent reservations check capacity", async () => {
+    mkdirSync(storePath, { recursive: true, mode: 0o700 });
+    for (
+      let index = 0;
+      index < MAX_ANSWER_IDEMPOTENCY_RECORDS - 1;
+      index += 1
+    ) {
+      const key = randomUUID();
+      writeFileSync(
+        join(storePath, key),
+        `${JSON.stringify({ key, fingerprint, status: "reserved" })}\n`,
+        { mode: 0o600 },
+      );
+    }
+    const first = randomUUID();
+    const second = randomUUID();
+
+    const results = await Promise.all([
+      new DurableAnswerIdempotencyStore().reserve(
+        repository,
+        first,
+        fingerprint,
+      ),
+      new DurableAnswerIdempotencyStore().reserve(
+        repository,
+        second,
+        fingerprint,
+      ),
+    ]);
+
+    expect(results.filter(({ status }) => status === "acquired")).toHaveLength(
+      1,
+    );
+    expect(results.filter(({ status }) => status === "full")).toHaveLength(1);
+    expect(readdirSync(storePath)).toHaveLength(MAX_ANSWER_IDEMPOTENCY_RECORDS);
+    expect(
+      readdirSync(storePath).some((name) => name.startsWith(".tmp-")),
+    ).toBe(false);
+  });
+
   test("rejects a symlink planted at a UUID record path", async () => {
     const key = randomUUID();
     mkdirSync(storePath, { recursive: true, mode: 0o700 });

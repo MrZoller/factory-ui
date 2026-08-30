@@ -20,7 +20,11 @@ MagicDNS.
 
 ## Conventions
 
-- Keep the service strictly read-only and use fixed, bounded parsing limits.
+- Keep dashboard reads strictly read-only and use fixed, bounded parsing
+  limits. The owner-approved answer-intake exception may invoke only the fixed
+  `factory-answers` helper when enabled by `answerActor` plus
+  `FACTORY_ANSWER_SECRET`; configuration omission keeps it disabled, and the
+  service never edits `questions.md` directly.
 - Treat every repository-derived string as untrusted and render it as text,
   never HTML.
 - Use Bun's test runner; linting means Prettier check plus strict TypeScript

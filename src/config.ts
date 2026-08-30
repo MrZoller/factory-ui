@@ -12,6 +12,7 @@ export const MAX_PEERS = 32;
 
 const MAX_NAME_LENGTH = 64;
 const MAX_MACHINE_LENGTH = 128;
+const MAX_ANSWER_ACTOR_LENGTH = 512;
 const MAX_PATH_LENGTH = 4096;
 const MAX_URL_LENGTH = 2048;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -271,6 +272,10 @@ export function parseConfig(value: unknown): AppConfig {
   }
 
   const machine = readString(value.machine, "machine", MAX_MACHINE_LENGTH);
+  const answerActor =
+    value.answerActor === undefined
+      ? undefined
+      : readString(value.answerActor, "answerActor", MAX_ANSWER_ACTOR_LENGTH);
   const repositories = value.repositories.map(parseRepository);
   const peers = value.peers.map(parsePeer);
   const developmentOrigins = (developmentValues as unknown[]).map(
@@ -306,6 +311,7 @@ export function parseConfig(value: unknown): AppConfig {
     port: port as number,
     bind: parseBind(value.bind),
     developmentOrigins,
+    ...(answerActor === undefined ? {} : { answerActor }),
   };
 }
 
@@ -329,6 +335,18 @@ export async function loadConfig(path: string): Promise<AppConfig> {
     throw new Error("config file is not valid JSON");
   }
   const config = parseConfig(value);
+  const answerIntake =
+    config.answerActor === undefined
+      ? undefined
+      : (() => {
+          const secret = process.env.FACTORY_ANSWER_SECRET;
+          if (secret === undefined || secret.length === 0) {
+            throw new Error(
+              "FACTORY_ANSWER_SECRET must be non-empty when answerActor is configured",
+            );
+          }
+          return { actor: config.answerActor, secret };
+        })();
   const repositories = await Promise.all(
     config.repositories.map(async (repository) => {
       try {
@@ -345,5 +363,9 @@ export async function loadConfig(path: string): Promise<AppConfig> {
     repositories.map(({ path: repositoryPath }) => repositoryPath),
     "canonical repository roots must be unique",
   );
-  return { ...config, repositories };
+  return {
+    ...config,
+    repositories,
+    ...(answerIntake === undefined ? {} : { answerIntake }),
+  };
 }

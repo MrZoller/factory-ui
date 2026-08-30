@@ -29,8 +29,13 @@ export const QUESTIONS_WARNING_CODES = [
   "QUESTIONS_UNAVAILABLE",
 ] as const;
 
-const QUESTION_HEADING =
+const LEGACY_QUESTION_HEADING =
   /^## (Q[1-9][0-9]*) \(task (T[1-9][0-9]*), (open|answered|consumed|withdrawn)\) — (.+)$/;
+const TIMESTAMPED_QUESTION_HEADING =
+  /^## (Q[1-9][0-9]*) \(task (T[1-9][0-9]*), (open|answered|consumed|withdrawn), filed-at ([^\s)]+)\) — (.+)$/;
+const TIMESTAMP_MARKER = "<!-- factory-question-timestamps-required-below -->";
+const RFC3339_Z =
+  /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d+)?Z$/;
 const PARKED_BRANCH = /(?:^|\s)Parked branch: `([^`]+)`(?:[.\s]|$)/;
 
 interface SourceLine {
@@ -68,6 +73,20 @@ function addWarning(
       message: "additional question warnings were omitted",
     });
   }
+}
+
+function validFiledAt(value: string): boolean {
+  const fields = RFC3339_Z.exec(value);
+  if (fields === null || Number.isNaN(Date.parse(value))) return false;
+  const date = new Date(value);
+  return (
+    date.getUTCFullYear() === Number(fields[1]) &&
+    date.getUTCMonth() + 1 === Number(fields[2]) &&
+    date.getUTCDate() === Number(fields[3]) &&
+    date.getUTCHours() === Number(fields[4]) &&
+    date.getUTCMinutes() === Number(fields[5]) &&
+    date.getUTCSeconds() === Number(fields[6])
+  );
 }
 
 function bodyField(
@@ -236,10 +255,21 @@ export function parseFactoryQuestions(
 
   const open: OpenQuestion[] = [];
   const identifiers = new Map<string, number[]>();
+  const markerIndex = lines.findIndex(
+    (line) => line.value === TIMESTAMP_MARKER,
+  );
   for (let boundary = 0; boundary < boundaries.length; boundary += 1) {
-    const current = boundaries[boundary]!;
-    const match = QUESTION_HEADING.exec(current.line.value);
-    if (!match) {
+    const current = boundaries[boundary];
+    if (current === undefined) continue;
+    const timestampRequired = markerIndex >= 0 && current.index > markerIndex;
+    const timestamped = TIMESTAMPED_QUESTION_HEADING.exec(current.line.value);
+    const legacy =
+      timestamped === null && !timestampRequired
+        ? LEGACY_QUESTION_HEADING.exec(current.line.value)
+        : null;
+    const match = timestamped ?? legacy;
+    const filedAt = timestamped?.[4];
+    if (!match || (filedAt !== undefined && !validFiledAt(filedAt))) {
       addWarning(
         warnings,
         "QUESTIONS_MALFORMED_ENTRY",
@@ -249,21 +279,44 @@ export function parseFactoryQuestions(
       );
       continue;
     }
-    const id = match[1]!;
-    const taskId = match[2]!;
-    const status = match[3]!;
-    const title = match[4]!;
+    const id = match[1];
+    const taskId = match[2];
+    const status = match[3];
+    const title = match[timestamped === null ? 4 : 5];
+    if (
+      id === undefined ||
+      taskId === undefined ||
+      status === undefined ||
+      title === undefined
+    ) {
+      addWarning(
+        warnings,
+        "QUESTIONS_MALFORMED_ENTRY",
+        "a question heading is malformed",
+        current.index + 1,
+        current.line.value,
+      );
+      continue;
+    }
     const seenAt = identifiers.get(id) ?? [];
     seenAt.push(current.index + 1);
     identifiers.set(id, seenAt);
     if (status !== "open") continue;
 
-    const nextStart = boundaries[boundary + 1]?.line.start ?? text.length;
+    const nextBoundaryStart =
+      boundaries[boundary + 1]?.line.start ?? text.length;
+    const markerStart =
+      markerIndex > current.index
+        ? (lines[markerIndex]?.start ?? text.length)
+        : text.length;
+    const nextStart = Math.min(nextBoundaryStart, markerStart);
     const textSlice = text.slice(current.line.start, nextStart);
-    const bodyLines = lines.slice(
-      current.index + 1,
-      boundaries[boundary + 1]?.index ?? lines.length,
-    );
+    const nextBoundaryIndex = boundaries[boundary + 1]?.index ?? lines.length;
+    const bodyEndIndex =
+      markerIndex > current.index
+        ? Math.min(nextBoundaryIndex, markerIndex)
+        : nextBoundaryIndex;
+    const bodyLines = lines.slice(current.index + 1, bodyEndIndex);
     const contextIndex = bodyLines.findIndex((line) =>
       line.value.startsWith("Context:"),
     );
@@ -289,6 +342,7 @@ export function parseFactoryQuestions(
       id,
       taskId,
       title,
+      ...(filedAt === undefined ? {} : { filedAt }),
       text: textSlice,
       ...parseQuestionDetails(textSlice),
     });

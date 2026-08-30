@@ -5357,6 +5357,39 @@ describe("browser peer fan-out", () => {
     ).toContain("Q2 · Peer");
   });
 
+  test("omits ambiguous duplicate question deep links and highlights no duplicate card", () => {
+    const document = dashboardDocument();
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=factory-ui&question=Q7";
+    const repository = richRepository({
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            { id: "Q7", taskId: "T7", title: "First", text: "first" },
+            { id: "Q7", taskId: "T8", title: "Second", text: "second" },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    expect(
+      document.querySelectorAll(".question-queue-entry h3 a"),
+    ).toHaveLength(0);
+    expect(
+      document.querySelectorAll(".question-queue-entry-linked"),
+    ).toHaveLength(0);
+    expect(
+      Array.from(
+        document.querySelectorAll(".question-queue-entry h3"),
+        (heading) => heading.textContent,
+      ),
+    ).toEqual(["Q7 · First", "Q7 · Second"]);
+  });
+
   test("isolates an unsafe peer question without losing local or valid-peer queue entries", async () => {
     const document = dashboardDocument();
     const peers = [

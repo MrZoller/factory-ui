@@ -18,8 +18,14 @@ export const MAX_ANSWER_IDEMPOTENCY_RECORDS = 512;
 const MAX_GIT_OUTPUT_BYTES = 4096;
 const MAX_RECORD_BYTES = 1024;
 const STORE_DIRECTORY = "factory-ui-answer-idempotency";
+const TEMPORARY_PREFIX = ".tmp-";
 const FINGERPRINT = /^[0-9a-f]{64}$/;
 const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
+const activeTemporaryPaths = new Set<string>();
+// Link-then-count is required to avoid admitting two identical reservations,
+// but concurrent capacity checks can otherwise remove both newly linked files.
+// One dashboard process owns this store, so serialize just that final decision.
+let capacityCheck = Promise.resolve();
 
 export type AnswerReservation =
   | { status: "acquired" }
@@ -242,16 +248,61 @@ async function removeIfPresent(path: string): Promise<void> {
 
 async function recordCount(directory: string): Promise<number> {
   const entries = await readdir(directory, { withFileTypes: true });
+  let count = 0;
+  let reclaimed = false;
   for (const entry of entries) {
+    const path = join(directory, entry.name);
+    if (
+      entry.isFile() &&
+      entry.name.startsWith(TEMPORARY_PREFIX) &&
+      ANSWER_UUID.test(entry.name.slice(TEMPORARY_PREFIX.length))
+    ) {
+      if (!activeTemporaryPaths.has(path)) {
+        await removeIfPresent(path);
+        reclaimed = true;
+      }
+      continue;
+    }
     if (!entry.isFile() || !ANSWER_UUID.test(entry.name)) {
       throw new Error("idempotency store contains an unsafe entry");
     }
+    const record = await readPrivateRecord(path);
+    if (record.key !== entry.name) {
+      // Older releases used bare UUID names for temporary records.
+      await removeIfPresent(path);
+      reclaimed = true;
+      continue;
+    }
+    count += 1;
   }
-  return entries.length;
+  if (reclaimed) await syncDirectory(directory);
+  return count;
+}
+
+async function exceedsCapacity(
+  directory: string,
+  target: string,
+): Promise<boolean> {
+  const previous = capacityCheck;
+  let release: (() => void) | undefined;
+  capacityCheck = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    if ((await recordCount(directory)) <= MAX_ANSWER_IDEMPOTENCY_RECORDS) {
+      return false;
+    }
+    await removeIfPresent(target);
+    await syncDirectory(directory);
+    return true;
+  } finally {
+    release?.();
+  }
 }
 
 function randomTemporaryPath(directory: string): string {
-  return join(directory, randomUUID());
+  return join(directory, `${TEMPORARY_PREFIX}${randomUUID()}`);
 }
 
 export class DurableAnswerIdempotencyStore implements AnswerIdempotencyStore {
@@ -266,12 +317,13 @@ export class DurableAnswerIdempotencyStore implements AnswerIdempotencyStore {
     const directory = await storeDirectory(repositoryPath);
     const target = join(directory, key);
     const temporary = randomTemporaryPath(directory);
-    await writePrivateRecord(temporary, {
-      key,
-      fingerprint,
-      status: "reserved",
-    });
+    activeTemporaryPaths.add(temporary);
     try {
+      await writePrivateRecord(temporary, {
+        key,
+        fingerprint,
+        status: "reserved",
+      });
       try {
         await link(temporary, target);
       } catch (error) {
@@ -286,14 +338,14 @@ export class DurableAnswerIdempotencyStore implements AnswerIdempotencyStore {
       }
       await syncDirectory(directory);
     } finally {
-      await removeIfPresent(temporary);
-      await syncDirectory(directory);
+      try {
+        await removeIfPresent(temporary);
+        await syncDirectory(directory);
+      } finally {
+        activeTemporaryPaths.delete(temporary);
+      }
     }
-    if ((await recordCount(directory)) > MAX_ANSWER_IDEMPOTENCY_RECORDS) {
-      await removeIfPresent(target);
-      await syncDirectory(directory);
-      return { status: "full" };
-    }
+    if (await exceedsCapacity(directory, target)) return { status: "full" };
     return { status: "acquired" };
   }
 
@@ -317,17 +369,22 @@ export class DurableAnswerIdempotencyStore implements AnswerIdempotencyStore {
       throw new Error("idempotency reservation changed");
     }
     const temporary = randomTemporaryPath(directory);
-    await writePrivateRecord(temporary, {
-      key,
-      fingerprint,
-      status: "complete",
-      id,
-    });
+    activeTemporaryPaths.add(temporary);
     try {
+      await writePrivateRecord(temporary, {
+        key,
+        fingerprint,
+        status: "complete",
+        id,
+      });
       await rename(temporary, target);
       await syncDirectory(directory);
     } finally {
-      await removeIfPresent(temporary);
+      try {
+        await removeIfPresent(temporary);
+      } finally {
+        activeTemporaryPaths.delete(temporary);
+      }
     }
   }
 }

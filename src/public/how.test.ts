@@ -438,6 +438,37 @@ describe("how factory works page", () => {
     ).toBe(false);
   });
 
+  test("preserves each machine's open model disclosure and its focused summary across peer updates", () => {
+    const document = howDocument("#machine=remote");
+    const machines = [
+      { identity: "mini", fleet: fleet() },
+      { identity: "remote", fleet: fleet({ hostname: "remote" }) },
+    ];
+    renderHow(machines, document);
+    const summary = document.querySelector<HTMLElement>(
+      '.how-machine-panel:not([hidden]) [data-role="driver"] .agent-model-details summary',
+    )!;
+    const details = summary.closest<HTMLDetailsElement>("details")!;
+    details.open = true;
+    summary.focus();
+
+    renderHow(
+      [
+        { identity: "mini", fleet: fleet({ hostname: "mini updated" }) },
+        { identity: "remote", fleet: fleet({ hostname: "remote updated" }) },
+      ],
+      document,
+    );
+
+    const refreshedSummary = document.querySelector<HTMLElement>(
+      '.how-machine-panel:not([hidden]) [data-role="driver"] .agent-model-details summary',
+    )!;
+    expect(refreshedSummary.closest<HTMLDetailsElement>("details")?.open).toBe(
+      true,
+    );
+    expect(document.activeElement).toBe(refreshedSummary);
+  });
+
   test("uses responsive stage and operator grids without diagram overflow", () => {
     expect(stylesheet).toMatch(
       /\.pipeline-stages\s*\{[^}]*grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\)/s,
@@ -461,6 +492,12 @@ describe("how factory works page", () => {
   test("truncates model routes visually while retaining their full title", () => {
     expect(stylesheet).toMatch(
       /\.agent-route\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/s,
+    );
+  });
+
+  test("allows long unbroken model display names to wrap inside disclosures", () => {
+    expect(stylesheet).toMatch(
+      /\.agent-model-name\s*\{[^}]*overflow-wrap:\s*anywhere/s,
     );
   });
 

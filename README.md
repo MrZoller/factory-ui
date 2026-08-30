@@ -113,11 +113,14 @@ machine.
   ambiguous result is `CANNOT_VERIFY`, never evidence that the driver stopped.
 - Browser fan-out: at most four peer requests run concurrently, each with a
   five-second timeout. Peer failures are isolated and shown as `UNREACHABLE`.
-- Browser answer lifecycle storage: at most 128 strictly validated records;
-  only repository/machine/question identifiers, outcome UUID, status, actor,
-  and rejection reason are retained. Secrets and draft answer text are not
-  persisted. Outcome polling uses one five-second timer per active answer and
-  stops at an accepted or rejected outcome.
+- Browser answer lifecycle storage: at most 128 strictly validated records.
+  Confirmed outcomes retain only repository/machine/question identifiers,
+  outcome UUID, status, actor, and rejection reason. An uncertain submission
+  instead retains its idempotency key and confirmed option/free-text payload so
+  the same reservation can be checked after reload. The shared secret and
+  unconfirmed draft text are never persisted. Outcome polling uses one
+  five-second timer per active answer and stops at an accepted or rejected
+  outcome.
 - Server answer idempotency: at most 512 private records per repository under
   `<git-common-dir>/factory/factory-ui-answer-idempotency/`. Records contain
   only the UUID key, a SHA-256 payload fingerprint, reservation/completion
@@ -168,7 +171,9 @@ sent. Such a reservation, and a full store, require operator
 inspection. Remove a reserved UUID record only after confirming from the
 engine intake/outcomes that no submission occurred; then retry with the same
 key. Completed records may be retired when their clients will no longer retry
-them. Factory-ui provides no automatic expiry or cleanup.
+them. Factory-ui automatically reclaims crash-left temporary write files but
+provides no automatic expiry or cleanup of canonical reservations or
+completed records.
 
 ## `.factory` read surface
 

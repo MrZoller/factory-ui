@@ -74,7 +74,7 @@ task.
   - deps: T43
   - pr: 54
 
-- [R] T49 (major) — respond from the UI: deliver answer records to the owning engine and show their lifecycle (Fixes #61)
+- [x] T49 (major) — respond from the UI: deliver answer records to the owning engine and show their lifecycle (Fixes #61)
   - acceptance: After the intake contract in MrZoller/opencode-factory#83 is available, add bounded, idempotent answer-record delivery through `src/server.ts`, `src/contracts.ts`, a dedicated local spool/intake module, and the browser queue surfaces in `src/public/`; let a user choose an option or free text, provide an option-dependent qualifier, confirm the submission, and route peer-repository records to that repository's owning factory-ui server; use only the engine-owned record schema and local spool, never write directly to a clone's `questions.md`; require a minimal shared secret and a recorded, verified actor identity on every answer record rather than relying on tailnet ACLs alone; render durable `pending application`, `applied/consumed` with `via factory-ui` attribution, and `rejected` with the engine's reason; preserve text-only rendering, validate ownership and all untrusted fields, update CORS/configuration and the repository's read-only trust documentation for the approved policy, cover local and peer routing, duplicate submissions, races with another answer channel, rejection, and hostile input, and pass `bun test` plus `bun run lint`.
   - pr: 71
 - [x] T50 (standard) — cross-project question queue: every open question with context, options, and the recommendation in one place (Fixes #60)
@@ -284,8 +284,11 @@ task.
   - deps: none
   - pr: 41
 
-- [!] T48 (trivial) — parked review minors (batch)
+- [ ] T48 (trivial) — parked review minors (batch)
   - PR #54: preserve per-machine model-disclosure open state and summary focus across `/how` peer-update rerenders.
   - PR #54: wrap valid unbroken model display names within compact `/how` disclosure cards.
   - PR #62: enrich a queued open question with blocked-task metadata only when its task ID has exactly one blocked-plan match.
   - PR #62: omit or disambiguate question-queue deep links for duplicate open question IDs so one link cannot highlight multiple cards.
+  - PR #71: document the owner-approved, configuration-disabled answer-intake exception to the service's otherwise read-only convention in `AGENTS.md`.
+  - PR #71: reclaim crash-left temporary idempotency files before they consume the bounded reservation capacity.
+  - PR #71: correct the README trust-boundary summary to disclose uncertain-state retention of confirmed payloads and idempotency keys while preserving the no-secret guarantee.

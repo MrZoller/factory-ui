@@ -21,3 +21,5 @@ Options considered: A — rely on existing tailnet ACLs and record a configured 
 Context: Issue #60 requires an age such as “blocking T6 for 2 days,” but the current question heading has no timestamp and `questions.md` mtime applies to the whole file, not an individual question. Choosing an approximation silently would make queue ordering and displayed age misleading.
 Options considered: A — use the file mtime as an explicitly approximate age / B — omit age until the factory protocol records a per-question timestamp / C — derive age from another named durable source (state that source)
 **A:** B — omit the age display until the question grammar records a per-question filed-at timestamp; that timestamp is being requested in MrZoller/opencode-factory#83 so age becomes real data on a later grammar rev. T50 proceeds now without age: order entries deterministically (repo, then question id) and show no fabricated age (Chris, 2026-08-29).
+
+<!-- factory-question-timestamps-required-below -->

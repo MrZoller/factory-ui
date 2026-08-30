@@ -744,7 +744,21 @@ describe("answer lifecycle queue", () => {
     const secondFetcher = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) =>
         String(input) === "/api/fleet"
-          ? jsonResponse(fleet("mini", [], [answerableRepository()]))
+          ? jsonResponse(
+              fleet(
+                "mini",
+                [],
+                [
+                  answerableRepository({
+                    questions: {
+                      status: "available",
+                      data: { open: [] },
+                      warnings: [],
+                    },
+                  }),
+                ],
+              ),
+            )
           : jsonResponse(
               { status: "pending", id: answerId },
               init?.method === "POST" ? 202 : 500,
@@ -766,6 +780,9 @@ describe("answer lifecycle queue", () => {
     expect(secondDocument.querySelector(".answer-form")?.textContent).toContain(
       "Text: because",
     );
+    expect(
+      secondDocument.querySelector("#question-queue-heading")?.textContent,
+    ).toContain("0 open · 1 tracked");
     const resumedSecret = secondDocument.querySelector<HTMLInputElement>(
       "input[type=password]",
     )!;
@@ -791,6 +808,137 @@ describe("answer lifecycle queue", () => {
       "Bearer shared",
     );
     secondController.cleanup();
+  });
+
+  test("retains an actively submitted uncertain reservation when storage is at capacity", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: "Q9",
+          status: "uncertain",
+          payload: { question: "Q9", option: "A" },
+          idempotencyKey: answerId,
+        },
+        ...Array.from({ length: 127 }, (_, index) => ({
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: `Q${index + 10}`,
+          id: `123e4567-e89b-42d3-a456-${String(index).padStart(12, "0")}`,
+          status: "pending",
+        })),
+      ]),
+    );
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [], [answerableRepository()]))
+          : jsonResponse(
+              { error: "temporary" },
+              init?.method === "POST" ? 503 : 500,
+            ),
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, {
+        randomUUID: () => answerId,
+        now: () => NOW,
+      }),
+    );
+    await flushPromises();
+    const view = document.defaultView!;
+    const secret = document.querySelector<HTMLInputElement>(
+      ".answer-form input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new view.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Check submission status")!
+      .click();
+    await flushPromises();
+
+    const stored = document.defaultView!.localStorage.getItem(
+      "factory-ui.answer-lifecycle.v1",
+    )!;
+    const records = JSON.parse(stored) as Array<Record<string, unknown>>;
+    expect(records).toHaveLength(128);
+    expect(records).toContainEqual({
+      version: 1,
+      machine: "mini",
+      repository: "factory-ui",
+      question: "Q9",
+      status: "uncertain",
+      payload: { question: "Q9", option: "A" },
+      idempotencyKey: answerId,
+    });
+    expect(stored).not.toContain("shared");
+    controller.cleanup();
+  });
+
+  test("ignores malformed uncertain reservations without restoring secrets or posting", async () => {
+    const valid = {
+      version: 1,
+      machine: "mini",
+      repository: "factory-ui",
+      question: "Q9",
+      status: "uncertain",
+      payload: { question: "Q9", option: "A", text: "because" },
+      idempotencyKey: "123e4567-e89b-42d3-a456-426614174000",
+    };
+    const cases = [
+      { payload: { ...valid.payload, question: "Q8" } },
+      { idempotencyKey: "not-a-uuid" },
+      { payload: { ...valid.payload, option: "AA" } },
+      { payload: { ...valid.payload, text: "bad\ntext" } },
+      { payload: { ...valid.payload, text: "x".repeat(10_001) } },
+      { id: "123e4567-e89b-42d3-a456-426614174001" },
+      { actor: "operator" },
+      { reason: "no" },
+      { secret: "injected-secret" },
+    ];
+
+    for (const overrides of cases) {
+      const document = dashboardDocument();
+      document.defaultView!.localStorage.setItem(
+        "factory-ui.answer-lifecycle.v1",
+        JSON.stringify([{ ...valid, ...overrides }]),
+      );
+      const fetcher = vi.fn(
+        async (input: RequestInfo | URL, _init?: RequestInit) =>
+          String(input) === "/api/fleet"
+            ? jsonResponse(fleet("mini", [], [answerableRepository()]))
+            : jsonResponse({ status: "pending" }, 202),
+      );
+      const controller = startDashboard(
+        document,
+        fetcher,
+        dashboardDependencies(fakeTimers(), { now: () => NOW }),
+      );
+      await flushPromises();
+
+      expect(document.querySelector(".answer-review-value") === null).toBe(
+        true,
+      );
+      expect(
+        document.querySelector<HTMLInputElement>(
+          ".answer-form input[type=password]",
+        )?.value,
+      ).toBe("");
+      expect(
+        fetcher.mock.calls.filter(
+          ([, init]) => String(init?.method).toUpperCase() === "POST",
+        ),
+      ).toHaveLength(0);
+      controller.cleanup();
+    }
   });
 
   test("does not post an answer when durable storage rejects its pre-submit reservation", async () => {

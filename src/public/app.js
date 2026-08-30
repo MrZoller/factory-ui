@@ -3261,6 +3261,7 @@ function validateStoredLifecycle(value) {
       value.id !== undefined ||
       value.actor !== undefined ||
       value.reason !== undefined ||
+      value.secret !== undefined ||
       !ANSWER_UUID.test(String(value.idempotencyKey)) ||
       payload === null
     ) {
@@ -3334,38 +3335,43 @@ function getAnswerStore(documentRoot) {
   return store;
 }
 
-function persistAnswerStore(documentRoot) {
-  const records = [...getAnswerStore(documentRoot).values()]
-    .filter(
-      (state) =>
-        ANSWER_UUID.test(String(state.id)) ||
-        (state.status === "uncertain" &&
-          ANSWER_UUID.test(String(state.idempotencyKey)) &&
-          state.payload !== undefined),
-    )
-    .slice(-MAX_STORED_ANSWER_LIFECYCLES)
-    .map((state) =>
-      state.status === "uncertain"
-        ? {
-            version: 1,
-            machine: state.machine,
-            repository: state.repository,
-            question: state.question,
-            status: state.status,
-            payload: state.payload,
-            idempotencyKey: state.idempotencyKey,
-          }
-        : {
-            version: 1,
-            machine: state.machine,
-            repository: state.repository,
-            question: state.question,
-            id: state.id,
-            status: state.status,
-            ...(state.actor === undefined ? {} : { actor: state.actor }),
-            ...(state.reason === undefined ? {} : { reason: state.reason }),
-          },
-    );
+function persistAnswerStore(documentRoot, requiredState) {
+  const states = [...getAnswerStore(documentRoot).values()].filter(
+    (state) =>
+      ANSWER_UUID.test(String(state.id)) ||
+      (state.status === "uncertain" &&
+        ANSWER_UUID.test(String(state.idempotencyKey)) &&
+        state.payload !== undefined),
+  );
+  if (requiredState !== undefined) {
+    const requiredIndex = states.indexOf(requiredState);
+    if (requiredIndex >= 0) {
+      states.splice(requiredIndex, 1);
+      states.push(requiredState);
+    }
+  }
+  const records = states.slice(-MAX_STORED_ANSWER_LIFECYCLES).map((state) =>
+    state.status === "uncertain"
+      ? {
+          version: 1,
+          machine: state.machine,
+          repository: state.repository,
+          question: state.question,
+          status: state.status,
+          payload: state.payload,
+          idempotencyKey: state.idempotencyKey,
+        }
+      : {
+          version: 1,
+          machine: state.machine,
+          repository: state.repository,
+          question: state.question,
+          id: state.id,
+          status: state.status,
+          ...(state.actor === undefined ? {} : { actor: state.actor }),
+          ...(state.reason === undefined ? {} : { reason: state.reason }),
+        },
+  );
   try {
     const storage = documentRoot.defaultView?.localStorage;
     if (!storage) return false;
@@ -3557,7 +3563,7 @@ async function submitAnswerFromQueue(documentRoot, view, state) {
   state.error = undefined;
   if (!state.idempotencyKey) state.idempotencyKey = runtime.randomUUID();
   state.status = "uncertain";
-  if (!persistAnswerStore(documentRoot)) {
+  if (!persistAnswerStore(documentRoot, state)) {
     state.sending = false;
     state.error = "Browser storage unavailable; submission not sent";
     rerenderQuestionQueue(documentRoot);
@@ -3860,7 +3866,7 @@ function renderQuestionQueue(documentRoot, views) {
     const view = views.find(
       (candidate) => candidate.identity === state.machine,
     );
-    if (!view || !state.id) continue;
+    if (!view || (!state.id && state.status !== "uncertain")) continue;
     trackedEntries += 1;
     insertBoundedQuestionEntry(entries, {
       machine: state.machine,
@@ -3921,8 +3927,11 @@ function renderQuestionQueue(documentRoot, views) {
       const key = answerKey(machine, repository.name, question.id);
       let answerState = answerStore.get(key);
       if (lifecycleOnly) {
-        if (answerState)
+        if (answerState?.status === "uncertain") {
+          renderAnswerForm(item, documentRoot, view, question, answerState);
+        } else if (answerState) {
           renderAnswerLifecycle(item, documentRoot, view, answerState);
+        }
         return item;
       }
       const task = question.blockedTask;

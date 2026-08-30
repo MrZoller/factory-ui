@@ -34,3 +34,4 @@
 {"schemaVersion":1,"task":"T52","event":"ship","at":"2026-08-29T21:02:00Z","size":"standard","reclassifiedFrom":null,"internal":{"rounds":2,"findings":{"blocking":0,"minor":1,"invalid":0},"fixed":1}}
 {"schemaVersion":1,"task":"T52","event":"pr","at":"2026-08-29T21:07:16Z","by":"factory-git","pr":66,"openedAt":"2026-08-29T21:01:55Z","mergedAt":"2026-08-29T21:07:09Z","commits":8,"commitsAfterOpen":0,"reviews":{},"issueComments":{"chatgpt-codex-connector":1},"reactions":{"chatgpt-codex-connector":{"+1":1}},"threads":{},"checkRuns":{"total":1,"failed":0}}
 {"schemaVersion":1,"task":"T52","event":"merge","at":"2026-08-29T21:07:26Z","pr":66,"external":{"codex":{"rounds":1,"findings":{"blocking":0,"minor":0,"refuted":0},"fixPushes":0}},"ci":{"runs":1,"reruns":0}}
+{"schemaVersion":1,"task":"T49","event":"ship","at":"2026-08-30T17:14:13Z","size":"major","reclassifiedFrom":"standard","internal":{"rounds":4,"findings":{"blocking":4,"minor":4,"invalid":1},"fixed":8}}

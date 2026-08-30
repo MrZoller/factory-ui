@@ -178,7 +178,7 @@ Options considered: A — Proceed
         });
       });
 
-      test("exposes an exact valid filed-at timestamp and retains legacy entries before the marker", () => {
+      test("exposes valid whole and fractional filed-at timestamps and retains legacy entries before the marker", () => {
         const result = parseFactoryQuestions(`## Q1 (task T1, open) — Legacy
 Context: Context
 Options considered: A — Go
@@ -187,11 +187,19 @@ Options considered: A — Go
 ## Q2 (task T2, open, filed-at 2026-08-30T03:04:05Z) — Timestamped
 Context: Context
 Options considered: A — Go
+**A:**
+## Q3 (task T3, open, filed-at 2026-08-30T03:04:05.123456Z) — Fractional
+Context: Context
+Options considered: A — Go
 **A:**`);
         expect(result).toMatchObject({
           status: "available",
           data: {
-            open: [{ id: "Q1" }, { id: "Q2", filedAt: "2026-08-30T03:04:05Z" }],
+            open: [
+              { id: "Q1" },
+              { id: "Q2", filedAt: "2026-08-30T03:04:05Z" },
+              { id: "Q3", filedAt: "2026-08-30T03:04:05.123456Z" },
+            ],
           },
         });
       });
@@ -201,7 +209,7 @@ Options considered: A — Go
           "2026-02-30T03:04:05Z",
           "2026-08-30T24:04:05Z",
           "2026-08-30T03:04:05+00:00",
-          "2026-08-30T03:04:05.123Z",
+          "2026-08-30T03:04:05.Z",
         ]) {
           const result =
             parseFactoryQuestions(`<!-- factory-question-timestamps-required-below -->

@@ -35,7 +35,7 @@ const TIMESTAMPED_QUESTION_HEADING =
   /^## (Q[1-9][0-9]*) \(task (T[1-9][0-9]*), (open|answered|consumed|withdrawn), filed-at ([^\s)]+)\) — (.+)$/;
 const TIMESTAMP_MARKER = "<!-- factory-question-timestamps-required-below -->";
 const RFC3339_Z =
-  /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)Z$/;
+  /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d+)?Z$/;
 const PARKED_BRANCH = /(?:^|\s)Parked branch: `([^`]+)`(?:[.\s]|$)/;
 
 interface SourceLine {

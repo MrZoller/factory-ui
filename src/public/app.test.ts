@@ -440,7 +440,7 @@ describe("driver liveness freshness", () => {
 });
 
 describe("answer lifecycle queue", () => {
-  function answerableRepository(overrides = {}) {
+  function answerableRepository(overrides = {}, filedAt?: string) {
     return richRepository({
       questions: {
         status: "available",
@@ -451,6 +451,7 @@ describe("answer lifecycle queue", () => {
               taskId: "T8",
               title: "Choose <img src=x onerror=1>",
               text: "raw",
+              ...(filedAt === undefined ? {} : { filedAt }),
               context: "Context",
               options: [
                 { label: "A", text: "Proceed", recommended: true },
@@ -465,6 +466,30 @@ describe("answer lifecycle queue", () => {
       ...overrides,
     });
   }
+
+  test("accepts optional fractional filed-at seconds and rejects invalid calendar dates", async () => {
+    const fractional = answerableRepository({}, "2026-08-30T03:04:05.123456Z");
+    const accepted = dashboardDocument();
+    await expect(
+      loadFleet(accepted, async () =>
+        jsonResponse(fleet("mini", [], [fractional])),
+      ),
+    ).resolves.toBe(true);
+    expect(accepted.querySelector("#question-queue-count")?.textContent).toBe(
+      "1",
+    );
+
+    const invalid = answerableRepository({}, "2026-02-30T03:04:05.1Z");
+    const rejected = dashboardDocument();
+    await expect(
+      loadFleet(rejected, async () =>
+        jsonResponse(fleet("mini", [], [invalid])),
+      ),
+    ).resolves.toBe(false);
+    expect(rejected.querySelector("#question-queue-count")?.textContent).toBe(
+      "0",
+    );
+  });
 
   test("renders option, free text qualifier, review confirmation, and cancel without executing input", () => {
     const document = dashboardDocument();

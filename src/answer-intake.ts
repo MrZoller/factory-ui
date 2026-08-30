@@ -272,17 +272,6 @@ function validOutcome(value: unknown, id: string): value is AnswerOutcome {
   if (value.reason !== undefined && !validPrivateString(value.reason))
     return false;
   if (value.option === undefined && value.text === undefined) return false;
-  // Rejected records are terminal at preparation time: unlike accepted
-  // records they deliberately have no prepare/settle stamps, only a reason.
-  // Recognize that complete shape before the shared transient-state checks.
-  if (
-    status === "rejected" &&
-    value.preparedAt === undefined &&
-    value.settledAt === undefined &&
-    value.reason !== undefined
-  ) {
-    return true;
-  }
   if (
     (status === "pending" &&
       (value.preparedAt !== undefined ||

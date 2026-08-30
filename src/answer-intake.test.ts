@@ -129,7 +129,7 @@ describe("answer intake boundary", () => {
       ["pending", {}],
       ["inflight", { preparedAt: submittedAt }],
       ["accepted", { preparedAt: submittedAt, settledAt: submittedAt }],
-      ["rejected", { reason: "question is terminal" }],
+      ["rejected", { settledAt: submittedAt, reason: "question is terminal" }],
     ] as const) {
       const outcome = await getAnswerOutcome(
         { repositoryPath: "/repo", id, secret: "s" },
@@ -173,6 +173,37 @@ describe("answer intake boundary", () => {
         })),
       ),
     ).rejects.toThrow();
+
+    for (const extra of [
+      { reason: "question is terminal" },
+      {
+        preparedAt: submittedAt,
+        settledAt: submittedAt,
+        reason: "question is terminal",
+      },
+      { settledAt: "2026-02-30T12:00:00.000Z", reason: "terminal" },
+    ]) {
+      await expect(
+        getAnswerOutcome(
+          { repositoryPath: "/repo", id, secret: "s" },
+          runner(async () => ({
+            exitCode: 0,
+            stderr: "",
+            stdout: JSON.stringify({
+              schemaVersion: 1,
+              id,
+              status: "rejected",
+              question: "Q9",
+              option: "A",
+              actor: "Chris",
+              source: "factory-ui",
+              submittedAt,
+              ...extra,
+            }),
+          })),
+        ),
+      ).rejects.toThrow();
+    }
   });
 
   test("returns unknown only for the helper's exact unknown-record protocol", async () => {

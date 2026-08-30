@@ -118,6 +118,12 @@ machine.
   and rejection reason are retained. Secrets and draft answer text are not
   persisted. Outcome polling uses one five-second timer per active answer and
   stops at an accepted or rejected outcome.
+- Server answer idempotency: at most 512 private records per repository under
+  `<git-common-dir>/factory/factory-ui-answer-idempotency/`. Records contain
+  only the UUID key, a SHA-256 payload fingerprint, reservation/completion
+  status, and the engine outcome UUID after completion; they are mode `0600`
+  in a mode-`0700` directory. Secrets and answer text are never stored there.
+  The service fails closed when the store is full or cannot be verified.
 
 Inputs beyond a limit become unavailable or partial with warnings; exceeding
 the log-directory scan has its own diagnostic rather than masquerading as a
@@ -146,6 +152,20 @@ the open question disappears or the page reloads. Because the credential is
 not persisted, reloaded pending records require the password and **Resume
 tracking**. Factory-ui submits only to the intake spool and polls outcomes; it
 never writes, rewrites, or removes entries in `.factory/questions.md`.
+
+The server reserves each idempotency key durably before invoking
+`factory-answers`. A completed same-key, same-payload retry, including after a
+server restart, returns the original pending outcome UUID without invoking the
+helper again; a changed payload conflicts. An observed helper failure releases
+the reservation so a transient retry can recover. An existing `reserved`
+record returns `503` rather than risking a duplicate submission. This is an
+intentional at-most-once crash disposition: if the process dies after the
+engine accepted the answer but before the completion mapping is durable, the
+same key is never automatically resubmitted. Such a reservation, and a full
+store, require operator inspection. Remove a reserved UUID record only after
+confirming from the engine intake/outcomes that no submission occurred; then
+retry with the same key. Completed records may be retired when their clients
+will no longer retry them. Factory-ui provides no automatic expiry or cleanup.
 
 ## `.factory` read surface
 

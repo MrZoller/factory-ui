@@ -6,6 +6,11 @@ import {
   submitAnswer,
   validateAnswerRequest,
 } from "./answer-intake";
+import {
+  DurableAnswerIdempotencyStore,
+  MAX_ANSWER_IDEMPOTENCY_RECORDS,
+  type AnswerIdempotencyStore,
+} from "./answer-idempotency";
 import type {
   AnswerOutcome,
   AnswerRequest,
@@ -27,7 +32,6 @@ import {
 
 const PUBLIC_ROOT = new URL("./public/", import.meta.url);
 const MAX_ANSWER_BODY_BYTES = 16 * 1024;
-const MAX_IDEMPOTENCY_ENTRIES = 512;
 
 const STATIC_FILES = new Map([
   ["/", { file: "index.html", type: "text/html; charset=utf-8" }],
@@ -57,6 +61,7 @@ export interface HandlerDependencies {
     id: string;
     secret: string;
   }) => Promise<AnswerOutcome | UnknownAnswerOutcome>;
+  answerIdempotencyStore?: AnswerIdempotencyStore;
 }
 
 function textResponse(status: number, message: string): Response {
@@ -191,12 +196,16 @@ export function createRequestHandler(
   const now = dependencies.now ?? (() => new Date());
   const submit = dependencies.submitAnswer ?? submitAnswer;
   const outcome = dependencies.answerOutcome ?? getAnswerOutcome;
-  const idempotency = new Map<
+  const idempotencyStore =
+    dependencies.answerIdempotencyStore ?? new DurableAnswerIdempotencyStore();
+  const inFlightSubmissions = new Map<
     string,
     {
-      payload: string;
-      result: Promise<AnswerSubmissionResult>;
-      settled: boolean;
+      fingerprint: string;
+      result: Promise<
+        | { status: "result"; value: AnswerSubmissionResult }
+        | { status: "conflict" | "unavailable" }
+      >;
     }
   >();
   const bind = config.bind ?? "127.0.0.1";
@@ -243,7 +252,8 @@ export function createRequestHandler(
         }
       } else if (pathname.startsWith("/api/repo/")) {
         const intakeRoute = answerRoute(pathname, config.repositories);
-        if (intakeRoute !== null && config.answerIntake !== undefined) {
+        const answerIntake = config.answerIntake;
+        if (intakeRoute !== null && answerIntake !== undefined) {
           const allowedMethod =
             intakeRoute.kind === "submit" ? "POST, OPTIONS" : "GET, OPTIONS";
           if (request.method === "OPTIONS") {
@@ -261,7 +271,7 @@ export function createRequestHandler(
           } else if (
             !authenticated(
               request.headers.get("authorization"),
-              config.answerIntake.secret,
+              answerIntake.secret,
             )
           ) {
             response = jsonError(401, "Unauthorized");
@@ -282,50 +292,100 @@ export function createRequestHandler(
                 response = jsonError(400, "Invalid request");
               } else {
                 const payload = JSON.stringify({
-                  repository: intakeRoute.repository.name,
                   ...requestValue,
                 });
-                const prior = idempotency.get(idempotencyKey);
-                if (prior !== undefined && prior.payload !== payload) {
+                const fingerprint = createHash("sha256")
+                  .update(payload)
+                  .digest("hex");
+                const memoryKey = `${intakeRoute.repository.path}\0${idempotencyKey}`;
+                const prior = inFlightSubmissions.get(memoryKey);
+                if (prior !== undefined && prior.fingerprint !== fingerprint) {
                   response = jsonError(409, "Idempotency key conflict");
                 } else {
                   let result = prior?.result;
                   if (result === undefined) {
-                    if (idempotency.size >= MAX_IDEMPOTENCY_ENTRIES) {
-                      const oldestSettled = [...idempotency].find(
-                        ([, entry]) => entry.settled,
-                      )?.[0];
-                      if (oldestSettled !== undefined) {
-                        idempotency.delete(oldestSettled);
-                      }
-                    }
-                    if (idempotency.size >= MAX_IDEMPOTENCY_ENTRIES) {
+                    if (
+                      inFlightSubmissions.size >= MAX_ANSWER_IDEMPOTENCY_RECORDS
+                    ) {
                       response = jsonError(503, "Answer intake unavailable");
                     } else {
-                      result = submit({
-                        ...requestValue,
-                        repositoryPath: intakeRoute.repository.path,
-                        actor: config.answerIntake.actor,
-                        secret: config.answerIntake.secret,
+                      result = (async () => {
+                        try {
+                          const reservation = await idempotencyStore.reserve(
+                            intakeRoute.repository.path,
+                            idempotencyKey,
+                            fingerprint,
+                          );
+                          if (reservation.status === "conflict") {
+                            return { status: "conflict" as const };
+                          }
+                          if (reservation.status === "complete") {
+                            return {
+                              status: "result" as const,
+                              value: {
+                                status: "pending" as const,
+                                id: reservation.id,
+                              },
+                            };
+                          }
+                          if (
+                            reservation.status === "reserved" ||
+                            reservation.status === "full"
+                          ) {
+                            return { status: "unavailable" as const };
+                          }
+
+                          let submitted = false;
+                          try {
+                            const value = await submit({
+                              ...requestValue,
+                              repositoryPath: intakeRoute.repository.path,
+                              actor: answerIntake.actor,
+                              secret: answerIntake.secret,
+                            });
+                            submitted = true;
+                            await idempotencyStore.complete(
+                              intakeRoute.repository.path,
+                              idempotencyKey,
+                              fingerprint,
+                              value.id,
+                            );
+                            return { status: "result" as const, value };
+                          } catch {
+                            if (!submitted) {
+                              await idempotencyStore.release(
+                                intakeRoute.repository.path,
+                                idempotencyKey,
+                                fingerprint,
+                              );
+                            }
+                            return { status: "unavailable" as const };
+                          }
+                        } catch {
+                          return { status: "unavailable" as const };
+                        }
+                      })();
+                      inFlightSubmissions.set(memoryKey, {
+                        fingerprint,
+                        result,
                       });
-                      const entry = { payload, result, settled: false };
-                      result.then(
-                        () => {
-                          entry.settled = true;
-                        },
-                        () => {
-                          entry.settled = true;
-                        },
-                      );
-                      idempotency.set(idempotencyKey, entry);
+                      void result.finally(() => {
+                        if (
+                          inFlightSubmissions.get(memoryKey)?.result === result
+                        ) {
+                          inFlightSubmissions.delete(memoryKey);
+                        }
+                      });
                     }
                   }
                   if (result !== undefined) {
-                    try {
-                      response = Response.json(await result, { status: 202 });
-                    } catch {
-                      response = jsonError(503, "Answer intake unavailable");
-                    }
+                    const submission = await result;
+                    response =
+                      submission.status === "result"
+                        ? Response.json(submission.value, { status: 202 })
+                        : submission.status === "conflict"
+                          ? jsonError(409, "Idempotency key conflict")
+                          : jsonError(503, "Answer intake unavailable");
                   }
                 }
               }
@@ -338,7 +398,7 @@ export function createRequestHandler(
                 const result = await outcome({
                   repositoryPath: intakeRoute.repository.path,
                   id: intakeRoute.id,
-                  secret: config.answerIntake.secret,
+                  secret: answerIntake.secret,
                 });
                 response = Response.json(result, {
                   status: result.status === "unknown-record" ? 404 : 200,

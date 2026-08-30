@@ -7,6 +7,10 @@ import type {
   RepositoryFactorySnapshot,
   RepositorySource,
 } from "./contracts";
+import type {
+  AnswerIdempotencyStore,
+  AnswerReservation,
+} from "./answer-idempotency";
 import { createRequestHandler } from "./server";
 import { readRepositoryFactoryData } from "./snapshot";
 import { MAX_LOG_ENTRIES } from "./readers/logs";
@@ -18,6 +22,58 @@ import {
 
 const generatedAt = new Date("2026-08-16T12:00:00.000Z");
 const fixtures: FactoryFixture[] = [];
+
+class TestAnswerIdempotencyStore implements AnswerIdempotencyStore {
+  failCompletion = false;
+  readonly records = new Map<
+    string,
+    { fingerprint: string; status: "reserved" | "complete"; id?: string }
+  >();
+
+  async reserve(
+    repositoryPath: string,
+    key: string,
+    fingerprint: string,
+  ): Promise<AnswerReservation> {
+    const record = this.records.get(`${repositoryPath}\0${key}`);
+    if (record === undefined) {
+      this.records.set(`${repositoryPath}\0${key}`, {
+        fingerprint,
+        status: "reserved",
+      });
+      return { status: "acquired" };
+    }
+    if (record.fingerprint !== fingerprint) return { status: "conflict" };
+    return record.status === "complete" && record.id !== undefined
+      ? { status: "complete", id: record.id }
+      : { status: "reserved" };
+  }
+
+  async complete(
+    repositoryPath: string,
+    key: string,
+    fingerprint: string,
+    id: string,
+  ): Promise<void> {
+    if (this.failCompletion) throw new Error("completion failed");
+    this.records.set(`${repositoryPath}\0${key}`, {
+      fingerprint,
+      status: "complete",
+      id,
+    });
+  }
+
+  async release(
+    repositoryPath: string,
+    key: string,
+    fingerprint: string,
+  ): Promise<void> {
+    const recordKey = `${repositoryPath}\0${key}`;
+    if (this.records.get(recordKey)?.fingerprint === fingerprint) {
+      this.records.delete(recordKey);
+    }
+  }
+}
 
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) fixture.cleanup();
@@ -46,7 +102,10 @@ describe("answer delivery API", () => {
 
   test("authenticates before reading an invalid body and does not disclose ownership or secret", async () => {
     const submit = vi.fn();
-    const handler = createRequestHandler(source, { submitAnswer: submit });
+    const handler = createRequestHandler(source, {
+      submitAnswer: submit,
+      answerIdempotencyStore: new TestAnswerIdempotencyStore(),
+    });
     const bad = await handler(
       request("/api/repo/not-owned/answers", {
         method: "POST",
@@ -71,7 +130,10 @@ describe("answer delivery API", () => {
       status: "pending" as const,
       id: answerId,
     }));
-    const handler = createRequestHandler(source, { submitAnswer: submit });
+    const handler = createRequestHandler(source, {
+      submitAnswer: submit,
+      answerIdempotencyStore: new TestAnswerIdempotencyStore(),
+    });
     expect(
       (await handler(request(undefined, { method: "GET", headers }))).status,
     ).toBe(405);
@@ -137,6 +199,7 @@ describe("answer delivery API", () => {
         actor: "Verified Actor",
         source: "factory-ui",
         submittedAt: "2026-08-30T12:00:00.000Z",
+        settledAt: "2026-08-30T12:00:01.000Z",
         reason: "question terminal",
       }),
     });
@@ -174,7 +237,10 @@ describe("answer delivery API", () => {
       },
     );
     const submit = vi.fn(() => submitted);
-    const handler = createRequestHandler(source, { submitAnswer: submit });
+    const handler = createRequestHandler(source, {
+      submitAnswer: submit,
+      answerIdempotencyStore: new TestAnswerIdempotencyStore(),
+    });
     const body = JSON.stringify({ question: "Q1", option: "A" });
     const first = handler(
       request(undefined, { method: "POST", headers, body }),
@@ -197,6 +263,84 @@ describe("answer delivery API", () => {
         )
       ).status,
     ).toBe(409);
+  });
+
+  test("releases a failed submission so the same key can retry the helper", async () => {
+    const submit = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("temporary"))
+      .mockResolvedValueOnce({ status: "pending", id: answerId });
+    const handler = createRequestHandler(source, {
+      submitAnswer: submit,
+      answerIdempotencyStore: new TestAnswerIdempotencyStore(),
+    });
+    const init = {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ question: "Q1", option: "A" }),
+    };
+
+    expect((await handler(request(undefined, init))).status).toBe(503);
+    expect((await handler(request(undefined, init))).status).toBe(202);
+    expect(submit).toHaveBeenCalledTimes(2);
+  });
+
+  test("returns a completed durable result from a fresh handler without resubmitting", async () => {
+    const store = new TestAnswerIdempotencyStore();
+    const firstSubmit = vi.fn(async () => ({
+      status: "pending" as const,
+      id: answerId,
+    }));
+    const init = {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ question: "Q1", option: "A" }),
+    };
+    const firstHandler = createRequestHandler(source, {
+      submitAnswer: firstSubmit,
+      answerIdempotencyStore: store,
+    });
+    expect((await firstHandler(request(undefined, init))).status).toBe(202);
+
+    const restartedSubmit = vi.fn();
+    const restartedHandler = createRequestHandler(source, {
+      submitAnswer: restartedSubmit,
+      answerIdempotencyStore: store,
+    });
+    const response = await restartedHandler(request(undefined, init));
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ status: "pending", id: answerId });
+    expect(restartedSubmit).not.toHaveBeenCalled();
+  });
+
+  test("does not resubmit a durable reservation left after completion fails", async () => {
+    const store = new TestAnswerIdempotencyStore();
+    store.failCompletion = true;
+    const submit = vi.fn(async () => ({
+      status: "pending" as const,
+      id: answerId,
+    }));
+    const init = {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ question: "Q1", option: "A" }),
+    };
+    const firstHandler = createRequestHandler(source, {
+      submitAnswer: submit,
+      answerIdempotencyStore: store,
+    });
+    expect((await firstHandler(request(undefined, init))).status).toBe(503);
+    expect(submit).toHaveBeenCalledTimes(1);
+
+    store.failCompletion = false;
+    const restartedSubmit = vi.fn();
+    const restartedHandler = createRequestHandler(source, {
+      submitAnswer: restartedSubmit,
+      answerIdempotencyStore: store,
+    });
+    expect((await restartedHandler(request(undefined, init))).status).toBe(503);
+    expect(restartedSubmit).not.toHaveBeenCalled();
   });
 });
 

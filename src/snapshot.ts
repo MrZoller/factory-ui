@@ -159,9 +159,10 @@ function enrichQuestionLinks(
     ...result,
     data: {
       open: result.data.open.map((question) => {
-        const task = blocked.find(
+        const matchingTasks = blocked.filter(
           (candidate) => candidate.id === question.taskId,
         );
+        const task = matchingTasks.length === 1 ? matchingTasks[0] : undefined;
         const branchUrl = createBranchUrl(githubUrl, question.branch);
         return {
           ...question,

@@ -376,6 +376,45 @@ Options considered: A or B, depending on C
     }
   });
 
+  test("omits blocked-task enrichment when a question ID has duplicate blocked-plan matches", async () => {
+    const fixture = createFactoryFixture();
+    try {
+      await Promise.all([
+        fixture.writeState({ project: "factory-ui", phase: "build" }),
+        fixture.writePlan(`- [!] T7 (standard) — First duplicate
+  - deps: none
+- [!] T7 (standard) — Second duplicate
+  - deps: none
+- [!] T8 (standard) — Unique task
+  - deps: none`),
+        fixture.writeQuestions(`## Q7 (task T7, open) — Ambiguous task
+Context: Context
+**A:**
+
+## Q8 (task T8, open) — Unique task
+Context: Context
+**A:**`),
+      ]);
+
+      const snapshot = await readRepositoryFactorySnapshot({
+        name: "factory-ui",
+        path: fixture.root,
+      });
+      if (snapshot.questions.status === "unavailable") {
+        throw new Error("questions fixture must be available");
+      }
+      const [ambiguous, unique] = snapshot.questions.data.open;
+
+      expect(ambiguous?.blockedTask).toBeUndefined();
+      expect(unique?.blockedTask).toMatchObject({
+        id: "T8",
+        title: "Unique task",
+      });
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   test("preserves a single labelled option and its recommendation explanation", async () => {
     const fixture = createFactoryFixture();
     try {

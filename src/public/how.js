@@ -310,6 +310,28 @@ function renderPipeline(documentRoot, fleet) {
   return diagram;
 }
 
+function disclosureKey(machine, role) {
+  return JSON.stringify([machine, role]);
+}
+
+function captureModelDisclosureState(panelsRoot, activeElement) {
+  const open = new Set();
+  let focused;
+  for (const panel of panelsRoot.querySelectorAll(".how-machine-panel")) {
+    const machine = panel.getAttribute("data-machine-identity");
+    if (machine === null) continue;
+    for (const node of panel.querySelectorAll(".agent-node")) {
+      const role = node.dataset.role;
+      const details = node.querySelector(".agent-model-details");
+      if (!role || !details) continue;
+      const key = disclosureKey(machine, role);
+      if (details.open) open.add(key);
+      if (details.querySelector("summary") === activeElement) focused = key;
+    }
+  }
+  return { open, focused };
+}
+
 function selectedMachine(windowRoot, machines) {
   const requested = new URLSearchParams(
     windowRoot?.location?.hash.slice(1) ?? "",
@@ -339,6 +361,10 @@ export function renderHow(machines, documentRoot = document) {
   const restoreOperatorsFocus =
     selectedDiagram?.querySelector(".operators-lane") ===
     documentRoot.activeElement;
+  const disclosureState = captureModelDisclosureState(
+    panelsRoot,
+    documentRoot.activeElement,
+  );
   const views = machines.map((machine, index) => {
     const tab = element(
       documentRoot,
@@ -359,6 +385,7 @@ export function renderHow(machines, documentRoot = document) {
     tab.setAttribute("role", "tab");
     tab.setAttribute("aria-controls", panelId);
     panel.id = panelId;
+    panel.setAttribute("data-machine-identity", machine.identity);
     panel.setAttribute("role", "tabpanel");
     panel.setAttribute("aria-labelledby", tabId);
     panel.append(
@@ -374,6 +401,19 @@ export function renderHow(machines, documentRoot = document) {
     );
     return { ...machine, tab, panel };
   });
+  for (const view of views) {
+    for (const node of view.panel.querySelectorAll(".agent-node")) {
+      const details = node.querySelector(".agent-model-details");
+      if (
+        details &&
+        disclosureState.open.has(
+          disclosureKey(view.identity, node.dataset.role),
+        )
+      ) {
+        details.open = true;
+      }
+    }
+  }
   const select = (index, updateHash = true) => {
     views.forEach((view, viewIndex) => {
       const active = index === viewIndex;
@@ -407,6 +447,20 @@ export function renderHow(machines, documentRoot = document) {
   if (restoreTabFocus) views[selectedIndex]?.tab.focus();
   else if (restoreOperatorsFocus)
     nextDiagram?.querySelector(".operators-lane")?.focus();
+  else if (disclosureState.focused) {
+    const selectedView = views[selectedIndex];
+    if (selectedView) {
+      for (const node of selectedView.panel.querySelectorAll(".agent-node")) {
+        if (
+          disclosureKey(selectedView.identity, node.dataset.role) ===
+          disclosureState.focused
+        ) {
+          node.querySelector(".agent-model-details summary")?.focus();
+          break;
+        }
+      }
+    }
+  }
   const windowRoot = documentRoot.defaultView;
   const previousHandler = hashHandlers.get(documentRoot);
   if (previousHandler)

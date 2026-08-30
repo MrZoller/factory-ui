@@ -3862,11 +3862,14 @@ function renderQuestionQueue(documentRoot, views) {
   let openEntries = 0;
   let trackedEntries = 0;
   const visibleKeys = new Set();
+  const questionOccurrences = new Map();
   const answerStore = getAnswerStore(documentRoot);
   for (const view of views) {
     for (const repository of view.fleet?.repositories ?? []) {
       for (const question of readerData(repository.questions)?.open ?? []) {
-        visibleKeys.add(answerKey(view.identity, repository.name, question.id));
+        const key = answerKey(view.identity, repository.name, question.id);
+        visibleKeys.add(key);
+        questionOccurrences.set(key, (questionOccurrences.get(key) ?? 0) + 1);
         openEntries += 1;
         insertBoundedQuestionEntry(entries, {
           machine: view.identity,
@@ -3923,7 +3926,11 @@ function renderQuestionQueue(documentRoot, views) {
       const item = documentRoot.createElement("article");
       item.className = "question-queue-entry";
       const selection = hashSelection(documentRoot.defaultView);
+      const key = answerKey(machine, repository.name, question.id);
+      const hasUnambiguousLink =
+        lifecycleOnly || questionOccurrences.get(key) === 1;
       if (
+        hasUnambiguousLink &&
         selection.machine === machine &&
         selection.repository === repository.name &&
         selection.question === question.id
@@ -3932,13 +3939,14 @@ function renderQuestionQueue(documentRoot, views) {
         item.tabIndex = -1;
       }
       const title = documentRoot.createElement("h3");
-      const link = textElement(
-        documentRoot,
-        "a",
-        `${question.id} · ${question.title}`,
-      );
-      link.href = questionHash(machine, repository.name, question.id);
-      title.append(link);
+      const titleText = `${question.id} · ${question.title}`;
+      if (hasUnambiguousLink) {
+        const link = textElement(documentRoot, "a", titleText);
+        link.href = questionHash(machine, repository.name, question.id);
+        title.append(link);
+      } else {
+        title.textContent = titleText;
+      }
       item.append(title);
       appendText(
         item,
@@ -3946,7 +3954,6 @@ function renderQuestionQueue(documentRoot, views) {
         `${machine} · ${repository.name}`,
         "question-location",
       );
-      const key = answerKey(machine, repository.name, question.id);
       let answerState = answerStore.get(key);
       if (lifecycleOnly) {
         if (answerState?.status === "uncertain") {

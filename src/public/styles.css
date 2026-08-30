@@ -902,6 +902,7 @@ p {
 .agent-model-name {
   color: var(--color-text);
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .gate {

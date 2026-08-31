@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T58",
-  "branch": "factory/t58-scroll-chaining",
-  "pr": 79,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-31T16:38:11Z"
+  "updated": "2026-08-31T16:45:00Z"
 }

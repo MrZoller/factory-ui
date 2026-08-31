@@ -1987,7 +1987,12 @@ accept unbounded input.
     expect(rows[0]!.querySelector<HTMLElement>(".task-cost-cell")?.title).toBe(
       "metered · 123 tokens",
     );
-    expect(rows[0]!.querySelector(".task-cost-detail")).toBeNull();
+    expect(rows[0]!.querySelector(".task-cost")?.classList).toContain(
+      "cost-metered",
+    );
+    expect(rows[0]!.querySelector(".task-cost-detail")?.textContent).toBe(
+      "metered · 123 tokens",
+    );
     expect(rows[0]!.querySelector(".task-size-chip")?.textContent).toBe(
       "trivial",
     );
@@ -2075,7 +2080,7 @@ accept unbounded input.
     ).toContain("Unavailable");
   });
 
-  test("renders metered and subscription task costs, while omitting tasks without an entry", () => {
+  test("renders visible, classed metered and prepaid task costs while leaving missing entries blank", () => {
     const document = dashboardDocument();
     const repository = richRepository({
       costs: costs({
@@ -2088,26 +2093,104 @@ accept unbounded input.
 
     const active = document.querySelector(".active-work .task")!;
     expect(active.querySelector(".task-cost")?.textContent).toBe("$1.23");
+    expect(active.querySelector(".task-cost")?.classList).toContain(
+      "cost-metered",
+    );
     expect(active.querySelector<HTMLElement>(".task-cost-cell")?.title).toBe(
       "metered · 123 tokens",
     );
-    expect(active.querySelector(".task-cost-detail")).toBeNull();
-    const review = document.querySelector(".review-work .task")!;
-    expect(review.querySelector(".task-cost")?.textContent).toBe("sub");
-    expect(review.querySelector<HTMLElement>(".task-cost-cell")?.title).toBe(
-      "456 tokens",
+    expect(active.querySelector(".task-cost-detail")?.textContent).toBe(
+      "metered · 123 tokens",
     );
-    expect(document.querySelector(".runnable-work .task-cost")).toBeNull();
+    const review = document.querySelector(".review-work .task")!;
+    expect(review.querySelector(".task-cost")?.textContent).toBe("Prepaid");
+    expect(review.querySelector(".task-cost")?.classList).toContain(
+      "cost-prepaid",
+    );
+    expect(review.querySelector<HTMLElement>(".task-cost-cell")?.title).toBe(
+      "subscription · 456 tokens",
+    );
+    expect(review.querySelector(".task-cost-detail")?.textContent).toBe(
+      "subscription · 456 tokens",
+    );
+    const missing = document.querySelector<HTMLElement>(
+      ".runnable-work .task-cost-cell",
+    )!;
+    expect(missing.textContent).toBe("");
+    expect(missing.title).toBe("");
 
     const row = document.querySelector(".repository-summary tbody tr")!;
-    expect(row.querySelector(".cost-total")?.textContent).toBe("$1.23");
-    expect(row.querySelector(".cost-unattributed")?.textContent).toBe("sub");
+    expect(row.querySelector(".cost-total")?.textContent).toBe("$1.23 metered");
+    const overhead = row.querySelector<HTMLElement>(".cost-unattributed")!;
+    expect(overhead.textContent).toBe("Prepaidsubscription · 789 tokens");
+    expect(overhead.classList).toContain("cost-prepaid");
     expect(row.querySelector<HTMLElement>(".cost-unattributed")?.title).toBe(
       "789 tokens",
     );
+    expect(overhead.querySelector(".cost-detail")?.textContent).toBe(
+      "subscription · 789 tokens",
+    );
     expect(
       summaryRow(document, "mini")?.querySelector(".cost-total")?.textContent,
-    ).toBe("$1.23");
+    ).toBe("$1.23 metered");
+    const overheadHeader = document.querySelector<HTMLTableCellElement>(
+      ".repository-summary thead th:last-child",
+    )!;
+    expect(overheadHeader.textContent).toBe("Factory overhead");
+    expect(overheadHeader.title).toBe(
+      "Factory session usage not assigned to a task",
+    );
+  });
+
+  test("distinguishes absent and unavailable factory overhead from prepaid overhead", () => {
+    const absentDocument = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [richRepository({ costs: costs({ T8: costCounters(1.23, 123) }) })],
+      ),
+      absentDocument,
+      NOW,
+    );
+    const absent = absentDocument.querySelector<HTMLElement>(
+      ".repository-summary .cost-unattributed",
+    )!;
+    expect(absent.textContent).toBe("None recorded");
+    expect(absent.classList).toContain("cost-absent");
+    expect(absent.classList).toContain("empty");
+    expect(absent.classList).not.toContain("unavailable");
+
+    const unavailableDocument = dashboardDocument();
+    renderFleet(
+      fleet("mini", [], [richRepository()]),
+      unavailableDocument,
+      NOW,
+    );
+    const unavailable = unavailableDocument.querySelector<HTMLElement>(
+      ".repository-summary .cost-unattributed",
+    )!;
+    expect(unavailable.textContent).toBe("Unavailable");
+    expect(unavailable.classList).toContain("unavailable");
+    expect(unavailable.classList).not.toContain("cost-absent");
+    expect(unavailable.classList).not.toContain("cost-prepaid");
+  });
+
+  test("styles prepaid, metered, and absent cost states distinctly while keeping token detail visible", async () => {
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+
+    expect(css).toMatch(
+      /\.cost-prepaid\s*\{[^}]*color:\s*var\(--color-accent\);/s,
+    );
+    expect(css).toMatch(
+      /\.cost-metered\s*\{[^}]*color:\s*var\(--color-good\);/s,
+    );
+    expect(css).toMatch(
+      /\.cost-absent\s*\{[^}]*color:\s*var\(--color-muted\);[^}]*font-style:\s*italic;/s,
+    );
+    expect(css).toMatch(
+      /\.task-cost-detail,\s*\.cost-detail\s*\{[^}]*display:\s*block;/s,
+    );
   });
 
   test("prices only subscription by-model usage and keeps list notional separate from metered spend", () => {
@@ -2221,7 +2304,7 @@ accept unbounded input.
 
     expect(document.querySelector(".task-notional")).toBeNull();
     expect(document.querySelector(".notional-total")).toBeNull();
-    expect(document.querySelector(".task-cost")?.textContent).toBe("sub");
+    expect(document.querySelector(".task-cost")?.textContent).toBe("Prepaid");
   });
 
   test("flags a list estimate partial when any price component is unavailable", () => {
@@ -2257,7 +2340,7 @@ accept unbounded input.
 
     renderFleet(fleet("mini", [], [repository]), document, NOW);
 
-    expect(document.querySelector(".task-cost")?.textContent).toBe("sub");
+    expect(document.querySelector(".task-cost")?.textContent).toBe("Prepaid");
     expect(document.querySelector(".task-notional")?.textContent).toBe(
       "~$3.00",
     );
@@ -5864,7 +5947,7 @@ describe("browser peer fan-out", () => {
       "HELD",
       "1",
       "—",
-      "$1.23",
+      "$1.23 metered",
     ]);
   });
 

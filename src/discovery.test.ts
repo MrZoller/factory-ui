@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -252,9 +253,10 @@ describe("repository discovery", () => {
   test("drops a candidate whose identity changes while discovery reads it", async () => {
     const codeRoot = root();
     const candidate = join(codeRoot, "changing");
+    const replaced = join(codeRoot, "replaced");
     state(candidate);
     const readState = vi.fn(async () => {
-      rmSync(candidate, { recursive: true });
+      renameSync(candidate, replaced);
       state(candidate);
       return {
         status: "available" as const,

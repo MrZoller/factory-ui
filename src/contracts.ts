@@ -154,6 +154,10 @@ export interface PlanTask {
   size: TaskSize;
   title: string;
   dependencies: string[] | null;
+  /** Executable prerequisites in this repository. */
+  localDependencies?: string[] | null;
+  /** Offline, non-gating owner/repository#issue references. */
+  crossRepoDependencies?: string[] | null;
   runnable: boolean;
   pr?: number;
   issueNumbers?: number[];

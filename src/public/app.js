@@ -13,6 +13,9 @@ const MAX_ROUTING_STRING_LENGTH = 1024;
 const MAX_ROUTING_MODEL_STRING_LENGTH = 200;
 const MAX_ROUTING_STEPS = 1_000_000;
 const MAX_COST_TASKS = 256;
+const MAX_PLAN_TASKS = 256;
+const MAX_TASK_DEPENDENCIES = 32;
+const MAX_DEPENDENCY_GRAPH_TASKS = MAX_PLAN_TASKS;
 const MAX_COST_MODELS_PER_TASK = 64;
 const MAX_METRICS_TASKS = 4096;
 const MAX_METRICS_MAP_ENTRIES = 64;
@@ -3069,7 +3072,11 @@ function installTabs(documentRoot, views) {
   }
 
   function selectFromHash(canonicalize) {
-    if (windowRoot?.location?.hash === "#question-queue") return;
+    if (
+      windowRoot?.location?.hash === "#question-queue" ||
+      windowRoot?.location?.hash === "#dependency-graph"
+    )
+      return;
     const selection = hashSelection(windowRoot);
     const foundIndex = views.findIndex(
       (view) => view.identity === selection.machine,
@@ -4100,6 +4107,224 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
     ?.scrollIntoView?.({ block: "start" });
 }
 
+function graphTaskState(task, repository) {
+  const state = readerData(repository.state);
+  if (task.status === "completed") return "done";
+  if (task.status === "blocked") return "question-blocked";
+  if (task.status === "active") return "building";
+  if (task.status === "review" && state?.hold && state.currentTask === task.id)
+    return "held";
+  if (task.status === "review") return "review";
+  return task.runnable ? "runnable" : "waiting";
+}
+
+function validGraphTask(task) {
+  const local = task?.localDependencies ?? task?.dependencies;
+  const cross = task?.crossRepoDependencies ?? [];
+  return (
+    isRecord(task) &&
+    /^T[1-9][0-9]*$/.test(task.id) &&
+    typeof task.title === "string" &&
+    task.title.length <= MAX_QUESTION_TEXT_LENGTH &&
+    ["todo", "active", "review", "completed", "blocked"].includes(
+      task.status,
+    ) &&
+    typeof task.runnable === "boolean" &&
+    Array.isArray(local) &&
+    local.length <= MAX_TASK_DEPENDENCIES &&
+    local.every((dependency) => /^T[1-9][0-9]*$/.test(dependency)) &&
+    Array.isArray(cross) &&
+    cross.length <= MAX_TASK_DEPENDENCIES &&
+    cross.every((dependency) =>
+      /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.{1,2}#)[A-Za-z0-9._-]+#[1-9][0-9]*$/.test(
+        dependency,
+      ),
+    )
+  );
+}
+
+function graphDependencies(task) {
+  return {
+    local: task.localDependencies ?? task.dependencies ?? [],
+    cross: task.crossRepoDependencies ?? [],
+  };
+}
+
+function crossRepoIssueUrl(reference) {
+  const match = /^([^/]+)\/([^#]+)#([1-9][0-9]*)$/.exec(reference);
+  if (!match) return undefined;
+  return `https://github.com/${match[1]}/${match[2]}/issues/${match[3]}`;
+}
+
+function graphQuestion(repository, taskId) {
+  return (readerData(repository.questions)?.open ?? []).find(
+    (question) => question.taskId === taskId,
+  );
+}
+
+const GRAPH_STATE_LABELS = {
+  runnable: "Runnable",
+  waiting: "Waiting",
+  building: "Building",
+  review: "Review",
+  "question-blocked": "Question blocked",
+  held: "Review",
+  done: "Done",
+};
+
+function renderDependencyTask(parent, machine, repository, task) {
+  const item = parent.ownerDocument.createElement("li");
+  const state = graphTaskState(task, repository);
+  item.className = `dependency-task dependency-state-${state}`;
+  const header = parent.ownerDocument.createElement("div");
+  header.className = "dependency-task-header";
+  const identity = `${task.id} · ${task.title}`;
+  const question = graphQuestion(repository, task.id);
+  if (state === "question-blocked" && question) {
+    const link = textElement(parent.ownerDocument, "a", identity);
+    link.href = questionHash(machine, repository.name, question.id);
+    link.className = "dependency-node-question";
+    header.append(link);
+  } else if (Number.isSafeInteger(task.pr) && task.pr > 0) {
+    const repositoryUrl = safeGithubUrl(repository.repositoryUrl, "repository");
+    const link = appendExternalOrText(
+      header,
+      identity,
+      task.prUrl ??
+        (repositoryUrl
+          ? `${repositoryUrl.replace(/\/$/, "")}/pull/${task.pr}`
+          : undefined),
+      "pull",
+    );
+    if (link.tagName === "A") link.classList.add("dependency-node-pr");
+  } else {
+    appendText(header, "span", identity);
+  }
+  appendText(
+    header,
+    "span",
+    GRAPH_STATE_LABELS[state],
+    `chip dependency-state-chip dependency-state-${state}`,
+  );
+  if (state === "held")
+    appendText(header, "span", "Held", "chip dependency-state-held");
+  item.append(header);
+  const issueNumbers = Array.isArray(task.issueNumbers)
+    ? task.issueNumbers
+        .filter((issue) => Number.isSafeInteger(issue) && issue > 0)
+        .slice(0, MAX_TASK_DEPENDENCIES)
+    : [];
+  if (issueNumbers.length > 0) {
+    const issues = parent.ownerDocument.createElement("div");
+    issues.className = "dependency-node-issues";
+    issueNumbers.forEach((issue, index) => {
+      if (index > 0) issues.append(parent.ownerDocument.createTextNode(" · "));
+      appendExternalOrText(
+        issues,
+        `Issue #${issue}`,
+        Array.isArray(task.issueUrls) ? task.issueUrls[index] : undefined,
+        "issue",
+      );
+    });
+    item.append(issues);
+  }
+  const dependencies = graphDependencies(task);
+  if (dependencies.local.length > 0 || dependencies.cross.length > 0) {
+    const edges = parent.ownerDocument.createElement("div");
+    edges.className = "dependency-edges";
+    for (const dependency of dependencies.local) {
+      appendText(
+        edges,
+        "span",
+        `← ${dependency}`,
+        "dependency-edge dependency-edge-local",
+      );
+    }
+    for (const dependency of dependencies.cross) {
+      const edge = parent.ownerDocument.createElement("span");
+      edge.className =
+        "dependency-edge dependency-edge-cross dependency-edge-cross-repo";
+      edge.append(parent.ownerDocument.createTextNode("⇠ "));
+      appendExternalOrText(
+        edge,
+        dependency,
+        crossRepoIssueUrl(dependency),
+        "issue",
+      );
+      edges.append(edge);
+    }
+    item.append(edges);
+  }
+  parent.append(item);
+}
+
+function renderDependencyGraph(documentRoot, views) {
+  const graph = documentRoot.querySelector("#dependency-graph-list");
+  if (!graph) return;
+  const groups = [];
+  let renderedTasks = 0;
+  let availableTasks = 0;
+  for (const view of views) {
+    for (const repository of view.fleet?.repositories ?? []) {
+      const group = documentRoot.createElement("article");
+      group.className = "dependency-repository";
+      appendText(group, "p", view.identity, "eyebrow dependency-machine");
+      appendText(group, "h3", repository.name);
+      const plan = readerData(repository.plan);
+      if (!Array.isArray(plan?.tasks)) {
+        appendText(
+          group,
+          "p",
+          repository.plan?.status === "unavailable"
+            ? "Dependency data unavailable"
+            : "Some malformed task data was isolated",
+          "unavailable",
+        );
+        groups.push(group);
+        continue;
+      }
+      const validTasks = plan.tasks.filter(validGraphTask);
+      availableTasks += validTasks.length;
+      if (validTasks.length !== plan.tasks.length) {
+        appendText(
+          group,
+          "p",
+          "Some malformed task data was isolated",
+          "unavailable",
+        );
+      }
+      const list = documentRoot.createElement("ol");
+      list.className = "dependency-tasks";
+      for (const task of validTasks) {
+        if (renderedTasks >= MAX_DEPENDENCY_GRAPH_TASKS) break;
+        renderDependencyTask(list, view.identity, repository, task);
+        renderedTasks += 1;
+      }
+      if (list.childElementCount === 0)
+        appendText(group, "p", "No tasks", "empty");
+      else group.append(list);
+      groups.push(group);
+    }
+  }
+  if (groups.length === 0) {
+    graph.replaceChildren(
+      textElement(documentRoot, "p", "No dependency data available", "empty"),
+    );
+    return;
+  }
+  if (availableTasks > renderedTasks) {
+    const notice = textElement(
+      documentRoot,
+      "p",
+      `Showing ${renderedTasks} of ${availableTasks} tasks`,
+      "dependency-limit chip chip-warn",
+    );
+    graph.replaceChildren(notice, ...groups);
+  } else {
+    graph.replaceChildren(...groups);
+  }
+}
+
 function ensureFleetShell(documentRoot, repositories) {
   let summaryBody = documentRoot.querySelector("#fleet-summary tbody");
   if (!summaryBody) {
@@ -4176,6 +4401,7 @@ export function renderFleet(fleet, documentRoot = document, now = new Date()) {
   tabs.replaceChildren(...views.map((view) => view.tab));
   repositories.replaceChildren(...views.map((view) => view.panel));
   renderQuestionQueue(documentRoot, views, now);
+  renderDependencyGraph(documentRoot, views);
   installTabs(documentRoot, views);
   machineViews.set(documentRoot, views);
 }
@@ -4238,6 +4464,7 @@ async function fanOutToPeers(
             now,
           );
           renderQuestionQueue(documentRoot, views);
+          renderDependencyGraph(documentRoot, views);
           installTabs(documentRoot, views);
         }
       } catch (cause) {
@@ -4256,6 +4483,7 @@ async function fanOutToPeers(
             true,
           );
           renderQuestionQueue(documentRoot, views);
+          renderDependencyGraph(documentRoot, views);
           installTabs(documentRoot, views);
         }
       }

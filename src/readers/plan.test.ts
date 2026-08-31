@@ -125,6 +125,8 @@ describe("plan", () => {
             size: "standard",
             title: "Implement feature",
             dependencies: null,
+            localDependencies: null,
+            crossRepoDependencies: null,
             runnable: false,
           });
         }
@@ -348,6 +350,87 @@ describe("plan", () => {
     });
 
     describe("dependency parsing", () => {
+      test("separates exact local and qualified cross-repository dependencies", () => {
+        const result =
+          parseFactoryPlan(`- [ ] T8 (standard) — Draw the fleet graph
+  - deps: T2, acme/media#17, example/engine#92
+- [x] T2 (standard) — Export local task data
+  - deps: none`);
+
+        expect(result.status).toBe("available");
+        if (result.status === "available") {
+          const task = result.data.tasks[0] as unknown as {
+            localDependencies?: unknown;
+            crossRepoDependencies?: unknown;
+            runnable?: unknown;
+          };
+          // Graph clients need executable local prerequisites separately
+          // from offline cross-repository metadata.
+          expect(task.localDependencies).toEqual(["T2"]);
+          expect(task.crossRepoDependencies).toEqual([
+            "acme/media#17",
+            "example/engine#92",
+          ]);
+          expect(task.runnable).toBe(true);
+        }
+      });
+
+      test("treats qualified references as non-gating while local dependencies control runnability", () => {
+        const result =
+          parseFactoryPlan(`- [ ] T8 (standard) — Wait only for local work
+  - deps: T2, acme/media#17
+- [x] T2 (standard) — Export local task data
+  - deps: none`);
+
+        expect(result.status).toBe("available");
+        if (result.status === "available") {
+          const task = result.data.tasks[0] as unknown as {
+            runnable?: unknown;
+            localDependencies?: unknown;
+            crossRepoDependencies?: unknown;
+          };
+          expect(task.localDependencies).toEqual(["T2"]);
+          expect(task.crossRepoDependencies).toEqual(["acme/media#17"]);
+          expect(task.runnable).toBe(true);
+          expect(
+            result.data.nextRunnable.map((candidate) => candidate.id),
+          ).toEqual(["T8"]);
+        }
+      });
+
+      test("rejects malformed qualified references without exposing a graphable dependency", () => {
+        for (const reference of [
+          "#17",
+          "acme/media#0",
+          "acme/#17",
+          "acme/media#17/extra",
+          "acme/media#17,",
+        ]) {
+          const result =
+            parseFactoryPlan(`- [ ] T8 (standard) — Unsafe reference
+  - deps: ${reference}`);
+
+          expect(result.status).toBe("partial");
+          if (result.status === "partial") {
+            const task = result.data.tasks[0] as unknown as {
+              localDependencies?: unknown;
+              crossRepoDependencies?: unknown;
+              runnable?: unknown;
+            };
+            expect(task.localDependencies).toBeNull();
+            expect(task.crossRepoDependencies).toBeNull();
+            expect(task.runnable).toBe(false);
+          }
+          expect(
+            result.warnings.some((warning) =>
+              ["PLAN_MALFORMED_DEPS", "PLAN_MALFORMED_CROSS_REPO_DEP"].includes(
+                warning.code,
+              ),
+            ),
+          ).toBe(true);
+        }
+      });
+
       test("ignores task-shaped lines inside Markdown fences", () => {
         const result = parseFactoryPlan(`\`\`\`markdown
 - [ ] T99 (major) — Documentation example

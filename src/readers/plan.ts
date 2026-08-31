@@ -42,7 +42,12 @@ export const PLAN_WARNING_CODES = [
 
 const TASK_LINE =
   /^- \[([ ~Rx!])\] (T[1-9][0-9]*) \((trivial|standard|major)\) — (.+)$/;
-const DEPENDENCIES_LINE = /^  - deps: (none|T[1-9][0-9]*(?:, T[1-9][0-9]*)*)$/;
+const DEPENDENCIES_LINE = /^  - deps:\s*(.*)$/;
+const LOCAL_DEPENDENCY = /^T[1-9][0-9]*$/;
+// Match factory-status schema v1 exactly. Existence and remote state are
+// deliberately not queried; qualified references are offline metadata.
+const CROSS_REPO_DEPENDENCY =
+  /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.{1,2}#)[A-Za-z0-9._-]+#[1-9][0-9]*$/;
 const PR_LINE = /^  - pr:(?: (.*))?$/;
 const ACCEPTANCE_LINE = /^  - acceptance: (.*)$/;
 const STATUS: Record<string, TaskStatus> = {
@@ -179,6 +184,8 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
       continue;
 
     let dependencies: string[] | null = null;
+    let localDependencies: string[] | null = null;
+    let crossRepoDependencies: string[] | null = null;
     let dependencyLines = 0;
     let pr: number | undefined;
     let prLines = 0;
@@ -249,6 +256,8 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
       const dependencyMatch = DEPENDENCIES_LINE.exec(childLine);
       if (!dependencyMatch || dependencyLines > 1) {
         dependencies = null;
+        localDependencies = null;
+        crossRepoDependencies = null;
         addWarning(
           warnings,
           planWarning(
@@ -260,13 +269,48 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
         );
         continue;
       }
-      const value = dependencyMatch[1];
-      dependencies = value === "none" ? [] : (value?.split(", ") ?? null);
+      const value = dependencyMatch[1]?.trim() ?? "";
+      const tokens =
+        value === "none" ? [] : value.split(",").map((item) => item.trim());
+      dependencies = tokens;
+      localDependencies = [];
+      crossRepoDependencies = [];
+      if (
+        value.length === 0 ||
+        (value !== "none" &&
+          (tokens.includes("") || tokens.includes("none"))) ||
+        tokens.some(
+          (dependency) =>
+            !LOCAL_DEPENDENCY.test(dependency) &&
+            !CROSS_REPO_DEPENDENCY.test(dependency),
+        )
+      ) {
+        dependencies = null;
+        localDependencies = null;
+        crossRepoDependencies = null;
+        addWarning(
+          warnings,
+          planWarning(
+            "PLAN_MALFORMED_DEPS",
+            "task dependencies are malformed or duplicated",
+            child + 1,
+            childLine,
+          ),
+        );
+        continue;
+      }
+      for (const dependency of tokens) {
+        if (LOCAL_DEPENDENCY.test(dependency))
+          localDependencies.push(dependency);
+        else crossRepoDependencies.push(dependency);
+      }
       if (
         dependencies !== null &&
         new Set(dependencies).size !== dependencies.length
       ) {
         dependencies = null;
+        localDependencies = null;
+        crossRepoDependencies = null;
         addWarning(
           warnings,
           planWarning(
@@ -282,6 +326,8 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
         dependencies.length > MAX_TASK_DEPENDENCIES
       ) {
         dependencies = null;
+        localDependencies = null;
+        crossRepoDependencies = null;
         addWarning(
           warnings,
           planWarning(
@@ -310,6 +356,8 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
       size: size as TaskSize,
       title,
       dependencies,
+      localDependencies,
+      crossRepoDependencies,
       pr,
       issueNumbers,
       prMetadataPresent: prLines > 0,
@@ -343,7 +391,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
   const tasks = parsed.map<PlanTask>((task) => {
     let dependenciesValid =
       task.dependencies !== null && byId.get(task.id)?.length === 1;
-    for (const dependency of task.dependencies ?? []) {
+    for (const dependency of task.localDependencies ?? []) {
       const matches = byId.get(dependency);
       let code: string | null = null;
       if (dependency === task.id) code = "PLAN_SELF_DEP";
@@ -365,7 +413,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
     const runnable =
       task.status === "todo" &&
       dependenciesValid &&
-      (task.dependencies ?? []).every((dependency) => {
+      (task.localDependencies ?? []).every((dependency) => {
         const matches = byId.get(dependency);
         return matches?.length === 1 && matches[0]?.status === "completed";
       });
@@ -375,6 +423,8 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
       size: task.size,
       title: task.title,
       dependencies: task.dependencies,
+      localDependencies: task.localDependencies,
+      crossRepoDependencies: task.crossRepoDependencies,
       runnable,
       ...(task.prMetadataPresent ? { pr: task.pr } : {}),
       ...(task.acceptanceMetadataPresent

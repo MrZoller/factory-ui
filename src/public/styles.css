@@ -1502,7 +1502,8 @@ a:focus-visible {
 .task-table-scroll {
   min-width: 0;
   overflow-x: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
 }
 
 .empty-task-groups {
@@ -1530,7 +1531,8 @@ a:focus-visible {
 .task-list-scroll {
   max-height: 24rem;
   overflow: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
 }
 
 .task-table {

@@ -784,6 +784,19 @@ p {
   font-weight: 700;
 }
 
+.cost-prepaid {
+  color: var(--color-accent);
+}
+
+.cost-metered {
+  color: var(--color-good);
+}
+
+.cost-absent {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
 .task-cost-group {
   display: inline-flex;
   align-items: baseline;
@@ -811,11 +824,13 @@ p {
   margin-top: var(--space-1);
 }
 
-.task-cost-detail {
+.task-cost-detail,
+.cost-detail {
   display: block;
   margin-top: var(--space-1);
   color: var(--color-muted);
   font-size: var(--text-xs);
+  white-space: nowrap;
 }
 
 #fleet-summary th,

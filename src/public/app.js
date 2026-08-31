@@ -586,8 +586,13 @@ function notionalLabel(notional) {
 function costLabel(counters) {
   if (!isCostCounters(counters)) return null;
   const tokens = tokenTotal(counters);
+  const prepaid = counters.usd === 0 && tokens > 0;
   return {
-    text: counters.usd === 0 && tokens > 0 ? "sub" : formatUsd(counters.usd),
+    text: prepaid ? "Prepaid" : formatUsd(counters.usd),
+    detail: prepaid
+      ? `subscription · ${tokens.toLocaleString()} tokens`
+      : `metered · ${tokens.toLocaleString()} tokens`,
+    kind: prepaid ? "prepaid" : "metered",
     title: `${tokens.toLocaleString()} tokens`,
   };
 }
@@ -726,7 +731,7 @@ function renderTask(tableBody, task, cost, routing, metrics, oldestDigits) {
   if (label) {
     const costGroup = item.ownerDocument.createElement("span");
     costGroup.className = "task-cost-group";
-    appendText(costGroup, "span", label.text, "task-cost");
+    appendText(costGroup, "span", label.text, `task-cost cost-${label.kind}`);
     const taskListCost = taskNotional(cost, routing);
     const notional = notionalLabel(taskListCost);
     if (notional) {
@@ -740,7 +745,8 @@ function renderTask(tableBody, task, cost, routing, metrics, oldestDigits) {
       notionalNode.title = notional.title;
     }
     costCell.append(costGroup);
-    costCell.title = `${label.text === "sub" ? "" : "metered · "}${label.title}${notional ? ` · ${notional.text}; ${notional.title}` : ""}`;
+    appendText(costCell, "span", label.detail, "task-cost-detail");
+    costCell.title = `${label.detail}${notional ? ` · ${notional.text}; ${notional.title}` : ""}`;
   }
   item.append(costCell);
   const reviewCell = appendText(item, "td", "", "task-review");
@@ -2732,7 +2738,9 @@ function summaryCellClass(value, base = "", numeric = false) {
   return [
     base,
     numeric ? "numeric-cell" : "",
-    value === "Unknown" || value === "—" ? "empty" : "",
+    value === "Unknown" || value === "—" || value === "None recorded"
+      ? "empty"
+      : "",
     value === "Unavailable" ? "unavailable" : "",
   ]
     .filter(Boolean)
@@ -2763,8 +2771,9 @@ function renderSummaryRow(row, summary) {
     summaryCellClass(summary.cost, "cost-total metered-total", true),
   );
   if (summary.costTitle) costCell.title = summary.costTitle;
-  if (summary.notional) {
+  if (summary.cost.startsWith("$"))
     costCell.textContent = `${summary.cost} metered`;
+  if (summary.notional) {
     const notional = appendText(
       costCell,
       "span",
@@ -2904,7 +2913,10 @@ function summarizeRepository(repository, now) {
     cost: cost.text,
     costTitle: cost.title,
     notional,
-    unattributed: unattributed?.text ?? (costTasks ? "—" : "Unavailable"),
+    unattributed:
+      unattributed?.text ?? (costTasks ? "None recorded" : "Unavailable"),
+    unattributedDetail: unattributed?.detail,
+    unattributedKind: unattributed?.kind,
     unattributedTitle: unattributed?.title,
   };
 }
@@ -2937,8 +2949,19 @@ function renderRepositorySummaryRow(row, summary) {
     documentRoot,
     "td",
     summary.unattributed,
-    summaryCellClass(summary.unattributed, "cost-unattributed", true),
+    summaryCellClass(
+      summary.unattributed,
+      `cost-unattributed ${summary.unattributedKind ? `cost-${summary.unattributedKind}` : summary.unattributed === "None recorded" ? "cost-absent" : ""}`,
+      true,
+    ),
   );
+  if (summary.unattributedDetail)
+    appendText(
+      unattributedCell,
+      "span",
+      summary.unattributedDetail,
+      "cost-detail",
+    );
   if (summary.unattributedTitle)
     unattributedCell.title = summary.unattributedTitle;
   const costCell = textElement(
@@ -2948,8 +2971,9 @@ function renderRepositorySummaryRow(row, summary) {
     summaryCellClass(summary.cost, "cost-total metered-total", true),
   );
   if (summary.costTitle) costCell.title = summary.costTitle;
-  if (summary.notional) {
+  if (summary.cost.startsWith("$"))
     costCell.textContent = `${summary.cost} metered`;
+  if (summary.notional) {
     const notional = appendText(
       costCell,
       "span",
@@ -3011,17 +3035,19 @@ function createRepositorySummary(documentRoot) {
     "Questions",
     "Worklog age",
     "Total cost",
-    "Unattributed",
+    "Factory overhead",
   ]) {
     const cell = textElement(documentRoot, "th", heading);
     cell.scope = "col";
     if (
-      ["Questions", "Worklog age", "Total cost", "Unattributed"].includes(
+      ["Questions", "Worklog age", "Total cost", "Factory overhead"].includes(
         heading,
       )
     ) {
       cell.className = "numeric-cell";
     }
+    if (heading === "Factory overhead")
+      cell.title = "Factory session usage not assigned to a task";
     headingRow.append(cell);
   }
   head.append(headingRow);

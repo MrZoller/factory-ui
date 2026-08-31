@@ -24,6 +24,7 @@ import {
   MAX_DISCOVERY_WARNINGS,
   MAX_GIT_REMOTE_OUTPUT_BYTES,
   discoverRepositories,
+  isRepositoryIdentityCurrent,
 } from "./discovery";
 
 const roots: string[] = [];
@@ -297,6 +298,35 @@ describe("repository discovery", () => {
         )
       ).repositories.map(({ name }) => name),
     ).toEqual(["second"]);
+  });
+
+  test("tracks discovered identity privately while explicit sources remain untracked", async () => {
+    const codeRoot = root();
+    const outside = root();
+    const candidate = join(codeRoot, "tracked");
+    state(candidate);
+    state(outside, "replacement");
+    const [repository] = (
+      await discoverRepositories(
+        { repositories: [], codeRoots: [codeRoot] },
+        { runner: remote },
+      )
+    ).repositories;
+    expect(repository).toBeDefined();
+    if (repository === undefined) return;
+
+    expect(await isRepositoryIdentityCurrent(repository)).toBe(true);
+    expect(
+      await isRepositoryIdentityCurrent({
+        name: repository.name,
+        path: repository.path,
+      }),
+    ).toBe(true);
+    rmSync(candidate, { recursive: true });
+    symlinkSync(outside, candidate);
+    expect(await isRepositoryIdentityCurrent(repository)).toBe(false);
+    expect(JSON.stringify(repository)).not.toContain("device");
+    expect(JSON.stringify(repository)).not.toContain("inode");
   });
 });
 

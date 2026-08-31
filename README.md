@@ -217,12 +217,20 @@ unavailable.
 Configured code roots add one narrow discovery boundary: the service reads
 bounded immediate directory metadata, rejects symlinks, validates and rechecks
 canonical direct-child identity, and applies the existing bounded
-`.factory/state.json` reader before accepting a child. It does not recurse.
+`.factory/state.json` reader before accepting a child. The accepted root and
+child device/inode identities stay private to the process and are rechecked
+before and after snapshot reads and before answer intake. A persistent child
+replacement is unavailable and its data is not returned. It does not recurse.
 Only accepted discovered children may be passed as the working directory to
 the fixed Git remote lookup described above; no repository, remote, request, or
 configuration value can select an executable or add arguments. Discovery
 warnings expose generic codes/messages, never paths, remote values, or raw
 filesystem/subprocess errors.
+
+These checks are a cooperative same-user local-filesystem boundary, not an
+`openat`-style capability. A same-user process that swaps a path and restores
+the original object between adjacent identity checks remains outside the
+service's guarantees.
 
 Routing uses schema version 1:
 

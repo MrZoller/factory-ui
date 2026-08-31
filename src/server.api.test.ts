@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, test, vi } from "bun:test";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type {
@@ -13,6 +23,7 @@ import type {
 } from "./answer-idempotency";
 import { createRequestHandler } from "./server";
 import { readRepositoryFactoryData } from "./snapshot";
+import { discoverRepositories } from "./discovery";
 import { MAX_LOG_ENTRIES } from "./readers/logs";
 import {
   CURRENT_SHEPHERD_LOG_NAME,
@@ -22,6 +33,37 @@ import {
 
 const generatedAt = new Date("2026-08-16T12:00:00.000Z");
 const fixtures: FactoryFixture[] = [];
+const temporaryRoots: string[] = [];
+
+function temporaryRoot(): string {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "factory-ui-api-")));
+  temporaryRoots.push(root);
+  return root;
+}
+
+function writeFactoryState(repositoryPath: string, project: string): void {
+  mkdirSync(join(repositoryPath, ".factory"), { recursive: true });
+  writeFileSync(
+    join(repositoryPath, ".factory", "state.json"),
+    JSON.stringify({
+      project,
+      phase: "build",
+      spec_approved: true,
+      plan_approved: true,
+      current_task: null,
+      branch: null,
+      pr: null,
+      hold: false,
+      updated: "2026-08-31T00:00:00Z",
+    }),
+  );
+}
+
+const unavailableRemote = async () => ({
+  exitCode: 1,
+  stdout: "",
+  stderr: "",
+});
 
 class TestAnswerIdempotencyStore implements AnswerIdempotencyStore {
   failCompletion = false;
@@ -66,6 +108,8 @@ class TestAnswerIdempotencyStore implements AnswerIdempotencyStore {
 
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) fixture.cleanup();
+  for (const root of temporaryRoots.splice(0))
+    rmSync(root, { recursive: true, force: true });
 });
 
 describe("answer delivery API", () => {
@@ -344,6 +388,58 @@ describe("answer delivery API", () => {
     expect((await restartedHandler(request(undefined, init))).status).toBe(503);
     expect(restartedSubmit).not.toHaveBeenCalled();
   });
+
+  test("fails discovered answer submit and outcome closed after the accepted child is replaced", async () => {
+    const codeRoot = temporaryRoot();
+    const replacementRoot = temporaryRoot();
+    const repositoryPath = join(codeRoot, "discovered");
+    const replacement = join(replacementRoot, "replacement");
+    writeFactoryState(repositoryPath, "original");
+    writeFactoryState(replacement, "replacement-secret");
+    const discovered = await discoverRepositories(
+      { repositories: [], codeRoots: [codeRoot] },
+      { runner: unavailableRemote },
+    );
+    rmSync(repositoryPath, { recursive: true });
+    symlinkSync(replacement, repositoryPath);
+    const submit = vi.fn();
+    const outcome = vi.fn();
+    const handler = createRequestHandler(
+      {
+        ...config([]),
+        codeRoots: [codeRoot],
+        answerIntake: { actor: "operator", secret },
+      },
+      {
+        discovery: async () => discovered,
+        submitAnswer: submit,
+        answerOutcome: outcome,
+        answerIdempotencyStore: new TestAnswerIdempotencyStore(),
+      },
+    );
+
+    const submission = await handler(
+      new Request("http://localhost/api/repo/discovered/answers", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ question: "Q1", option: "A" }),
+      }),
+    );
+    const result = await handler(
+      new Request(`http://localhost/api/repo/discovered/answers/${answerId}`, {
+        headers: { Authorization: `Bearer ${secret}` },
+      }),
+    );
+
+    expect(submission.status).toBe(503);
+    expect(result.status).toBe(503);
+    expect(await submission.json()).toEqual({
+      error: "Answer intake unavailable",
+    });
+    expect(await result.json()).toEqual({ error: "Answer intake unavailable" });
+    expect(submit).not.toHaveBeenCalled();
+    expect(outcome).not.toHaveBeenCalled();
+  });
 });
 
 function unavailable(name: string): RepositoryFactorySnapshot {
@@ -381,6 +477,77 @@ function config(
 }
 
 describe("versioned read-only API", () => {
+  test("never exposes a replacement reached through a discovered child symlink", async () => {
+    const codeRoot = temporaryRoot();
+    const replacementRoot = temporaryRoot();
+    const repositoryPath = join(codeRoot, "discovered");
+    const replacement = join(replacementRoot, "replacement");
+    writeFactoryState(repositoryPath, "original");
+    writeFactoryState(replacement, "replacement-secret");
+    const discovered = await discoverRepositories(
+      { repositories: [], codeRoots: [codeRoot] },
+      { runner: unavailableRemote },
+    );
+    rmSync(repositoryPath, { recursive: true });
+    symlinkSync(replacement, repositoryPath);
+    const handler = createRequestHandler(
+      { ...config([]), codeRoots: [codeRoot] },
+      { discovery: async () => discovered },
+    );
+
+    const fleet = await handler(new Request("http://localhost/api/fleet"));
+    const repository = await handler(
+      new Request("http://localhost/api/repo/discovered"),
+    );
+    const fleetBody = await fleet.json();
+    const repositoryBody = await repository.json();
+
+    expect(fleetBody.repositories).toHaveLength(1);
+    expect(fleetBody.repositories[0]).toMatchObject({
+      name: "discovered",
+      status: "unavailable",
+    });
+    expect(repositoryBody).toMatchObject({
+      name: "discovered",
+      status: "unavailable",
+    });
+    expect(JSON.stringify([fleetBody, repositoryBody])).not.toContain(
+      "replacement-secret",
+    );
+  });
+
+  test("discards a repository result when its discovered identity changes during the read", async () => {
+    const codeRoot = temporaryRoot();
+    const replacementRoot = temporaryRoot();
+    const repositoryPath = join(codeRoot, "discovered");
+    const replacement = join(replacementRoot, "replacement");
+    writeFactoryState(repositoryPath, "original");
+    writeFactoryState(replacement, "replacement-secret");
+    const discovered = await discoverRepositories(
+      { repositories: [], codeRoots: [codeRoot] },
+      { runner: unavailableRemote },
+    );
+    const readRepository = vi.fn(async () => {
+      rmSync(repositoryPath, { recursive: true });
+      symlinkSync(replacement, repositoryPath);
+      return unavailable("replacement-secret");
+    });
+    const handler = createRequestHandler(config([]), {
+      discovery: async () => discovered,
+      repositorySnapshot: readRepository,
+    });
+
+    const response = await handler(new Request("http://localhost/api/fleet"));
+    const body = await response.json();
+
+    expect(readRepository).toHaveBeenCalledTimes(1);
+    expect(body.repositories[0]).toMatchObject({
+      name: "discovered",
+      status: "unavailable",
+    });
+    expect(JSON.stringify(body)).not.toContain("replacement-secret");
+  });
+
   test("resolves discovery once per API request, refreshes fleets, routes discoveries, and falls back safely", async () => {
     const discovery = vi
       .fn()

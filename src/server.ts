@@ -24,7 +24,11 @@ import type {
   UnknownAnswerOutcome,
 } from "./contracts";
 import { API_SCHEMA_VERSION } from "./contracts";
-import { discoverRepositories, type DiscoveryResult } from "./discovery";
+import {
+  discoverRepositories,
+  isRepositoryIdentityCurrent,
+  type DiscoveryResult,
+} from "./discovery";
 import {
   createFactoryFleetData,
   readRepositoryFactorySnapshot,
@@ -332,6 +336,13 @@ export function createRequestHandler(
                     } else {
                       result = (async () => {
                         try {
+                          if (
+                            !(await isRepositoryIdentityCurrent(
+                              intakeRoute.repository,
+                            ))
+                          ) {
+                            return { status: "unavailable" as const };
+                          }
                           const reservation = await idempotencyStore.reserve(
                             intakeRoute.repository.path,
                             idempotencyKey,
@@ -357,6 +368,13 @@ export function createRequestHandler(
                           }
 
                           try {
+                            if (
+                              !(await isRepositoryIdentityCurrent(
+                                intakeRoute.repository,
+                              ))
+                            ) {
+                              return { status: "unavailable" as const };
+                            }
                             const value = await submit({
                               ...requestValue,
                               repositoryPath: intakeRoute.repository.path,
@@ -415,6 +433,11 @@ export function createRequestHandler(
               response = jsonError(400, "Invalid request");
             } else {
               try {
+                if (
+                  !(await isRepositoryIdentityCurrent(intakeRoute.repository))
+                ) {
+                  throw new Error("repository unavailable");
+                }
                 const result = await outcome({
                   repositoryPath: intakeRoute.repository.path,
                   id: intakeRoute.id,
@@ -440,7 +463,14 @@ export function createRequestHandler(
           } else {
             let data: RepositoryFactorySnapshot;
             try {
-              data = await readRepository(repository);
+              if (!(await isRepositoryIdentityCurrent(repository))) {
+                data = unavailableRepositoryFactorySnapshot(repository.name);
+              } else {
+                const snapshot = await readRepository(repository);
+                data = (await isRepositoryIdentityCurrent(repository))
+                  ? snapshot
+                  : unavailableRepositoryFactorySnapshot(repository.name);
+              }
             } catch {
               data = unavailableRepositoryFactorySnapshot(repository.name);
             }

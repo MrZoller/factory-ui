@@ -49,6 +49,21 @@ export interface DiscoveryResult {
   warnings: ReaderWarning[];
 }
 
+interface DiscoveredRepositoryIdentity {
+  root: string;
+  name: string;
+  rootDevice: bigint;
+  rootInode: bigint;
+  path: string;
+  device: bigint;
+  inode: bigint;
+}
+
+const discoveredRepositoryIdentities = new WeakMap<
+  RepositorySource,
+  DiscoveredRepositoryIdentity
+>();
+
 async function readBounded(
   stream: ReadableStream<Uint8Array>,
   maximumBytes: number,
@@ -215,6 +230,23 @@ async function sameChildIdentity(
   } catch {
     return false;
   }
+}
+
+export async function isRepositoryIdentityCurrent(
+  repository: RepositorySource,
+): Promise<boolean> {
+  const expected = discoveredRepositoryIdentities.get(repository);
+  if (expected === undefined) return true;
+  return sameChildIdentity(
+    expected.root,
+    expected.name,
+    { device: expected.rootDevice, inode: expected.rootInode },
+    {
+      path: expected.path,
+      device: expected.device,
+      inode: expected.inode,
+    },
+  );
 }
 
 async function childNames(root: string): Promise<string[] | null> {
@@ -419,6 +451,15 @@ export async function discoverRepositories(
         path: identity.path,
         ...(remote.url === undefined ? {} : { githubUrl: remote.url }),
       };
+      discoveredRepositoryIdentities.set(repository, {
+        root,
+        name: childName,
+        rootDevice: expectedRoot.device,
+        rootInode: expectedRoot.inode,
+        path: identity.path,
+        device: identity.device,
+        inode: identity.inode,
+      });
       repositories.push(repository);
       names.add(name);
       paths.add(identity.path);

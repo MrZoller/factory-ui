@@ -15,6 +15,7 @@ import {
   checkRepositoryLiveness,
   checkTrustedDriverLiveness,
 } from "./liveness";
+import { isRepositoryIdentityCurrent } from "./discovery";
 import { readFactoryCosts } from "./readers/costs";
 import { readFactoryFile } from "./readers/file";
 import { readFactoryLogsWithSelection } from "./readers/logs";
@@ -98,6 +99,9 @@ export function unavailableRepositoryFactorySnapshot(
 export async function readRepositoryFactorySnapshot(
   repository: RepositorySource,
 ): Promise<RepositoryFactorySnapshot> {
+  if (!(await isRepositoryIdentityCurrent(repository))) {
+    return unavailableRepositoryFactorySnapshot(repository.name);
+  }
   const [data, spec] = await Promise.all([
     readRepositoryFactoryData(repository),
     readFactoryFile(repository.path, "spec", MAX_SPEC_BYTES),
@@ -130,6 +134,9 @@ export async function readRepositoryFactorySnapshot(
     "questions.md",
     data.questions.status !== "unavailable",
   );
+  if (!(await isRepositoryIdentityCurrent(repository))) {
+    return unavailableRepositoryFactorySnapshot(repository.name);
+  }
   return {
     ...data,
     plan,
@@ -290,7 +297,13 @@ export async function createFactoryFleetData(
     repositories: await Promise.all(
       config.repositories.map(async (repository) => {
         try {
-          return await readRepository(repository);
+          if (!(await isRepositoryIdentityCurrent(repository))) {
+            return unavailableRepositoryFactorySnapshot(repository.name);
+          }
+          const snapshot = await readRepository(repository);
+          return (await isRepositoryIdentityCurrent(repository))
+            ? snapshot
+            : unavailableRepositoryFactorySnapshot(repository.name);
         } catch {
           return unavailableRepositoryFactorySnapshot(repository.name);
         }
@@ -304,15 +317,34 @@ export async function readRepositorySnapshot(
   repository: RepositorySource,
   readLiveness: typeof checkRepositoryLiveness = checkRepositoryLiveness,
 ): Promise<RepositorySnapshot> {
+  const identityUnavailable = (
+    checkedAt = new Date().toISOString(),
+  ): RepositorySnapshot => ({
+    name: repository.name,
+    liveness: {
+      state: "CANNOT_VERIFY",
+      checkedAt,
+    },
+    status: "unavailable",
+    warning: "repository data could not be read",
+  });
+  if (!(await isRepositoryIdentityCurrent(repository))) {
+    return identityUnavailable();
+  }
   const livenessPromise = readLiveness(repository.path);
+  const awaitLiveness = await livenessPromise;
   const unavailable = (warning: string): RepositorySnapshot => ({
     name: repository.name,
     liveness: awaitLiveness,
     status: "unavailable",
     warning,
   });
-
-  const awaitLiveness = await livenessPromise;
+  const identityChecked = async (
+    snapshot: RepositorySnapshot,
+  ): Promise<RepositorySnapshot> =>
+    (await isRepositoryIdentityCurrent(repository))
+      ? snapshot
+      : identityUnavailable(awaitLiveness.checkedAt);
 
   try {
     const result = await readFactoryState(repository.path);
@@ -322,25 +354,30 @@ export async function readRepositorySnapshot(
       result.data.phase === undefined
     ) {
       const code = result.warnings[0]?.code;
-      if (code === "STATE_MISSING") return unavailable("state.json is missing");
+      if (code === "STATE_MISSING")
+        return identityChecked(unavailable("state.json is missing"));
       if (code === "STATE_TOO_LARGE")
-        return unavailable("state.json is too large");
+        return identityChecked(unavailable("state.json is too large"));
       if (code === "STATE_INVALID_ROOT")
-        return unavailable("state.json has invalid project or phase data");
+        return identityChecked(
+          unavailable("state.json has invalid project or phase data"),
+        );
       if (result.status !== "unavailable")
-        return unavailable("state.json has invalid project or phase data");
-      return unavailable("state.json could not be read");
+        return identityChecked(
+          unavailable("state.json has invalid project or phase data"),
+        );
+      return identityChecked(unavailable("state.json could not be read"));
     }
 
-    return {
+    return identityChecked({
       name: repository.name,
       liveness: awaitLiveness,
       status: "available",
       project: result.data.project,
       phase: result.data.phase,
-    };
+    });
   } catch {
-    return unavailable("state.json could not be read");
+    return identityChecked(unavailable("state.json could not be read"));
   }
 }
 

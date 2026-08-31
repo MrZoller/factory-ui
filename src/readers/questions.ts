@@ -337,8 +337,6 @@ export function parseFactoryQuestions(
     const seenAt = identifiers.get(id) ?? [];
     seenAt.push(current.index + 1);
     identifiers.set(id, seenAt);
-    if (status !== "open") continue;
-
     const nextBoundaryStart =
       boundaries[boundary + 1]?.line.start ?? text.length;
     const nextMarkerIndex = markerIndices.find(
@@ -367,6 +365,7 @@ export function parseFactoryQuestions(
         lines[nextMarkerIndex]?.value,
       );
     }
+    if (status !== "open") continue;
     const markerStart =
       nextMarkerIndex === undefined || markerInsideEntry
         ? text.length

@@ -280,6 +280,24 @@ Options considered: A — Go
         expect(misplaced.warnings).toContainEqual(
           expect.objectContaining({ code: "QUESTIONS_MALFORMED_ENTRY" }),
         );
+
+        const answered =
+          parseFactoryQuestions(`## Q4 (task T4, answered) — Already answered
+Context: Context
+<!-- factory-question-timestamps-required-below -->
+Options considered: A — Go
+**A:** A
+## Q5 (task T5, open, filed-at 2026-08-30T03:04:07Z) — Still open
+Context: Context
+Options considered: A — Go
+**A:**`);
+        expect(answered).toMatchObject({
+          status: "partial",
+          data: { open: [{ id: "Q5" }] },
+        });
+        expect(answered.warnings).toContainEqual(
+          expect.objectContaining({ code: "QUESTIONS_MALFORMED_ENTRY" }),
+        );
       });
     });
 

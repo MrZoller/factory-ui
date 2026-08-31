@@ -87,7 +87,7 @@ task.
   - acceptance: In `src/readers/logs.ts`, `src/liveness.ts`, their colocated tests, API integration tests, `src/public/app.js` when a new warning explanation is needed, and README limit documentation, replace the current 257th-entry hard failure with a bounded selection strategy or a realistically raised bounded limit that still identifies the trusted newest driver log and runs the fixed `lsof` probe for long-lived repositories; prove a directory above 256 valid entries can report `RUNNING` when `tee` owns the selected driver log, keep overflow/truncation diagnostically distinct from a missing or failed probe, preserve deterministic log selection, symlink and directory/file identity checks, tristate honesty, and fixed resource bounds, and pass `bun test` plus `bun run lint`.
   - pr: 66
 
-- [R] T53 (standard) — Reader rejects the new filed-at question grammar — new questions vanish from the UI; age display can now be real (Fixes #70)
+- [x] T53 (standard) — Reader rejects the new filed-at question grammar — new questions vanish from the UI; age display can now be real (Fixes #70)
   - acceptance: In `src/readers/questions.ts`, question contracts, `src/public/app.js`, and colocated reader/browser tests, accept both legacy question headings and the protocol's `filed-at` heading grammar around the one-time marker; expose a bounded valid RFC3339 UTC filed time without dropping the rest of an otherwise valid entry, warn on malformed or misplaced grammar, derive panel/queue age only from valid `filed-at` values, omit age for legacy entries, keep hostile timestamp text inert, and pass `bun test` plus `bun run lint`.
   - pr: 74
 - [ ] T54 (standard) — fleet dependency graph: visualize what's blocked on what across factories (Fixes #69)

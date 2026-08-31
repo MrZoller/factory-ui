@@ -1,11 +1,11 @@
 # factory-ui
 
 Tailnet web dashboard for an opencode software-factory fleet. Each machine
-reads configured local clones and serves their bounded `.factory` status. The
-browser fetches peers directly; there is no registry, database, or server-side
-peer proxy. The only control API submits authenticated answer records through
-the factory engine's fixed `factory-answers` helper; factory-ui never edits
-`questions.md` directly.
+reads explicit and locally discovered clones and serves their bounded
+`.factory` status. The browser fetches peers directly; there is no registry,
+database, or server-side peer proxy. The only control API submits authenticated
+answer records through the factory engine's fixed `factory-answers` helper;
+factory-ui never edits `questions.md` directly.
 
 ## Install and launch
 
@@ -17,18 +17,33 @@ cp factory-ui.config.example.json factory-ui.config.json
 bun run serve --config factory-ui.config.json
 ```
 
-`serve --config <path>` is the only launch form. The complete configuration,
-including every repository root, is loaded and validated before the server
-listens. The port defaults to `7777` when omitted. Machine-local
+`serve --config <path>` is the only launch form. Explicit repository paths and
+code roots are canonicalized and validated before the server listens. The port
+defaults to `7777` when omitted. Machine-local
 `factory-ui.config*.json` files are ignored by Git; the credential-free
 `factory-ui.config.example.json` is the committed exception.
 
 ## Configuration
 
 The example is a valid configuration for `mini`. Replace its illustrative IP,
-clone paths, and GitHub URLs. A repository path must be an existing,
-canonicalizable local directory. Repository names, roots, peer names, and peer
-origins must each be unique.
+clone paths, code roots, and GitHub URLs. A repository path or code root must
+be an existing, canonicalizable local directory. Repository names, repository
+paths, code roots, peer names, and peer origins must each be unique.
+
+`repositories` and `codeRoots` are both optional arrays, but at least one must
+contain an entry. Explicit repositories keep their configured name, path, and
+GitHub URL. Each code root contributes only its immediate, non-symlink
+directory children whose bounded `.factory/state.json` is valid. A discovered
+name is the path-safe child basename. Explicit repositories are merged first;
+later name or canonical-path duplicates are ignored, and the final list never
+exceeds the repository limit.
+
+Discovery runs once for every API request, so newly added or removed child
+repositories appear on the next dashboard refresh without restarting the
+service. The fleet, individual-repository, and answer routes use that request's
+same resolved list. Static HTML, JavaScript, and CSS requests do not scan code
+roots. A failed root or candidate produces a generic bounded fleet warning and
+does not prevent explicit repositories or other roots from being served.
 
 To enable answering, set a non-secret `answerActor` in each machine's config
 and provide the shared credential only in the server process environment:
@@ -84,8 +99,11 @@ machine.
 
 ## Fixed safety limits
 
-- Config: 64 KiB; at most 32 repositories, 32 peers, and 32 development
-  origins; names are at most 64 characters; port range is 1–65535.
+- Config: 64 KiB; at most 32 explicit repositories, 32 code roots, 32 peers,
+  and 32 development origins; names are at most 64 characters; port range is
+  1–65535. Discovery examines at most 4,096 immediate entries and 256 directory
+  candidates per root, retains at most 32 repositories after explicit-first
+  deduplication, and returns at most 32 generic discovery warnings.
 - State: 64 KiB. Plan, questions, and worklog inputs: 256 KiB, 4,096 lines,
   and 8,192 characters per line. Plans expose at most 256 tasks and 32
   dependencies per task; questions expose at most 128 entries; worklogs expose
@@ -111,6 +129,13 @@ machine.
 - Liveness: the fixed, shell-free `lsof` probe has a two-second timeout and
   bounded output. Missing `lsof`, timeout, failure, malformed output, or an
   ambiguous result is `CANNOT_VERIFY`, never evidence that the driver stopped.
+- Discovery remote lookup: only the fixed shell-free
+  `git remote get-url origin` invocation is allowed, with the discovered clone
+  as its working directory, a two-second timeout, and a 4 KiB bound per output
+  stream. Output must be fatal-UTF-8-decodable, exactly one non-empty
+  newline-terminated line, and pass the existing canonical
+  `https://github.com/<owner>/<repository>` policy. Otherwise the discovered
+  repository remains usable without a GitHub URL.
 - Browser fan-out: at most four peer requests run concurrently, each with a
   five-second timeout. Peer failures are isolated and shown as `UNREACHABLE`.
 - Browser answer lifecycle storage: at most 128 strictly validated records.
@@ -177,16 +202,35 @@ completed records.
 
 ## `.factory` read surface
 
-The service reads only the fixed targets `.factory/state.json`,
-`.factory/spec.md`, `.factory/plan.md`, `.factory/questions.md`,
-`.factory/worklog.md`, the bounded driver/cycle/shepherd files selected from `.factory/logs/`,
+For configured repositories, the service reads only the fixed targets
+`.factory/state.json`, `.factory/spec.md`, `.factory/plan.md`,
+`.factory/questions.md`, `.factory/worklog.md`, the bounded
+driver/cycle/shepherd files selected from `.factory/logs/`,
 `.factory/logs/routing.json`, `.factory/logs/costs.json`, and
-`.factory/metrics.jsonl`. Canonical
-containment, target type, symlink, and opened-descriptor identity checks apply
-before bounded reads. The service reads at most 256 KiB from `spec.md` only to
-determine whether its GitHub document link can be shown; its contents are not
-returned. Routing, cost, metrics, or spec absence and invalidity are
-independent and do not make repository state unavailable.
+`.factory/metrics.jsonl`. Canonical containment, target type, symlink, and
+opened-descriptor identity checks apply before bounded reads. The service reads
+at most 256 KiB from `spec.md` only to determine whether its GitHub document
+link can be shown; its contents are not returned. Routing, cost, metrics, or
+spec absence and invalidity are independent and do not make repository state
+unavailable.
+
+Configured code roots add one narrow discovery boundary: the service reads
+bounded immediate directory metadata, rejects symlinks, validates and rechecks
+canonical direct-child identity, and applies the existing bounded
+`.factory/state.json` reader before accepting a child. The accepted root and
+child device/inode identities stay private to the process and are rechecked
+before and after snapshot reads and before answer intake. A persistent child
+replacement is unavailable and its data is not returned. It does not recurse.
+Only accepted discovered children may be passed as the working directory to
+the fixed Git remote lookup described above; no repository, remote, request, or
+configuration value can select an executable or add arguments. Discovery
+warnings expose generic codes/messages, never paths, remote values, or raw
+filesystem/subprocess errors.
+
+These checks are a cooperative same-user local-filesystem boundary, not an
+`openat`-style capability. A same-user process that swaps a path and restores
+the original object between adjacent identity checks remains outside the
+service's guarantees.
 
 Routing uses schema version 1:
 
@@ -308,8 +352,8 @@ the API exposes the latest valid line in file order, folded under
 
 1. Install Bun and clone this repository on mini, macbook, and legion.
 2. Copy the example on each host and set that host's machine name, literal
-   Tailscale bind address, canonical clone paths, and the other two peer
-   origins.
+   Tailscale bind address, canonical clone paths or code roots, and the other
+   two peer origins.
 3. Confirm MagicDNS and ACL access to port 7777 in both directions among all
    three machines.
 4. Run `bun run serve --config factory-ui.config.json` on each host.
@@ -325,8 +369,13 @@ machines have been deployed or verified.
 ## Troubleshooting
 
 - **Configuration fails before startup:** check JSON syntax, duplicate names,
-  normalized absolute paths, existing clone directories, canonical GitHub
-  URLs, and the documented limits. Errors intentionally omit clone paths.
+  normalized absolute paths, existing clone/code-root directories, canonical
+  GitHub URLs, and the documented limits. Errors intentionally omit paths.
+- **A discovered repository is absent:** it must be an immediate non-symlink
+  directory with a path-safe basename and a valid bounded
+  `.factory/state.json`. Check fleet discovery warnings for a generic limit or
+  safety reason. A missing or non-canonical GitHub origin removes links only;
+  it does not remove the repository.
 - **Bind is rejected:** use `127.0.0.1`, `::1`, or the host's literal
   Tailscale IP—not a MagicDNS hostname, wildcard, or public address.
 - **Address already in use:** stop the conflicting process or choose the same

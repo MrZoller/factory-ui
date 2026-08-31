@@ -2005,12 +2005,17 @@ function isTimestamp(value) {
 }
 
 function isReaderResult(value) {
-  if (!isRecord(value) || !Array.isArray(value.warnings)) return false;
+  if (!isRecord(value) || !isWarnings(value.warnings)) return false;
   if (!["available", "partial", "unavailable"].includes(value.status)) {
     return false;
   }
-  if (
-    !value.warnings.every(
+  return value.status === "unavailable" || isRecord(value.data);
+}
+
+function isWarnings(value) {
+  return (
+    Array.isArray(value) &&
+    value.every(
       (warning) =>
         isRecord(warning) &&
         typeof warning.code === "string" &&
@@ -2021,10 +2026,7 @@ function isReaderResult(value) {
           (typeof warning.excerpt === "string" &&
             [...warning.excerpt].length <= MAX_WARNING_EXCERPT_CODE_POINTS)),
     )
-  ) {
-    return false;
-  }
-  return value.status === "unavailable" || isRecord(value.data);
+  );
 }
 
 function isQuestionOption(value) {
@@ -2495,6 +2497,7 @@ function validateFleet(value) {
     !Array.isArray(value.repositories) ||
     value.repositories.length > MAX_REPOSITORIES ||
     !value.repositories.every(isRepository) ||
+    (value.warnings !== undefined && !isWarnings(value.warnings)) ||
     !Array.isArray(value.peers) ||
     value.peers.length > MAX_PEERS ||
     !value.peers.every(isPeer)
@@ -3155,6 +3158,16 @@ function updateMachineView(view, summary, fleet, now, unreachable = false) {
   }
   const documentRoot = view.grid.ownerDocument;
   const repositorySummary = createRepositorySummary(documentRoot);
+  const fleetWarnings = documentRoot.createElement("section");
+  fleetWarnings.className = "panel fleet-warnings";
+  if (fleet.warnings?.length > 0) {
+    appendText(
+      fleetWarnings,
+      "p",
+      `Discovery warnings: ${fleet.warnings.map((warning) => warning.code).join(", ")}`,
+      "warning-explanation",
+    );
+  }
   const repositoryTabs = documentRoot.createElement("div");
   const repositoryPanels = documentRoot.createElement("div");
   repositoryTabs.className = "repository-tabs";
@@ -3182,6 +3195,7 @@ function updateMachineView(view, summary, fleet, now, unreachable = false) {
     ...view.repositories.map((repository) => repository.panel),
   );
   view.grid.replaceChildren(
+    ...(fleet.warnings?.length > 0 ? [fleetWarnings] : []),
     repositorySummary.scroll,
     repositoryTabs,
     repositoryPanels,

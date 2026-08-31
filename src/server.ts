@@ -25,6 +25,12 @@ import type {
 } from "./contracts";
 import { API_SCHEMA_VERSION } from "./contracts";
 import {
+  disposeDiscoveredRepositories,
+  discoverRepositories,
+  isRepositoryIdentityCurrent,
+  type DiscoveryResult,
+} from "./discovery";
+import {
   createFactoryFleetData,
   readRepositoryFactorySnapshot,
   unavailableRepositoryFactorySnapshot,
@@ -44,6 +50,7 @@ const STATIC_FILES = new Map([
 type FleetData = FactoryFleetData | FleetSnapshot;
 
 export interface HandlerDependencies {
+  discovery?: (config: AppConfigSource) => Promise<DiscoveryResult>;
   snapshot?: (config: AppConfigSource) => Promise<FleetData>;
   repositorySnapshot?: (
     repository: RepositorySource,
@@ -198,6 +205,7 @@ export function createRequestHandler(
   const outcome = dependencies.answerOutcome ?? getAnswerOutcome;
   const idempotencyStore =
     dependencies.answerIdempotencyStore ?? new DurableAnswerIdempotencyStore();
+  const discover = dependencies.discovery ?? discoverRepositories;
   const inFlightSubmissions = new Map<
     string,
     {
@@ -238,8 +246,24 @@ export function createRequestHandler(
     const { pathname } = new URL(request.url);
     const isApi = pathname === "/api/fleet" || pathname.startsWith("/api/");
     let response: Response | undefined;
+    let discovery: DiscoveryResult | undefined;
 
     try {
+      discovery = isApi
+        ? await discover(config).catch(() => ({
+            repositories: [...config.repositories],
+            warnings: [
+              {
+                code: "DISCOVERY_UNAVAILABLE",
+                message: "repository discovery could not be completed",
+              },
+            ],
+          }))
+        : undefined;
+      const requestConfig =
+        discovery === undefined
+          ? config
+          : { ...config, repositories: discovery.repositories };
       if (pathname === "/api/fleet") {
         if (request.method !== "GET") {
           response = methodNotAllowed();
@@ -247,11 +271,14 @@ export function createRequestHandler(
           response = Response.json({
             schemaVersion: API_SCHEMA_VERSION,
             generatedAt: now().toISOString(),
-            ...(await snapshot(config)),
+            ...(await snapshot(requestConfig)),
+            ...(discovery !== undefined && discovery.warnings.length > 0
+              ? { warnings: discovery.warnings }
+              : {}),
           });
         }
       } else if (pathname.startsWith("/api/repo/")) {
-        const intakeRoute = answerRoute(pathname, config.repositories);
+        const intakeRoute = answerRoute(pathname, requestConfig.repositories);
         const answerIntake = config.answerIntake;
         if (intakeRoute !== null && answerIntake !== undefined) {
           const allowedMethod =
@@ -311,6 +338,13 @@ export function createRequestHandler(
                     } else {
                       result = (async () => {
                         try {
+                          if (
+                            !(await isRepositoryIdentityCurrent(
+                              intakeRoute.repository,
+                            ))
+                          ) {
+                            return { status: "unavailable" as const };
+                          }
                           const reservation = await idempotencyStore.reserve(
                             intakeRoute.repository.path,
                             idempotencyKey,
@@ -336,12 +370,29 @@ export function createRequestHandler(
                           }
 
                           try {
+                            if (
+                              !(await isRepositoryIdentityCurrent(
+                                intakeRoute.repository,
+                              ))
+                            ) {
+                              return { status: "unavailable" as const };
+                            }
                             const value = await submit({
                               ...requestValue,
                               repositoryPath: intakeRoute.repository.path,
                               actor: answerIntake.actor,
                               secret: answerIntake.secret,
                             });
+                            if (
+                              !(await isRepositoryIdentityCurrent(
+                                intakeRoute.repository,
+                              ))
+                            ) {
+                              // The helper may have published before the
+                              // replacement became observable. Preserve the
+                              // reservation and require operator verification.
+                              return { status: "uncertain" as const };
+                            }
                             await idempotencyStore.complete(
                               intakeRoute.repository.path,
                               idempotencyKey,
@@ -394,11 +445,21 @@ export function createRequestHandler(
               response = jsonError(400, "Invalid request");
             } else {
               try {
+                if (
+                  !(await isRepositoryIdentityCurrent(intakeRoute.repository))
+                ) {
+                  throw new Error("repository unavailable");
+                }
                 const result = await outcome({
                   repositoryPath: intakeRoute.repository.path,
                   id: intakeRoute.id,
                   secret: answerIntake.secret,
                 });
+                if (
+                  !(await isRepositoryIdentityCurrent(intakeRoute.repository))
+                ) {
+                  throw new Error("repository unavailable");
+                }
                 response = Response.json(result, {
                   status: result.status === "unknown-record" ? 404 : 200,
                 });
@@ -408,7 +469,10 @@ export function createRequestHandler(
             }
           }
         } else {
-          const repository = repositorySelector(pathname, config.repositories);
+          const repository = repositorySelector(
+            pathname,
+            requestConfig.repositories,
+          );
           if (repository === null) {
             response = textResponse(404, "Not Found");
           } else if (request.method !== "GET") {
@@ -416,7 +480,14 @@ export function createRequestHandler(
           } else {
             let data: RepositoryFactorySnapshot;
             try {
-              data = await readRepository(repository);
+              if (!(await isRepositoryIdentityCurrent(repository))) {
+                data = unavailableRepositoryFactorySnapshot(repository.name);
+              } else {
+                const snapshot = await readRepository(repository);
+                data = (await isRepositoryIdentityCurrent(repository))
+                  ? snapshot
+                  : unavailableRepositoryFactorySnapshot(repository.name);
+              }
             } catch {
               data = unavailableRepositoryFactorySnapshot(repository.name);
             }
@@ -458,7 +529,13 @@ export function createRequestHandler(
     if (origin !== null && allowedOrigins.has(origin)) {
       response.headers.set("access-control-allow-origin", origin);
     }
-    return response;
+    try {
+      return response;
+    } finally {
+      if (discovery !== undefined) {
+        await disposeDiscoveredRepositories(discovery.repositories);
+      }
+    }
   };
 }
 

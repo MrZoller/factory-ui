@@ -150,7 +150,8 @@ function parseOptions(value: string | undefined): {
     const options: QuestionOption[] = [];
     for (const segment of segments) {
       const match = labelledStart.exec(segment);
-      const label = match?.[1];
+      if (match === null) return {};
+      const label = match[1];
       if (label === undefined) return {};
       const raw = (match[2] ?? "").trim();
       const recommended = /\(\s*recommended\b/i.test(raw);

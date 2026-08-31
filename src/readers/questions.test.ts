@@ -204,12 +204,14 @@ Options considered: A — Go
         });
       });
 
-      test("requires a valid calendar timestamp below the marker while preserving legacy grammar above it", () => {
+      test("warns but retains valid questions when filed-at syntax below the marker is malformed", () => {
         for (const filedAt of [
           "2026-02-30T03:04:05Z",
           "2026-08-30T24:04:05Z",
           "2026-08-30T03:04:05+00:00",
           "2026-08-30T03:04:05.Z",
+          `2026-08-30T03:04:05.${"1".repeat(80)}Z`,
+          '<img src=x onerror="globalThis.questionPwned=1">',
         ]) {
           const result =
             parseFactoryQuestions(`<!-- factory-question-timestamps-required-below -->
@@ -219,8 +221,11 @@ Options considered: A — Go
 **A:**`);
           expect(result).toMatchObject({
             status: "partial",
-            data: { open: [] },
+            data: { open: [{ id: "Q1", title: "Bad" }] },
           });
+          if (result.status === "partial") {
+            expect(result.data.open[0]?.filedAt).toBeUndefined();
+          }
           expect(result.warnings).toContainEqual(
             expect.objectContaining({ code: "QUESTIONS_MALFORMED_ENTRY" }),
           );
@@ -231,7 +236,48 @@ Options considered: A — Go
 Context: Context
 Options considered: A — Go
 **A:**`);
+        expect(missing).toMatchObject({
+          status: "partial",
+          data: { open: [{ id: "Q1", title: "Missing" }] },
+        });
+        if (missing.status === "partial") {
+          expect(missing.data.open[0]?.filedAt).toBeUndefined();
+        }
         expect(missing.warnings).toContainEqual(
+          expect.objectContaining({ code: "QUESTIONS_MALFORMED_ENTRY" }),
+        );
+      });
+
+      test("warns safely for duplicate or in-entry timestamp markers without dropping valid questions", () => {
+        const duplicate =
+          parseFactoryQuestions(`<!-- factory-question-timestamps-required-below -->
+## Q1 (task T1, open, filed-at 2026-08-30T03:04:05Z) — First
+Context: Context
+Options considered: A — Go
+**A:**
+<!-- factory-question-timestamps-required-below -->
+## Q2 (task T2, open, filed-at 2026-08-30T03:04:06Z) — Second
+Context: Context
+Options considered: A — Go
+**A:**`);
+        expect(duplicate).toMatchObject({
+          status: "partial",
+          data: { open: [{ id: "Q1" }, { id: "Q2" }] },
+          warnings: [
+            expect.objectContaining({ code: "QUESTIONS_MALFORMED_ENTRY" }),
+          ],
+        });
+
+        const misplaced = parseFactoryQuestions(`## Q3 (task T3, open) — Legacy
+Context: Context
+<!-- factory-question-timestamps-required-below -->
+Options considered: A — Go
+**A:**`);
+        expect(misplaced).toMatchObject({
+          status: "partial",
+          data: { open: [{ id: "Q3", title: "Legacy" }] },
+        });
+        expect(misplaced.warnings).toContainEqual(
           expect.objectContaining({ code: "QUESTIONS_MALFORMED_ENTRY" }),
         );
       });

@@ -165,6 +165,7 @@ export interface OpenQuestion {
   id: string;
   taskId: string;
   title: string;
+  /** Bounded, calendar-valid RFC3339 UTC from the protocol heading. */
   filedAt?: string;
   text: string;
   context?: string;

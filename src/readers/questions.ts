@@ -11,6 +11,7 @@ import { readerWarning } from "./warnings";
 export const MAX_QUESTIONS_BYTES = 256 * 1024;
 export const MAX_QUESTIONS_LINES = 4096;
 export const MAX_QUESTION_LINE_LENGTH = 8192;
+export const MAX_QUESTION_OPTION_LENGTH = 8192;
 export const MAX_QUESTIONS = 128;
 export const MAX_QUESTIONS_WARNINGS = 32;
 export const MAX_QUESTION_FILED_AT_LENGTH = 64;
@@ -19,6 +20,7 @@ export const QUESTIONS_WARNING_CODES = [
   "WARNINGS_TRUNCATED",
   "QUESTIONS_TOO_MANY_LINES",
   "QUESTIONS_LINE_TOO_LONG",
+  "QUESTIONS_OPTION_TOO_LONG",
   "QUESTIONS_EMPTY",
   "QUESTIONS_TOO_MANY_ENTRIES",
   "QUESTIONS_MALFORMED_ENTRY",
@@ -115,6 +117,7 @@ function joinHardWraps(value: string): string {
 function parseOptions(value: string | undefined): {
   options?: QuestionOption[];
   proseOptions?: string[];
+  optionsTooLong?: true;
 } {
   if (!value) return {};
   const lines = value.split("\n").filter((line) => line.trim().length > 0);
@@ -154,6 +157,9 @@ function parseOptions(value: string | undefined): {
       const label = match[1];
       if (label === undefined) return {};
       const raw = (match[2] ?? "").trim();
+      if (raw.length > MAX_QUESTION_OPTION_LENGTH) {
+        return { optionsTooLong: true };
+      }
       const recommended = /\(\s*recommended\b/i.test(raw);
       options.push({
         label,
@@ -168,14 +174,22 @@ function parseOptions(value: string | undefined): {
     .split(/\s+\/\s+/)
     .map((option) => option.trim())
     .filter(Boolean);
+  if (
+    proseOptions.some((option) => option.length > MAX_QUESTION_OPTION_LENGTH)
+  ) {
+    return { optionsTooLong: true };
+  }
   return proseOptions.length >= 2 && proseOptions.length <= 26
     ? { proseOptions }
     : {};
 }
 
-export function parseQuestionDetails(
-  text: string,
-): Omit<OpenQuestion, "id" | "taskId" | "title" | "text"> {
+type ParsedQuestionDetails = Omit<
+  OpenQuestion,
+  "id" | "taskId" | "title" | "text"
+> & { optionsTooLong?: true };
+
+export function parseQuestionDetails(text: string): ParsedQuestionDetails {
   const lines = sourceLines(text).slice(1);
   const contextIndex = lines.findIndex((line) =>
     line.value.startsWith("Context:"),
@@ -423,13 +437,24 @@ export function parseFactoryQuestions(
         current.line.value,
       );
     }
+    const details = parseQuestionDetails(textSlice);
+    if (details.optionsTooLong) {
+      addWarning(
+        warnings,
+        "QUESTIONS_OPTION_TOO_LONG",
+        "a question option exceeds the structured rendering limit",
+        current.index + 1,
+        current.line.value,
+      );
+    }
+    const { optionsTooLong: _optionsTooLong, ...questionDetails } = details;
     open.push({
       id,
       taskId,
       title,
       ...(filedAtValid ? { filedAt: filedAtCandidate } : {}),
       text: textSlice,
-      ...parseQuestionDetails(textSlice),
+      ...questionDetails,
     });
   }
 

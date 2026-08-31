@@ -6,6 +6,7 @@ import {
   MAX_QUESTIONS_BYTES,
   MAX_QUESTIONS_LINES,
   MAX_QUESTION_LINE_LENGTH,
+  MAX_QUESTION_OPTION_LENGTH,
   MAX_QUESTIONS,
   MAX_QUESTIONS_WARNINGS,
   parseFactoryQuestions,
@@ -26,6 +27,10 @@ describe("questions reader", () => {
 
     test("MAX_QUESTION_LINE_LENGTH is 8192", () => {
       expect(MAX_QUESTION_LINE_LENGTH).toBe(8192);
+    });
+
+    test("MAX_QUESTION_OPTION_LENGTH is 8192", () => {
+      expect(MAX_QUESTION_OPTION_LENGTH).toBe(8192);
     });
 
     test("MAX_QUESTIONS is 128", () => {
@@ -88,6 +93,50 @@ describe("questions reader", () => {
         expect(result.status).toBe("available");
         if (result.status === "partial" || result.status === "available") {
           expect(result.data.open).toHaveLength(1);
+        }
+      });
+    });
+
+    describe("structured option bounds", () => {
+      test("falls back when a hard-wrapped labelled option exceeds the limit", () => {
+        const fragment = "x".repeat(4500);
+        const questions = `## Q1 (task T1, open) — Long option
+Context: Context
+Options considered: A — ${fragment}
+${fragment}
+**A:**`;
+        const result = parseFactoryQuestions(questions);
+
+        expect(result.status).toBe("partial");
+        expect(result.warnings).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ code: "QUESTIONS_OPTION_TOO_LONG" }),
+          ]),
+        );
+        if (result.status === "partial") {
+          expect(result.data.open[0]?.options).toBeUndefined();
+          expect(result.data.open[0]?.text).toBe(questions);
+        }
+      });
+
+      test("falls back when a prose-only option exceeds the limit", () => {
+        const fragment = "x".repeat(4500);
+        const questions = `## Q1 (task T1, open) — Long option
+Context: Context
+Options considered: A ${fragment}
+${fragment} / B short
+**A:**`;
+        const result = parseFactoryQuestions(questions);
+
+        expect(result.status).toBe("partial");
+        expect(result.warnings).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ code: "QUESTIONS_OPTION_TOO_LONG" }),
+          ]),
+        );
+        if (result.status === "partial") {
+          expect(result.data.open[0]?.proseOptions).toBeUndefined();
+          expect(result.data.open[0]?.text).toBe(questions);
         }
       });
     });

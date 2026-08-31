@@ -1690,6 +1690,24 @@ export const WARNING_EXPLANATIONS = Object.freeze({
   ROUTING_MISSING: "The routing file is missing.",
   ROUTING_TOO_LARGE: "The routing file exceeds the safe read limit.",
   ROUTING_UNAVAILABLE: "The routing file could not be read safely.",
+  CURRENT_ROUTING_NOT_CONFIGURED:
+    "Current opencode routing is not configured on this machine.",
+  CURRENT_ROUTING_INVALID_JSONC:
+    "The current opencode configuration is not valid bounded JSONC.",
+  CURRENT_ROUTING_INVALID_ROOT:
+    "The current opencode configuration has an invalid root object.",
+  CURRENT_ROUTING_INVALID_FIELD:
+    "A current opencode routing field has an invalid value.",
+  CURRENT_ROUTING_TOO_MANY_AGENTS:
+    "The current opencode configuration has too many agents.",
+  CURRENT_ROUTING_INVALID_AGENT:
+    "An invalid current agent routing entry was omitted.",
+  CURRENT_ROUTING_MISSING:
+    "The configured current opencode configuration is missing.",
+  CURRENT_ROUTING_TOO_LARGE:
+    "The current opencode configuration exceeds the safe read limit.",
+  CURRENT_ROUTING_UNAVAILABLE:
+    "The current opencode configuration could not be read safely.",
   COSTS_INVALID_UTF8: "The costs file is not valid UTF-8 text.",
   COSTS_INVALID_JSON: "The costs file is not valid JSON.",
   COSTS_INVALID_ROOT: "The costs file does not contain a JSON object.",
@@ -1904,17 +1922,41 @@ export function providerCategory(provider) {
   return "other";
 }
 
-function renderRoutingStrip(fleet, documentRoot) {
+function renderRoutingStrip(result, documentRoot, options = {}) {
   const strip = documentRoot.createElement("section");
   strip.className = "panel routing-panel routing-strip";
-  appendText(strip, "h3", "Routing", "panel-title");
-  const routing = fleet?.repositories?.find(
-    (repository) =>
-      repository.routing && repository.routing.status !== "unavailable",
-  )?.routing.data;
+  appendText(strip, "h3", options.title ?? "Routing", "panel-title");
+  const routing = readerData(result);
   if (!routing) {
-    appendText(strip, "p", "Unavailable", "unavailable");
+    const notConfigured = result?.warnings?.some(
+      (warning) => warning?.code === "CURRENT_ROUTING_NOT_CONFIGURED",
+    );
+    appendText(
+      strip,
+      "p",
+      notConfigured ? "Not configured" : "Unavailable",
+      "unavailable",
+    );
     return strip;
+  }
+
+  if (options.recordedAt) {
+    appendText(
+      strip,
+      "p",
+      `Recorded ${displayAge(options.recordedAt, options.now)} · ${displayTime(options.recordedAt)}`,
+      "routing-freshness age",
+    );
+  } else if (options.current) {
+    appendText(
+      strip,
+      "p",
+      "Current configuration · used for the next factory run",
+      "routing-freshness",
+    );
+  }
+  if (result?.status === "partial") {
+    appendText(strip, "span", "Partial", "chip chip-warn routing-partial");
   }
 
   appendText(
@@ -1979,6 +2021,13 @@ function renderRepository(repository, machine, documentRoot, now, generatedAt) {
   const disclosure = disclosureState(documentRoot, machine, repository.name);
   const card = documentRoot.createElement("article");
   card.className = "repository";
+  card.append(
+    renderRoutingStrip(repository?.routing, documentRoot, {
+      title: "Last-run routing",
+      recordedAt: readerData(repository?.routing)?.recordedAt,
+      now,
+    }),
+  );
   renderCurrent(card, repository ?? {});
   renderLogs(card, repository ?? {}, now, generatedAt);
   renderQuestions(card, repository ?? {}, now);
@@ -2145,9 +2194,10 @@ function isBoundedRoutingString(value) {
 }
 
 function isRoutingModelId(value) {
-  if (!isBoundedRoutingString(value)) return false;
-  const separator = value.indexOf("/");
-  return separator > 0 && separator < value.length - 1;
+  return (
+    isBoundedRoutingString(value) &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._:@+/-]*$/.test(value)
+  );
 }
 
 function isRoutingTimestamp(value) {
@@ -2228,6 +2278,7 @@ function isRoutingData(value) {
         isRecord(agent) &&
         isBoundedRoutingString(agent.provider) &&
         isBoundedRoutingString(agent.model) &&
+        isRoutingModelId(`${agent.provider}/${agent.model}`) &&
         (agent.steps === null ||
           (typeof agent.steps === "number" &&
             Number.isSafeInteger(agent.steps) &&
@@ -2241,6 +2292,41 @@ function isRoutingResult(value) {
   return (
     isReaderResult(value) &&
     (value.status === "unavailable" || isRoutingData(value.data))
+  );
+}
+
+function isCurrentRoutingData(value) {
+  if (
+    !isRecord(value) ||
+    !isRoutingModelId(value.model) ||
+    !isRoutingModelId(value.smallModel) ||
+    !isRecord(value.agents)
+  ) {
+    return false;
+  }
+  const agents = Object.entries(value.agents);
+  return (
+    agents.length <= MAX_ROUTING_AGENTS &&
+    agents.every(
+      ([name, agent]) =>
+        name.length > 0 &&
+        name.length <= MAX_AGENT_NAME_LENGTH &&
+        isRecord(agent) &&
+        isBoundedRoutingString(agent.provider) &&
+        isBoundedRoutingString(agent.model) &&
+        isRoutingModelId(`${agent.provider}/${agent.model}`) &&
+        (agent.steps === null ||
+          (Number.isSafeInteger(agent.steps) &&
+            agent.steps >= 0 &&
+            agent.steps <= MAX_ROUTING_STEPS)),
+    )
+  );
+}
+
+function isCurrentRoutingResult(value) {
+  return (
+    isReaderResult(value) &&
+    (value.status === "unavailable" || isCurrentRoutingData(value.data))
   );
 }
 
@@ -2497,6 +2583,8 @@ function validateFleet(value) {
     !Array.isArray(value.repositories) ||
     value.repositories.length > MAX_REPOSITORIES ||
     !value.repositories.every(isRepository) ||
+    (value.currentRouting !== undefined &&
+      !isCurrentRoutingResult(value.currentRouting)) ||
     (value.warnings !== undefined && !isWarnings(value.warnings)) ||
     !Array.isArray(value.peers) ||
     value.peers.length > MAX_PEERS ||
@@ -3114,7 +3202,10 @@ function createMachineView(identity, index, documentRoot, isPeer, origin) {
   panel.setAttribute("aria-labelledby", tabId);
   panel.hidden = true;
   grid.className = `repository-grid${isPeer ? " peer-repositories" : ""}`;
-  const routing = renderRoutingStrip(null, documentRoot);
+  const routing = renderRoutingStrip(undefined, documentRoot, {
+    title: "Current / next-run routing",
+    current: true,
+  });
   panel.append(routing, grid);
   return {
     identity,
@@ -3134,7 +3225,14 @@ function updateMachineView(view, summary, fleet, now, unreachable = false) {
   view.fleet = fleet;
   renderSummaryRow(view.row, summary);
   renderTabLabel(view.tab, summary);
-  const routing = renderRoutingStrip(fleet, view.grid.ownerDocument);
+  const routing = renderRoutingStrip(
+    fleet?.currentRouting,
+    view.grid.ownerDocument,
+    {
+      title: "Current / next-run routing",
+      current: true,
+    },
+  );
   view.routing.replaceWith(routing);
   view.routing = routing;
   if (unreachable) {

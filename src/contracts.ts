@@ -65,6 +65,7 @@ export interface AppConfigSource {
   developmentOrigins?: string[];
   answerActor?: string;
   answerIntake?: AnswerIntakeConfig;
+  opencodeConfigPath?: string;
 }
 
 export interface AppConfig extends AppConfigSource {
@@ -266,6 +267,12 @@ export interface RoutingData {
   models?: Record<string, RoutingModel>;
 }
 
+export interface CurrentRoutingData {
+  model: string;
+  smallModel: string;
+  agents: Record<string, RoutingAgent>;
+}
+
 export interface CostTokens {
   input: number;
   output: number;
@@ -394,6 +401,7 @@ export interface FactoryFleetData {
   hostname: string;
   repositories: RepositoryFactorySnapshot[];
   peers: PeerConfig[];
+  currentRouting: ReaderResult<CurrentRoutingData>;
   warnings?: ReaderWarning[];
 }
 

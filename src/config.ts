@@ -307,6 +307,10 @@ export function parseConfig(value: unknown): AppConfig {
     value.answerActor === undefined
       ? undefined
       : readString(value.answerActor, "answerActor", MAX_ANSWER_ACTOR_LENGTH);
+  const opencodeConfigPath =
+    value.opencodeConfigPath === undefined
+      ? undefined
+      : parseRepositoryPath(value.opencodeConfigPath, "opencodeConfigPath");
   const repositoryValues = value.repositories ?? [];
   const codeRootValues = value.codeRoots ?? [];
   const repositories = (repositoryValues as unknown[]).map(parseRepository);
@@ -350,6 +354,7 @@ export function parseConfig(value: unknown): AppConfig {
     bind: parseBind(value.bind),
     developmentOrigins,
     ...(answerActor === undefined ? {} : { answerActor }),
+    ...(opencodeConfigPath === undefined ? {} : { opencodeConfigPath }),
   };
 }
 

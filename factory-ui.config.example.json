@@ -2,6 +2,7 @@
   "machine": "mini",
   "bind": "100.64.0.10",
   "answerActor": "factory-operator",
+  "opencodeConfigPath": "/Users/factory/.config/opencode/opencode.jsonc",
   "codeRoots": ["/Users/factory/code"],
   "repositories": [
     {

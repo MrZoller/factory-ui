@@ -1736,6 +1736,7 @@ accept unbounded input.
     );
     const card = document.querySelector(".repository")!;
     expect(Array.from(card.children, (child) => child.classList[1])).toEqual([
+      "routing-panel",
       "current-panel",
       "logs-panel",
       "questions-panel",
@@ -4727,12 +4728,13 @@ describe("fleet summary and machine tabs", () => {
       NOW,
     );
 
-    const strip = document.querySelector(".routing-strip")!;
-    expect(document.querySelectorAll(".routing-strip")).toHaveLength(1);
+    const strip = document.querySelectorAll(".routing-strip")[2]!;
+    expect(document.querySelectorAll(".routing-strip")).toHaveLength(4);
     expect(strip.classList).toContain("panel");
     expect(strip.classList).toContain("routing-panel");
-    expect(strip.querySelector(".panel-title")?.textContent).toBe("Routing");
-    expect(strip.nextElementSibling?.classList).toContain("repository-grid");
+    expect(strip.querySelector(".panel-title")?.textContent).toBe(
+      "Last-run routing",
+    );
     expect(strip.querySelector(".routing-defaults")?.textContent).toBe(
       "default openai/default · small opencode/small",
     );
@@ -4806,7 +4808,7 @@ describe("fleet summary and machine tabs", () => {
       NOW,
     );
 
-    const rows = routingRows(document.querySelector(".routing-strip")!);
+    const rows = routingRows(document.querySelectorAll(".routing-strip")[1]!);
     expect(rows).toHaveLength(2);
     expect(
       rows.map((row) => routingRowCells(row).map((cell) => cell.textContent)),
@@ -4845,24 +4847,26 @@ describe("fleet summary and machine tabs", () => {
       document,
       NOW,
     );
-    expect(routingRows(document.querySelector(".routing-strip")!)).toHaveLength(
-      1,
-    );
-    expect(document.querySelector(".routing-strip strong")?.textContent).toBe(
-      "builder",
-    );
+    expect(
+      routingRows(document.querySelectorAll(".routing-strip")[1]!),
+    ).toHaveLength(1);
+    expect(
+      document.querySelectorAll(".routing-strip")[1]?.querySelector("strong")
+        ?.textContent,
+    ).toBe("builder");
 
     renderFleet(
       fleet("mini", [], [richRepository({ routing: routing({}) })]),
       document,
       NOW,
     );
-    expect(document.querySelector(".routing-strip .empty")?.textContent).toBe(
-      "No agent overrides",
-    );
-    expect(routingRows(document.querySelector(".routing-strip")!)).toHaveLength(
-      0,
-    );
+    expect(
+      document.querySelectorAll(".routing-strip")[1]?.querySelector(".empty")
+        ?.textContent,
+    ).toBe("No agent overrides");
+    expect(
+      routingRows(document.querySelectorAll(".routing-strip")[1]!),
+    ).toHaveLength(0);
   });
 
   test("renders routing unavailable when no repository has routing", () => {
@@ -4880,8 +4884,8 @@ describe("fleet summary and machine tabs", () => {
       document,
       NOW,
     );
-    expect(document.querySelector(".routing-strip")?.textContent).toBe(
-      "RoutingUnavailable",
+    expect(document.querySelectorAll(".routing-strip")[1]?.textContent).toBe(
+      "Last-run routingUnavailable",
     );
   });
 
@@ -4915,17 +4919,194 @@ describe("fleet summary and machine tabs", () => {
       NOW,
     );
 
-    expect(document.querySelector(".routing-strip")?.textContent).toContain(
-      hostile,
-    );
+    expect(
+      document.querySelectorAll(".routing-strip")[1]?.textContent,
+    ).toContain(hostile);
     expect(
       document.querySelectorAll(
-        ".routing-strip script, .routing-strip img, [onerror]",
+        ".repository > .routing-strip script, .repository > .routing-strip img, [onerror]",
       ),
     ).toHaveLength(0);
-    expect(document.querySelector(".routing-provider")?.classList).toContain(
-      "provider-other",
+    expect(
+      document
+        .querySelectorAll(".routing-strip")[1]
+        ?.querySelector(".routing-provider")?.classList,
+    ).toContain("provider-other");
+    expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
+  });
+
+  test("separates machine current routing from every repository last-run routing and shows snapshot freshness", () => {
+    const document = dashboardDocument();
+    const first = richRepository({
+      name: "first",
+      routing: {
+        status: "available",
+        data: {
+          schemaVersion: 1,
+          recordedAt: "2026-08-16T10:00:00.000Z",
+          model: "legacy/first",
+          smallModel: "legacy/small",
+          agents: {},
+        },
+        warnings: [],
+      },
+    });
+    const second = richRepository({
+      name: "second",
+      routing: {
+        status: "partial",
+        data: {
+          schemaVersion: 1,
+          recordedAt: "2026-08-16T11:00:00.000Z",
+          model: "legacy/second",
+          smallModel: "legacy/small",
+          agents: {},
+        },
+        warnings: [{ code: "ROUTING_INVALID_AGENT", message: "omitted" }],
+      },
+    });
+    renderFleet(
+      {
+        ...fleet("mini", [], [first, second]),
+        currentRouting: {
+          status: "partial",
+          data: {
+            model: "openai/current",
+            smallModel: "openai/current-small",
+            agents: {},
+          },
+          warnings: [
+            { code: "CURRENT_ROUTING_INVALID_AGENT", message: "omitted" },
+          ],
+        },
+      },
+      document,
+      NOW,
     );
+
+    const machineRouting = document.querySelector(
+      ".local-machine > .routing-strip",
+    )!;
+    expect(machineRouting.textContent).toContain("Current / next-run routing");
+    expect(machineRouting.textContent).toContain("openai/current");
+    expect(machineRouting.textContent).toContain(
+      "Current configuration · used for the next factory run",
+    );
+    expect(machineRouting.textContent).toContain("Partial");
+    const repositoryRouting = Array.from(
+      document.querySelectorAll(".repository > .routing-strip"),
+    );
+    expect(repositoryRouting.map((strip) => strip.textContent)).toEqual([
+      expect.stringContaining("Last-run routingRecorded 2h ago"),
+      expect.stringContaining("Last-run routingRecorded 1h ago"),
+    ]);
+    expect(repositoryRouting[0]?.textContent).toContain("legacy/first");
+    expect(repositoryRouting[1]?.textContent).toContain("legacy/second");
+    expect(repositoryRouting[1]?.textContent).toContain("Partial");
+  });
+
+  test("renders omitted current routing as not configured and retains legacy peer compatibility", async () => {
+    const document = dashboardDocument();
+    const peers = [
+      { name: "legacy", origin: "http://100.64.0.6:7777" },
+      { name: "partial", origin: "http://100.64.0.7:7777" },
+      { name: "unavailable", origin: "http://100.64.0.8:7777" },
+    ];
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === "/api/fleet") {
+        return Promise.resolve(
+          jsonResponse({
+            ...fleet("mini", peers, [richRepository()]),
+            currentRouting: {
+              status: "unavailable",
+              warnings: [
+                {
+                  code: "CURRENT_ROUTING_NOT_CONFIGURED",
+                  message: "not configured",
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (String(input).includes("100.64.0.7")) {
+        return Promise.resolve(
+          jsonResponse({
+            ...fleet("partial", [], [richRepository()]),
+            currentRouting: {
+              status: "partial",
+              data: {
+                model: "openai/current",
+                smallModel: "openai/small",
+                agents: {},
+              },
+              warnings: [
+                { code: "CURRENT_ROUTING_INVALID_AGENT", message: "omitted" },
+              ],
+            },
+          }),
+        );
+      }
+      if (String(input).includes("100.64.0.8")) {
+        return Promise.resolve(
+          jsonResponse({
+            ...fleet("unavailable", [], [richRepository()]),
+            currentRouting: { status: "unavailable", warnings: [] },
+          }),
+        );
+      }
+      // Older peers have no currentRouting field and keep their per-repo last-run data.
+      return Promise.resolve(
+        jsonResponse(fleet("legacy", [], [richRepository()])),
+      );
+    });
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    expect(
+      document.querySelector(".local-machine > .routing-strip")?.textContent,
+    ).toContain("Not configured");
+    const peerPanel = document.querySelector(".peer-machine")!;
+    expect(peerPanel.textContent).toContain(
+      "Current / next-run routingUnavailable",
+    );
+    expect(
+      peerPanel.querySelector(".repository > .routing-strip")?.textContent,
+    ).toContain("Last-run routing");
+    expect(
+      document.querySelectorAll(".peer-machine .unreachable"),
+    ).toHaveLength(0);
+    expect(
+      Array.from(document.querySelectorAll(".peer-machine"), (panel) =>
+        panel.textContent?.includes("Partial"),
+      ),
+    ).toContain(true);
+  });
+
+  test("keeps hostile current-routing agent names literal and inert", () => {
+    const document = dashboardDocument();
+    const hostile = '<img src=x onerror="globalThis.pwned=1">';
+    renderFleet(
+      {
+        ...fleet("mini", [], [richRepository()]),
+        currentRouting: {
+          status: "available",
+          data: {
+            model: "openai/default",
+            smallModel: "openai/small",
+            agents: {
+              [hostile]: { provider: "openai", model: "safe", steps: null },
+            },
+          },
+          warnings: [],
+        },
+      },
+      document,
+      NOW,
+    );
+    const strip = document.querySelector(".local-machine > .routing-strip")!;
+    expect(strip.textContent).toContain(hostile);
+    expect(strip.querySelectorAll("img, script, [onerror]")).toHaveLength(0);
     expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
   });
 
@@ -5572,7 +5753,7 @@ describe("repository strips and sub-tabs", () => {
     );
 
     const local = localMachinePanel(document);
-    expect(local.querySelectorAll(".routing-strip")).toHaveLength(1);
+    expect(local.querySelectorAll(".routing-strip")).toHaveLength(2);
     expect(
       local
         .querySelector(".routing-strip")

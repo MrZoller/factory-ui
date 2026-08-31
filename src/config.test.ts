@@ -1314,6 +1314,25 @@ describe("config", () => {
       expect(parsed).not.toHaveProperty("answerIntake");
       expect(JSON.stringify(parsed)).not.toContain("not-config");
     });
+
+    test("keeps current opencode routing optional and validates its fixed external path", () => {
+      expect(parseConfig(baseInput)).not.toHaveProperty("opencodeConfigPath");
+      expect(
+        parseConfig({
+          ...baseInput,
+          opencodeConfigPath: "/Users/chris/.config/opencode/opencode.jsonc",
+        }).opencodeConfigPath,
+      ).toBe("/Users/chris/.config/opencode/opencode.jsonc");
+      for (const opencodeConfigPath of [
+        "relative/opencode.jsonc",
+        "/config/../opencode.jsonc",
+        " /config/opencode.jsonc",
+      ]) {
+        expect(() => parseConfig({ ...baseInput, opencodeConfigPath })).toThrow(
+          "opencodeConfigPath",
+        );
+      }
+    });
   });
 
   describe("loadConfig", () => {

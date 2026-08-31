@@ -7,6 +7,7 @@ import { MAX_LOG_ENTRIES, type TrustedDriverLog } from "./readers/logs";
 
 import {
   createFleetSnapshot,
+  createFactoryFleetData,
   readRepositoryFactoryData,
   readRepositoryFactorySnapshot,
   readRepositorySnapshot,
@@ -226,6 +227,45 @@ describe("snapshot", () => {
       expect(result.routing.warnings[0]?.code).toBe("ROUTING_MISSING");
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("reads current routing once per fleet independently from each repository last-run snapshot", async () => {
+    const fixture = createFactoryFixture();
+    const configPath = join(fixture.root, "opencode.jsonc");
+    try {
+      await Promise.all([
+        fixture.writeState({ project: "factory-ui", phase: "build" }),
+        fixture.writeRouting({
+          schemaVersion: 1,
+          recordedAt: "2026-08-16T10:00:00Z",
+          model: "legacy/last-run",
+          smallModel: "legacy/small",
+          agents: {},
+        }),
+        Bun.write(
+          configPath,
+          '{"model":"openai/current","small_model":"openai/current-small","agent":{"driver":{"model":"openai/current"}}}',
+        ),
+      ]);
+      const result = await createFactoryFleetData({
+        machine: "mini",
+        repositories: [{ name: "factory-ui", path: fixture.root }],
+        peers: [],
+        port: 7777,
+        bind: "127.0.0.1",
+        developmentOrigins: [],
+        opencodeConfigPath: configPath,
+      });
+      expect(result.currentRouting).toMatchObject({
+        status: "available",
+        data: { model: "openai/current", smallModel: "openai/current-small" },
+      });
+      expect(result.repositories[0]?.routing).toMatchObject({
+        data: { model: "legacy/last-run", recordedAt: "2026-08-16T10:00:00Z" },
+      });
+    } finally {
+      fixture.cleanup();
     }
   });
 

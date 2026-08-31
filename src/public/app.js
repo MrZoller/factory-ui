@@ -1187,18 +1187,46 @@ function questionParagraphs(value) {
     .filter(Boolean);
 }
 
+function questionFallbackSections(value) {
+  const sections = [];
+  let current = null;
+  const flush = () => {
+    if (current?.lines.length) {
+      sections.push({
+        label: current.label,
+        text: current.lines.join(" "),
+      });
+    }
+    current = null;
+  };
+  for (const rawLine of String(value ?? "").split("\n")) {
+    const line = rawLine.trim();
+    if (!line) {
+      flush();
+      continue;
+    }
+    const field = /^(Context:|Options considered:)\s*(.*)$/.exec(line);
+    if (field) {
+      flush();
+      current = { label: field[1], lines: field[2] ? [field[2]] : [] };
+      continue;
+    }
+    if (current) current.lines.push(line);
+    else current = { label: null, lines: [line] };
+  }
+  flush();
+  return sections;
+}
+
 function appendQuestionOptionText(row, option) {
   const marker = option.recommended
     ? /\(\s*recommended\b[^)]*\)/i.exec(option.text)
     : null;
   if (marker?.index !== undefined) {
-    row.append(row.ownerDocument.createTextNode(option.text.slice(0, marker.index)));
-    appendText(
-      row,
-      "span",
-      marker[0],
-      "chip chip-accent question-recommended",
+    row.append(
+      row.ownerDocument.createTextNode(option.text.slice(0, marker.index)),
     );
+    appendText(row, "span", marker[0], "chip chip-accent question-recommended");
     row.append(
       row.ownerDocument.createTextNode(
         option.text.slice(marker.index + marker[0].length),
@@ -1218,7 +1246,8 @@ function appendQuestionOptionText(row, option) {
 
 function renderQuestionBody(parent, question) {
   const documentRoot = parent.ownerDocument;
-  const labelled = Array.isArray(question?.options) && question.options.length > 0;
+  const labelled =
+    Array.isArray(question?.options) && question.options.length > 0;
   const prose =
     Array.isArray(question?.proseOptions) && question.proseOptions.length > 0;
   const structured = question?.context !== undefined && (labelled || prose);
@@ -1264,14 +1293,10 @@ function renderQuestionBody(parent, question) {
     while (lines.length > 0 && !lines.at(-1)?.trim()) lines.pop();
     if (/^\*\*A:\*\*\s*$/.test(lines.at(-1)?.trim() ?? "")) lines.pop();
     while (lines.length > 0 && !lines.at(-1)?.trim()) lines.pop();
-    for (const paragraph of questionParagraphs(lines.join("\n"))) {
-      const field = /^(Context:|Options considered:)\s*(.*)$/s.exec(paragraph);
-      if (field) {
-        appendText(body, "h4", field[1], "question-field-label");
-        if (field[2]) appendText(body, "p", field[2], "question-fallback-text");
-      } else {
-        appendText(body, "p", paragraph, "question-fallback-text");
-      }
+    for (const section of questionFallbackSections(lines.join("\n"))) {
+      if (section.label)
+        appendText(body, "h4", section.label, "question-field-label");
+      appendText(body, "p", section.text, "question-fallback-text");
     }
   }
   parent.append(body);

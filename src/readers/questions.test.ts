@@ -134,6 +134,49 @@ Options considered: C / D
         }
       });
 
+      test("preserves hard-wrapped labelled and slash-separated option prose", () => {
+        const result = parseFactoryQuestions(`## Q1 (task T1, open) — Labelled
+Context: Choose a rollout.
+Options considered: A — Enable the change for the first cohort and
+continue monitoring its error budget (recommended)
+B — Enable it for every cohort and
+accept the wider blast radius
+**A:**
+## Q2 (task T2, open) — Unlabelled
+Context: Choose a migration.
+Options considered: Keep the current format while the consumer is
+updated / Move every consumer now and
+coordinate the outage window
+**A:**`);
+
+        expect(result).toMatchObject({ status: "available" });
+        if (result.status === "available") {
+          expect(result.data.open).toMatchObject([
+            {
+              id: "Q1",
+              options: [
+                {
+                  label: "A",
+                  text: "Enable the change for the first cohort and continue monitoring its error budget (recommended)",
+                  recommended: true,
+                },
+                {
+                  label: "B",
+                  text: "Enable it for every cohort and accept the wider blast radius",
+                },
+              ],
+            },
+            {
+              id: "Q2",
+              proseOptions: [
+                "Keep the current format while the consumer is updated",
+                "Move every consumer now and coordinate the outage window",
+              ],
+            },
+          ]);
+        }
+      });
+
       test("excludes answered questions from open array", () => {
         const questions = `## Q1 (task T1, open) — Open question?
 Context: Context

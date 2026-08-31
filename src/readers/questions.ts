@@ -133,13 +133,16 @@ function parseOptions(value: string | undefined): {
   ) {
     const segments: string[] = [];
     for (const line of lines) {
-      const fragments = line.trim().split(
-        /\s*;\s+(?=[A-Z]\s*(?:—|-|:))|\s+\/\s+(?=[A-Z](?:\s*(?:—|-|:)|\s*(?:\/|$)))/,
-      );
+      const fragments = line
+        .trim()
+        .split(
+          /\s*;\s+(?=[A-Z]\s*(?:—|-|:))|\s+\/\s+(?=[A-Z](?:\s*(?:—|-|:)|\s*(?:\/|$)))/,
+        );
       for (const fragment of fragments) {
         if (labelledStart.test(fragment.trim())) segments.push(fragment.trim());
         else if (segments.length > 0)
-          segments[segments.length - 1] = `${segments.at(-1)} ${fragment.trim()}`;
+          segments[segments.length - 1] =
+            `${segments.at(-1)} ${fragment.trim()}`;
         else return {};
       }
     }

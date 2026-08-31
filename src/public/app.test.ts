@@ -1506,7 +1506,7 @@ describe("local dashboard rendering", () => {
     expect(structured.textContent).toContain("For A, confirm approval.");
     expect(structured.querySelector("pre")).toBeNull();
     expect(document.querySelectorAll(".question-queue-entry pre")).toHaveLength(
-      2,
+      0,
     );
     expect(document.querySelector("#question-queue-list .age")).toBeNull();
     expect(
@@ -1527,6 +1527,71 @@ describe("local dashboard rendering", () => {
       ),
     ).toHaveLength(0);
     expect((globalThis as Record<string, unknown>).queuePwned).toBeUndefined();
+  });
+
+  test("uses the same proportional fallback body in repository and queue cards without rendering source markup", () => {
+    const document = dashboardDocument();
+    const hostile = '<img src=x onerror="globalThis.questionPwned=1">';
+    const source = `## Q88 (task T8, open) — Choose a safe path
+Context: Keep ${hostile} visible as text while this hard-wrapped
+paragraph remains readable.
+Options considered: Continue with the bounded reader and
+document the limit / Remove the limit and
+accept unbounded input.
+**A:**`;
+    const repository = richRepository({
+      questions: {
+        status: "available",
+        data: {
+          // A mixed-version peer has only its verbatim source text, so the
+          // shared renderer must use its readable fallback in both surfaces.
+          open: [
+            {
+              id: "Q88",
+              taskId: "T8",
+              title: "Choose a safe path",
+              text: source,
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const panelBody = document.querySelector<HTMLElement>(
+      ".questions-panel .question-body",
+    );
+    const queueBody = document.querySelector<HTMLElement>(
+      ".question-queue-entry .question-body",
+    );
+    expect(panelBody?.textContent).toBe(queueBody?.textContent);
+    expect(panelBody?.textContent).toContain(
+      `Keep ${hostile} visible as text while this hard-wrapped paragraph remains readable.`,
+    );
+    expect(panelBody?.textContent).toContain(
+      "Continue with the bounded reader and document the limit / Remove the limit and accept unbounded input.",
+    );
+    expect(panelBody?.textContent).toContain("Context:");
+    expect(panelBody?.textContent).toContain("Options considered:");
+    expect(
+      Array.from(
+        panelBody?.querySelectorAll("h4.question-field-label") ?? [],
+        (field) => field.textContent,
+      ),
+    ).toEqual(["Context:", "Options considered:"]);
+    expect(panelBody?.textContent).not.toContain("## Q88");
+    expect(panelBody?.textContent).not.toContain("**A:**");
+    expect(
+      document.querySelectorAll(".question-body pre, .question-body img"),
+    ).toHaveLength(0);
+    expect(document.querySelectorAll(".question-body [onerror]")).toHaveLength(
+      0,
+    );
+    expect(
+      (globalThis as Record<string, unknown>).questionPwned,
+    ).toBeUndefined();
   });
 
   test("caps the globally ordered question queue while retaining its total", async () => {

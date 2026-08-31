@@ -7,9 +7,15 @@ export type ExternalFileRead =
   | { status: "too-large" }
   | { status: "unavailable" };
 
+export interface ExternalFileReadDependencies {
+  /** Test-only seam for exercising changes between validation and the read. */
+  afterOpen?: (path: string) => void | Promise<void>;
+}
+
 export async function readExternalFile(
   path: string,
   maximumBytes: number,
+  dependencies: ExternalFileReadDependencies = {},
 ): Promise<ExternalFileRead> {
   try {
     let before;
@@ -48,13 +54,29 @@ export async function readExternalFile(
       ) {
         return { status: "unavailable" };
       }
+      await dependencies.afterOpen?.(path);
       const bytes = new Uint8Array(
         await Bun.file(handle.fd)
           .slice(0, maximumBytes + 1)
           .arrayBuffer(),
       );
-      const after = await handle.stat();
-      if (after.dev !== opened.dev || after.ino !== opened.ino) {
+      const [after, currentAfter, currentLinkAfter] = await Promise.all([
+        handle.stat(),
+        stat(path),
+        lstat(path),
+      ]);
+      if (
+        !after.isFile() ||
+        !currentAfter.isFile() ||
+        !currentLinkAfter.isFile() ||
+        currentLinkAfter.isSymbolicLink() ||
+        after.dev !== opened.dev ||
+        after.ino !== opened.ino ||
+        after.dev !== currentAfter.dev ||
+        after.ino !== currentAfter.ino ||
+        after.dev !== currentLinkAfter.dev ||
+        after.ino !== currentLinkAfter.ino
+      ) {
         return { status: "unavailable" };
       }
       return bytes.byteLength > maximumBytes

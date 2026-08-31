@@ -568,10 +568,17 @@ p {
   font-weight: 800;
 }
 
+.question-body,
 .question-context,
-.question-qualifier {
-  white-space: pre-wrap;
+.question-qualifier,
+.question-fallback-text {
   overflow-wrap: anywhere;
+}
+
+.question-context,
+.question-qualifier,
+.question-fallback-text {
+  margin: 0 0 var(--space-2);
 }
 
 .question-options {
@@ -581,16 +588,16 @@ p {
   padding-left: var(--space-6);
 }
 
+.question-options-prose {
+  list-style: disc;
+}
+
 .question-option-label {
   font-family: var(--font-mono);
 }
 
 .question-recommended {
   margin-left: var(--space-2);
-}
-
-.question-raw-fallback {
-  margin-top: var(--space-4);
 }
 
 .answer-form,

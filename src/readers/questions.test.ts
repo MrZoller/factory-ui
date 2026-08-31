@@ -6,6 +6,7 @@ import {
   MAX_QUESTIONS_BYTES,
   MAX_QUESTIONS_LINES,
   MAX_QUESTION_LINE_LENGTH,
+  MAX_QUESTION_OPTION_LENGTH,
   MAX_QUESTIONS,
   MAX_QUESTIONS_WARNINGS,
   parseFactoryQuestions,
@@ -26,6 +27,10 @@ describe("questions reader", () => {
 
     test("MAX_QUESTION_LINE_LENGTH is 8192", () => {
       expect(MAX_QUESTION_LINE_LENGTH).toBe(8192);
+    });
+
+    test("MAX_QUESTION_OPTION_LENGTH is 8192", () => {
+      expect(MAX_QUESTION_OPTION_LENGTH).toBe(8192);
     });
 
     test("MAX_QUESTIONS is 128", () => {
@@ -92,6 +97,50 @@ describe("questions reader", () => {
       });
     });
 
+    describe("structured option bounds", () => {
+      test("falls back when a hard-wrapped labelled option exceeds the limit", () => {
+        const fragment = "x".repeat(4500);
+        const questions = `## Q1 (task T1, open) — Long option
+Context: Context
+Options considered: A — ${fragment}
+${fragment}
+**A:**`;
+        const result = parseFactoryQuestions(questions);
+
+        expect(result.status).toBe("partial");
+        expect(result.warnings).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ code: "QUESTIONS_OPTION_TOO_LONG" }),
+          ]),
+        );
+        if (result.status === "partial") {
+          expect(result.data.open[0]?.options).toBeUndefined();
+          expect(result.data.open[0]?.text).toBe(questions);
+        }
+      });
+
+      test("falls back when a prose-only option exceeds the limit", () => {
+        const fragment = "x".repeat(4500);
+        const questions = `## Q1 (task T1, open) — Long option
+Context: Context
+Options considered: A ${fragment}
+${fragment} / B short
+**A:**`;
+        const result = parseFactoryQuestions(questions);
+
+        expect(result.status).toBe("partial");
+        expect(result.warnings).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ code: "QUESTIONS_OPTION_TOO_LONG" }),
+          ]),
+        );
+        if (result.status === "partial") {
+          expect(result.data.open[0]?.proseOptions).toBeUndefined();
+          expect(result.data.open[0]?.text).toBe(questions);
+        }
+      });
+    });
+
     describe("entry parsing - valid entries", () => {
       test("parses open question with all fields", () => {
         const questions = `## Q1 (task T1, open) — How to implement feature?
@@ -131,6 +180,49 @@ Options considered: C / D
           expect(result.data.open).toHaveLength(2);
           expect(result.data.open[0]!.id).toBe("Q1");
           expect(result.data.open[1]!.id).toBe("Q2");
+        }
+      });
+
+      test("preserves hard-wrapped labelled and slash-separated option prose", () => {
+        const result = parseFactoryQuestions(`## Q1 (task T1, open) — Labelled
+Context: Choose a rollout.
+Options considered: A — Enable the change for the first cohort and
+continue monitoring its error budget (recommended)
+B — Enable it for every cohort and
+accept the wider blast radius
+**A:**
+## Q2 (task T2, open) — Unlabelled
+Context: Choose a migration.
+Options considered: Keep the current format while the consumer is
+updated / Move every consumer now and
+coordinate the outage window
+**A:**`);
+
+        expect(result).toMatchObject({ status: "available" });
+        if (result.status === "available") {
+          expect(result.data.open).toMatchObject([
+            {
+              id: "Q1",
+              options: [
+                {
+                  label: "A",
+                  text: "Enable the change for the first cohort and continue monitoring its error budget (recommended)",
+                  recommended: true,
+                },
+                {
+                  label: "B",
+                  text: "Enable it for every cohort and accept the wider blast radius",
+                },
+              ],
+            },
+            {
+              id: "Q2",
+              proseOptions: [
+                "Keep the current format while the consumer is updated",
+                "Move every consumer now and coordinate the outage window",
+              ],
+            },
+          ]);
         }
       });
 

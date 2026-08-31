@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T55",
+  "branch": "factory/t55-structured-question-renderer",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-31T11:39:00Z"
+  "updated": "2026-08-31T11:41:08Z"
 }

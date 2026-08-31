@@ -11,6 +11,7 @@ import { readerWarning } from "./warnings";
 export const MAX_QUESTIONS_BYTES = 256 * 1024;
 export const MAX_QUESTIONS_LINES = 4096;
 export const MAX_QUESTION_LINE_LENGTH = 8192;
+export const MAX_QUESTION_OPTION_LENGTH = 8192;
 export const MAX_QUESTIONS = 128;
 export const MAX_QUESTIONS_WARNINGS = 32;
 export const MAX_QUESTION_FILED_AT_LENGTH = 64;
@@ -19,6 +20,7 @@ export const QUESTIONS_WARNING_CODES = [
   "WARNINGS_TRUNCATED",
   "QUESTIONS_TOO_MANY_LINES",
   "QUESTIONS_LINE_TOO_LONG",
+  "QUESTIONS_OPTION_TOO_LONG",
   "QUESTIONS_EMPTY",
   "QUESTIONS_TOO_MANY_ENTRIES",
   "QUESTIONS_MALFORMED_ENTRY",
@@ -104,48 +106,90 @@ function bodyField(
   return value || undefined;
 }
 
-function parseOptions(value: string | undefined): QuestionOption[] | undefined {
-  if (!value) return undefined;
-  const labelledLines = value
+function joinHardWraps(value: string): string {
+  return value
     .split("\n")
-    .filter((line) => line.trim().length > 0)
-    .map((line) => /^\s*([A-Z])\s*(?:—|-|:)\s*(.*)$/.exec(line));
-  let segments: string[];
-  if (labelledLines.length > 1) {
-    segments = [];
-    for (const line of labelledLines) {
-      const label = line?.[1];
-      const detail = line?.[2];
-      if (label === undefined || detail === undefined) return undefined;
-      segments.push(`${label} — ${detail}`);
-    }
-  } else {
-    segments = value.split(/\s+\/\s+|\s*;\s+(?=[A-Z](?:\s*(?:—|-|:)|\s))/);
-  }
-  if (segments.length < 1 || segments.length > 26) return undefined;
-  const options: QuestionOption[] = [];
-  for (const segment of segments) {
-    const match = /^([A-Z])(?:\s*(?:—|-|:)\s*([\s\S]*)|\s*)$/.exec(
-      segment.trim(),
-    );
-    if (!match) return undefined;
-    const label = match[1];
-    const rawText = match[2] ?? "";
-    if (label === undefined) return undefined;
-    const raw = rawText.trim();
-    const recommended = /\(\s*recommended\b/i.test(raw);
-    options.push({
-      label,
-      text: raw,
-      ...(recommended ? { recommended: true } : {}),
-    });
-  }
-  return options;
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ");
 }
 
-export function parseQuestionDetails(
-  text: string,
-): Omit<OpenQuestion, "id" | "taskId" | "title" | "text"> {
+function parseOptions(value: string | undefined): {
+  options?: QuestionOption[];
+  proseOptions?: string[];
+  optionsTooLong?: true;
+} {
+  if (!value) return {};
+  const lines = value.split("\n").filter((line) => line.trim().length > 0);
+  const first = lines[0]?.trim() ?? "";
+  const labelledStart = /^([A-Z])(?:\s*(?:—|-|:)\s*([\s\S]*)|\s*)$/;
+
+  // Legacy prose hard-wraps are continuations of the current option. A label
+  // at a line start, or after the historical semicolon/slash separators,
+  // starts the next option; ordinary capitals inside prose do not.
+  if (
+    labelledStart.test(
+      first.split(
+        /\s*;\s+(?=[A-Z]\s*(?:—|-|:))|\s+\/\s+(?=[A-Z](?:\s*(?:—|-|:)|\s*(?:\/|$)))/,
+      )[0] ?? "",
+    )
+  ) {
+    const segments: string[] = [];
+    for (const line of lines) {
+      const fragments = line
+        .trim()
+        .split(
+          /\s*;\s+(?=[A-Z]\s*(?:—|-|:))|\s+\/\s+(?=[A-Z](?:\s*(?:—|-|:)|\s*(?:\/|$)))/,
+        );
+      for (const fragment of fragments) {
+        if (labelledStart.test(fragment.trim())) segments.push(fragment.trim());
+        else if (segments.length > 0)
+          segments[segments.length - 1] =
+            `${segments.at(-1)} ${fragment.trim()}`;
+        else return {};
+      }
+    }
+    if (segments.length < 1 || segments.length > 26) return {};
+    const options: QuestionOption[] = [];
+    for (const segment of segments) {
+      const match = labelledStart.exec(segment);
+      if (match === null) return {};
+      const label = match[1];
+      if (label === undefined) return {};
+      const raw = (match[2] ?? "").trim();
+      if (raw.length > MAX_QUESTION_OPTION_LENGTH) {
+        return { optionsTooLong: true };
+      }
+      const recommended = /\(\s*recommended\b/i.test(raw);
+      options.push({
+        label,
+        text: raw,
+        ...(recommended ? { recommended: true } : {}),
+      });
+    }
+    return { options };
+  }
+
+  const proseOptions = joinHardWraps(value)
+    .split(/\s+\/\s+/)
+    .map((option) => option.trim())
+    .filter(Boolean);
+  if (
+    proseOptions.some((option) => option.length > MAX_QUESTION_OPTION_LENGTH)
+  ) {
+    return { optionsTooLong: true };
+  }
+  return proseOptions.length >= 2 && proseOptions.length <= 26
+    ? { proseOptions }
+    : {};
+}
+
+type ParsedQuestionDetails = Omit<
+  OpenQuestion,
+  "id" | "taskId" | "title" | "text"
+> & { optionsTooLong?: true };
+
+export function parseQuestionDetails(text: string): ParsedQuestionDetails {
   const lines = sourceLines(text).slice(1);
   const contextIndex = lines.findIndex((line) =>
     line.value.startsWith("Context:"),
@@ -190,11 +234,11 @@ export function parseQuestionDetails(
     answerIndex >= 0 ? answerIndex : lines.length,
     qualifierPrefix ?? "",
   );
-  const options = parseOptions(optionsText);
+  const parsedOptions = parseOptions(optionsText);
   const branch = PARKED_BRANCH.exec(context ?? "")?.[1];
   return {
     ...(context === undefined ? {} : { context }),
-    ...(options === undefined ? {} : { options }),
+    ...parsedOptions,
     ...(qualifier === undefined ? {} : { qualifier }),
     ...(branch === undefined ? {} : { branch }),
   };
@@ -393,13 +437,24 @@ export function parseFactoryQuestions(
         current.line.value,
       );
     }
+    const details = parseQuestionDetails(textSlice);
+    if (details.optionsTooLong) {
+      addWarning(
+        warnings,
+        "QUESTIONS_OPTION_TOO_LONG",
+        "a question option exceeds the structured rendering limit",
+        current.index + 1,
+        current.line.value,
+      );
+    }
+    const { optionsTooLong: _optionsTooLong, ...questionDetails } = details;
     open.push({
       id,
       taskId,
       title,
       ...(filedAtValid ? { filedAt: filedAtCandidate } : {}),
       text: textSlice,
-      ...parseQuestionDetails(textSlice),
+      ...questionDetails,
     });
   }
 

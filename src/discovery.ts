@@ -1,4 +1,5 @@
-import { lstat, opendir, realpath } from "node:fs/promises";
+import { lstat, open, opendir, realpath } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import {
@@ -57,6 +58,7 @@ interface DiscoveredRepositoryIdentity {
   path: string;
   device: bigint;
   inode: bigint;
+  handle: FileHandle;
 }
 
 const discoveredRepositoryIdentities = new WeakMap<
@@ -232,20 +234,54 @@ async function sameChildIdentity(
   }
 }
 
+async function isHeldChildIdentityCurrent(
+  expected: DiscoveredRepositoryIdentity,
+): Promise<boolean> {
+  try {
+    const held = await expected.handle.stat({ bigint: true });
+    if (
+      !held.isDirectory() ||
+      held.dev !== expected.device ||
+      held.ino !== expected.inode
+    ) {
+      return false;
+    }
+    return sameChildIdentity(
+      expected.root,
+      expected.name,
+      { device: expected.rootDevice, inode: expected.rootInode },
+      {
+        path: expected.path,
+        device: expected.device,
+        inode: expected.inode,
+      },
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function isRepositoryIdentityCurrent(
   repository: RepositorySource,
 ): Promise<boolean> {
   const expected = discoveredRepositoryIdentities.get(repository);
   if (expected === undefined) return true;
-  return sameChildIdentity(
-    expected.root,
-    expected.name,
-    { device: expected.rootDevice, inode: expected.rootInode },
-    {
-      path: expected.path,
-      device: expected.device,
-      inode: expected.inode,
-    },
+  return isHeldChildIdentityCurrent(expected);
+}
+
+export async function disposeDiscoveredRepositories(
+  repositories: readonly RepositorySource[],
+): Promise<void> {
+  await Promise.all(
+    repositories.map(async (repository) => {
+      const identity = discoveredRepositoryIdentities.get(repository);
+      if (identity === undefined) return;
+      try {
+        await identity.handle.close();
+      } catch {
+        // Closing an already-closed descriptor needs no recovery action.
+      }
+    }),
   );
 }
 
@@ -359,10 +395,38 @@ export async function discoverRepositories(
         }
         continue;
       }
+      let handle: FileHandle | undefined;
+      try {
+        handle = await open(identity.path, "r");
+        const held = await handle.stat({ bigint: true });
+        if (
+          !held.isDirectory() ||
+          held.dev !== identity.device ||
+          held.ino !== identity.inode
+        ) {
+          throw new Error("changed-child");
+        }
+      } catch {
+        try {
+          await handle?.close();
+        } catch {
+          // The candidate was not accepted, so a close failure is not recoverable.
+        }
+        addWarning(
+          warnings,
+          warning(
+            "DISCOVERY_IDENTITY_CHANGED",
+            "a discovery candidate changed while being checked",
+          ),
+        );
+        continue;
+      }
+      if (handle === undefined) continue;
       let name: string;
       try {
         name = parseRepositoryName(childName);
       } catch {
+        await handle.close();
         addWarning(
           warnings,
           warning("DISCOVERY_ENTRY_INVALID", "a discovery entry was ignored"),
@@ -371,6 +435,7 @@ export async function discoverRepositories(
       }
       candidates += 1;
       if (candidates > MAX_DISCOVERY_CANDIDATES) {
+        await handle.close();
         addWarning(
           warnings,
           warning(
@@ -381,6 +446,7 @@ export async function discoverRepositories(
         break;
       }
       if (names.has(name) || paths.has(identity.path)) {
+        await handle.close();
         addWarning(
           warnings,
           warning(
@@ -402,6 +468,7 @@ export async function discoverRepositories(
         state.data.project === undefined ||
         state.data.phase === undefined
       ) {
+        await handle.close();
         addWarning(
           warnings,
           warning(
@@ -411,7 +478,17 @@ export async function discoverRepositories(
         );
         continue;
       }
-      if (!(await sameChildIdentity(root, childName, expectedRoot, identity))) {
+      if (
+        !(await isHeldChildIdentityCurrent({
+          root,
+          name: childName,
+          rootDevice: expectedRoot.device,
+          rootInode: expectedRoot.inode,
+          ...identity,
+          handle,
+        }))
+      ) {
+        await handle.close();
         addWarning(
           warnings,
           warning(
@@ -436,7 +513,17 @@ export async function discoverRepositories(
           ),
         );
       }
-      if (!(await sameChildIdentity(root, childName, expectedRoot, identity))) {
+      if (
+        !(await isHeldChildIdentityCurrent({
+          root,
+          name: childName,
+          rootDevice: expectedRoot.device,
+          rootInode: expectedRoot.inode,
+          ...identity,
+          handle,
+        }))
+      ) {
+        await handle.close();
         addWarning(
           warnings,
           warning(
@@ -459,6 +546,7 @@ export async function discoverRepositories(
         path: identity.path,
         device: identity.device,
         inode: identity.inode,
+        handle,
       });
       repositories.push(repository);
       names.add(name);

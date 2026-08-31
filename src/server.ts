@@ -25,6 +25,7 @@ import type {
 } from "./contracts";
 import { API_SCHEMA_VERSION } from "./contracts";
 import {
+  disposeDiscoveredRepositories,
   discoverRepositories,
   isRepositoryIdentityCurrent,
   type DiscoveryResult,
@@ -245,9 +246,10 @@ export function createRequestHandler(
     const { pathname } = new URL(request.url);
     const isApi = pathname === "/api/fleet" || pathname.startsWith("/api/");
     let response: Response | undefined;
+    let discovery: DiscoveryResult | undefined;
 
     try {
-      const discovery = isApi
+      discovery = isApi
         ? await discover(config).catch(() => ({
             repositories: [...config.repositories],
             warnings: [
@@ -527,7 +529,13 @@ export function createRequestHandler(
     if (origin !== null && allowedOrigins.has(origin)) {
       response.headers.set("access-control-allow-origin", origin);
     }
-    return response;
+    try {
+      return response;
+    } finally {
+      if (discovery !== undefined) {
+        await disposeDiscoveredRepositories(discovery.repositories);
+      }
+    }
   };
 }
 

@@ -149,7 +149,7 @@ task.
 
 <!-- user-requested tasks get appended here by the driver -->
 
-- [~] T63 (standard) — parked review minors (batch)
+- [R] T63 (standard) — parked review minors (batch)
   - Keep an unavailable peer visible as an unavailable machine group in the dependency graph (PR #75 review).
   - Render a truncation-specific state rather than `No tasks` when the graph's global task budget skips a nonempty repository (PR #75 review).
   - Defer discovery until after cheap request rejection or bound shared discovery work (PR #80 review).
@@ -159,6 +159,7 @@ task.
   - Bound trailing punctuation stripping for inline worklog GitHub URLs and cover repeated punctuation (PR #82 review).
   - Filter edit-only answer drafts for repositories no longer visible on a still-configured machine before collecting duplicate repository names, so visible same-named repositories do not receive an unnecessary machine qualifier (PR #83 review).
   - deps: none
+  - pr: 84
 
 - [x] T11 (standard) — parked review minors (batch)
   - Add `O_NONBLOCK` when opening validated `state.json` so a locally planted FIFO cannot block the fleet snapshot before the existing regular-file check rejects it (PR #2 review).

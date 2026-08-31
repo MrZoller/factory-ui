@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T54",
+  "branch": "factory/t54-dependency-graph",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-31T10:48:00Z"
+  "updated": "2026-08-31T10:50:13Z"
 }

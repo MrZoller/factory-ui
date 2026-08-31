@@ -90,7 +90,7 @@ task.
 - [x] T53 (standard) — Reader rejects the new filed-at question grammar — new questions vanish from the UI; age display can now be real (Fixes #70)
   - acceptance: In `src/readers/questions.ts`, question contracts, `src/public/app.js`, and colocated reader/browser tests, accept both legacy question headings and the protocol's `filed-at` heading grammar around the one-time marker; expose a bounded valid RFC3339 UTC filed time without dropping the rest of an otherwise valid entry, warn on malformed or misplaced grammar, derive panel/queue age only from valid `filed-at` values, omit age for legacy entries, keep hostile timestamp text inert, and pass `bun test` plus `bun run lint`.
   - pr: 74
-- [R] T54 (standard) — fleet dependency graph: visualize what's blocked on what across factories (Fixes #69)
+- [x] T54 (standard) — fleet dependency graph: visualize what's blocked on what across factories (Fixes #69)
   - acceptance: In the bounded plan/question snapshot contracts and static dashboard surfaces under `src/`, add a machine/repository-grouped task dependency graph whose nodes show task/issue identity and runnable, building/review, question-blocked, held, and done states; render local `T<n>` and qualified cross-repository dependencies distinctly using the completed machine-readable contract from MrZoller/opencode-factory#92; deep-link blocked nodes to the existing question queue and PR-backed nodes to validated PR URLs; isolate malformed or unavailable repository data, preserve text-only rendering and responsive navigation, cover local and cross-repository edges plus hostile values in tests, and pass `bun test` plus `bun run lint`.
   - pr: 75
 - [ ] T55 (standard) — Question bodies render as dumped markdown: structured renderer rarely fires, raw fallback is a wall of text (Fixes #68)
@@ -140,6 +140,11 @@ task.
 ## Ad-hoc
 
 <!-- user-requested tasks get appended here by the driver -->
+
+- [!] T63 (trivial) — parked review minors (batch)
+  - Keep an unavailable peer visible as an unavailable machine group in the dependency graph (PR #75 review).
+  - Render a truncation-specific state rather than `No tasks` when the graph's global task budget skips a nonempty repository (PR #75 review).
+  - deps: none
 
 - [x] T11 (standard) — parked review minors (batch)
   - Add `O_NONBLOCK` when opening validated `state.json` so a locally planted FIFO cannot block the fleet snapshot before the existing regular-file check rejects it (PR #2 review).

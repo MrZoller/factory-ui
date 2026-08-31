@@ -582,10 +582,25 @@ describe("versioned read-only API", () => {
           method: "POST",
         }),
       ),
+      handler(
+        new Request(
+          "http://localhost/api/repo/owned/answers/123e4567-e89b-42d3-a456-426614174000",
+        ),
+      ),
+      handler(
+        new Request(
+          "http://localhost/api/repo/discovered/answers/123e4567-e89b-42d3-a456-426614174000",
+        ),
+      ),
+      handler(
+        new Request(
+          "http://localhost/api/repo/unknown/answers/123e4567-e89b-42d3-a456-426614174000",
+        ),
+      ),
     ]);
 
     expect(responses.map((response) => response.status)).toEqual([
-      405, 404, 405, 401, 405, 404, 404,
+      405, 404, 405, 401, 405, 404, 404, 401, 404, 404,
     ]);
     expect(discovery).not.toHaveBeenCalled();
   });

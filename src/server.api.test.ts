@@ -572,10 +572,20 @@ describe("versioned read-only API", () => {
           method: "GET",
         }),
       ),
+      handler(
+        new Request("http://localhost/api/repo/discovered/answers", {
+          method: "POST",
+        }),
+      ),
+      handler(
+        new Request("http://localhost/api/repo/unknown/answers", {
+          method: "POST",
+        }),
+      ),
     ]);
 
     expect(responses.map((response) => response.status)).toEqual([
-      405, 404, 405, 401, 405,
+      405, 404, 405, 401, 405, 404, 404,
     ]);
     expect(discovery).not.toHaveBeenCalled();
   });

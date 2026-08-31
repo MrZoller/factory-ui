@@ -303,13 +303,15 @@ export function createRequestHandler(
               if (explicitlyConfigured && request.method === "OPTIONS") {
                 response = answerPreflight(allowedMethod);
               } else if (
-                explicitlyConfigured &&
+                request.method !== "OPTIONS" &&
                 !authenticated(
                   request.headers.get("authorization"),
                   answerSecret,
                 )
               ) {
-                response = jsonError(401, "Unauthorized");
+                response = explicitlyConfigured
+                  ? jsonError(401, "Unauthorized")
+                  : textResponse(404, "Not Found");
               }
             }
           }
@@ -338,7 +340,7 @@ export function createRequestHandler(
         discovery === undefined
           ? config
           : { ...config, repositories: discovery.repositories };
-      if (pathname === "/api/fleet") {
+      if (response === undefined && pathname === "/api/fleet") {
         if (request.method !== "GET") {
           response = methodNotAllowed();
         } else {
@@ -351,7 +353,7 @@ export function createRequestHandler(
               : {}),
           });
         }
-      } else if (pathname.startsWith("/api/repo/")) {
+      } else if (response === undefined && pathname.startsWith("/api/repo/")) {
         const intakeRoute = answerRoute(pathname, requestConfig.repositories);
         const answerIntake = config.answerIntake;
         if (intakeRoute !== null && answerIntake !== undefined) {
@@ -567,7 +569,7 @@ export function createRequestHandler(
             });
           }
         }
-      } else {
+      } else if (response === undefined) {
         const asset = STATIC_FILES.get(pathname);
         if (asset === undefined) {
           response = textResponse(404, "Not Found");

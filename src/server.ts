@@ -381,6 +381,16 @@ export function createRequestHandler(
                               actor: answerIntake.actor,
                               secret: answerIntake.secret,
                             });
+                            if (
+                              !(await isRepositoryIdentityCurrent(
+                                intakeRoute.repository,
+                              ))
+                            ) {
+                              // The helper may have published before the
+                              // replacement became observable. Preserve the
+                              // reservation and require operator verification.
+                              return { status: "uncertain" as const };
+                            }
                             await idempotencyStore.complete(
                               intakeRoute.repository.path,
                               idempotencyKey,
@@ -443,6 +453,11 @@ export function createRequestHandler(
                   id: intakeRoute.id,
                   secret: answerIntake.secret,
                 });
+                if (
+                  !(await isRepositoryIdentityCurrent(intakeRoute.repository))
+                ) {
+                  throw new Error("repository unavailable");
+                }
                 response = Response.json(result, {
                   status: result.status === "unknown-record" ? 404 : 200,
                 });

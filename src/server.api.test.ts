@@ -440,6 +440,75 @@ describe("answer delivery API", () => {
     expect(submit).not.toHaveBeenCalled();
     expect(outcome).not.toHaveBeenCalled();
   });
+
+  test("fails answer results closed when a discovered child changes during the helper call", async () => {
+    const codeRoot = temporaryRoot();
+    const replacementRoot = temporaryRoot();
+    const repositoryPath = join(codeRoot, "discovered");
+    const replacement = join(replacementRoot, "replacement");
+    writeFactoryState(repositoryPath, "original");
+    writeFactoryState(replacement, "replacement-secret");
+    const discover = async () =>
+      discoverRepositories(
+        { repositories: [], codeRoots: [codeRoot] },
+        { runner: unavailableRemote },
+      );
+    const replace = () => {
+      rmSync(repositoryPath, { recursive: true });
+      symlinkSync(replacement, repositoryPath);
+    };
+    const submitHandler = createRequestHandler(
+      {
+        ...config([]),
+        codeRoots: [codeRoot],
+        answerIntake: { actor: "operator", secret },
+      },
+      {
+        discovery: discover,
+        submitAnswer: async () => {
+          replace();
+          return { status: "pending", id: answerId };
+        },
+        answerIdempotencyStore: new TestAnswerIdempotencyStore(),
+      },
+    );
+    const submission = await submitHandler(
+      new Request("http://localhost/api/repo/discovered/answers", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ question: "Q1", option: "A" }),
+      }),
+    );
+
+    rmSync(repositoryPath, { force: true });
+    writeFactoryState(repositoryPath, "original-again");
+    const outcomeHandler = createRequestHandler(
+      {
+        ...config([]),
+        codeRoots: [codeRoot],
+        answerIntake: { actor: "operator", secret },
+      },
+      {
+        discovery: discover,
+        answerOutcome: async () => {
+          replace();
+          return { status: "unknown-record" };
+        },
+      },
+    );
+    const result = await outcomeHandler(
+      new Request(`http://localhost/api/repo/discovered/answers/${answerId}`, {
+        headers: { Authorization: `Bearer ${secret}` },
+      }),
+    );
+
+    expect(submission.status).toBe(503);
+    expect(await submission.json()).toEqual({
+      error: "Submission status uncertain; operator verification required",
+    });
+    expect(result.status).toBe(503);
+    expect(await result.json()).toEqual({ error: "Answer intake unavailable" });
+  });
 });
 
 function unavailable(name: string): RepositoryFactorySnapshot {

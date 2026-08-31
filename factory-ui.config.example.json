@@ -2,16 +2,12 @@
   "machine": "mini",
   "bind": "100.64.0.10",
   "answerActor": "factory-operator",
+  "codeRoots": ["/Users/factory/code"],
   "repositories": [
     {
       "name": "factory-ui",
       "path": "/Users/factory/code/factory-ui",
       "githubUrl": "https://github.com/example/factory-ui"
-    },
-    {
-      "name": "product-api",
-      "path": "/Users/factory/code/product-api",
-      "githubUrl": "https://github.com/example/product-api"
     }
   ],
   "peers": [

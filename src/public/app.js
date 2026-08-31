@@ -1350,7 +1350,9 @@ function renderQuestionBody(parent, question) {
   return structured;
 }
 
-function renderQuestions(card, repository, now) {
+const questionIdentityHeadings = new WeakMap();
+
+function renderQuestions(card, repository, machine, now) {
   const open = readerData(repository.questions)?.open;
   if (Array.isArray(open) && open.length === 0) {
     const compact = card.ownerDocument.createElement("section");
@@ -1383,11 +1385,18 @@ function renderQuestions(card, repository, now) {
   for (const question of open) {
     const item = panel.ownerDocument.createElement("article");
     item.className = "text-entry question";
-    appendText(
+    const identity = appendText(
       item,
       "h5",
-      `${question?.id ?? "?"} · ${question?.taskId ?? "?"}`,
+      `${repository.name}/${question?.id ?? "?"} · ${question?.taskId ?? "?"}`,
+      "question-durable-identity",
     );
+    questionIdentityHeadings.set(identity, {
+      machine,
+      repository: repository.name,
+      question: question?.id ?? "?",
+      suffix: question?.taskId ?? "?",
+    });
     appendText(
       item,
       "p",
@@ -2049,7 +2058,7 @@ function renderRepository(repository, machine, documentRoot, now, generatedAt) {
   );
   renderCurrent(card, repository ?? {});
   renderLogs(card, repository ?? {}, now, generatedAt);
-  renderQuestions(card, repository ?? {}, now);
+  renderQuestions(card, repository ?? {}, machine, now);
   renderTasks(card, repository ?? {}, disclosure);
   const warnings = collectWarnings(repository ?? {});
   renderWorklog(
@@ -3523,6 +3532,60 @@ function questionHash(machine, repository, question) {
   return dashboardHash(machine, repository, question);
 }
 
+function duplicateRepositoryNames(documentRoot, views) {
+  const machinesByRepository = new Map();
+  const visibleMachines = new Set(views.map((view) => view.identity));
+  const add = (machine, repository) => {
+    let machines = machinesByRepository.get(repository);
+    if (!machines) {
+      machines = new Set();
+      machinesByRepository.set(repository, machines);
+    }
+    machines.add(machine);
+  };
+  for (const view of views) {
+    for (const repository of view.fleet?.repositories ?? []) {
+      add(view.identity, repository.name);
+    }
+  }
+  for (const state of getAnswerStore(documentRoot).values()) {
+    if (visibleMachines.has(state.machine))
+      add(state.machine, state.repository);
+  }
+  return new Set(
+    Array.from(machinesByRepository, ([repository, machines]) =>
+      machines.size > 1 ? repository : undefined,
+    ).filter(Boolean),
+  );
+}
+
+function questionDisplayIdentity(
+  machine,
+  repository,
+  question,
+  duplicatedRepositories,
+) {
+  const identity = `${repository}/${question}`;
+  return duplicatedRepositories.has(repository)
+    ? `${machine}/${identity}`
+    : identity;
+}
+
+function updateQuestionDetailIdentities(documentRoot, duplicatedRepositories) {
+  for (const heading of documentRoot.querySelectorAll(
+    ".question-durable-identity",
+  )) {
+    const parts = questionIdentityHeadings.get(heading);
+    if (!parts) continue;
+    heading.textContent = `${questionDisplayIdentity(
+      parts.machine,
+      parts.repository,
+      parts.question,
+      duplicatedRepositories,
+    )} · ${parts.suffix}`;
+  }
+}
+
 function compareQuestionQueueEntries(left, right) {
   return (
     compareQuestionText(left.repository.name, right.repository.name) ||
@@ -3971,7 +4034,7 @@ async function submitAnswerFromQueue(documentRoot, view, state) {
   }
 }
 
-function renderAnswerLifecycle(parent, documentRoot, view, state) {
+function renderAnswerLifecycle(parent, documentRoot, view, state, identity) {
   const lifecycle = documentRoot.createElement("section");
   lifecycle.className = "answer-lifecycle";
   if (state.status === "accepted") {
@@ -3984,7 +4047,7 @@ function renderAnswerLifecycle(parent, documentRoot, view, state) {
     appendText(
       lifecycle,
       "p",
-      `Answered by ${state.actor} via factory-ui`,
+      `${identity} · Answered by ${state.actor} via factory-ui`,
       "answer-attribution",
     );
   } else if (state.status === "rejected") {
@@ -3995,6 +4058,7 @@ function renderAnswerLifecycle(parent, documentRoot, view, state) {
       "answer-status chip chip-danger",
     );
     appendText(lifecycle, "p", state.reason, "answer-reason");
+    appendText(lifecycle, "p", identity, "answer-identity");
   } else {
     appendText(
       lifecycle,
@@ -4002,6 +4066,7 @@ function renderAnswerLifecycle(parent, documentRoot, view, state) {
       "pending application",
       "answer-status chip chip-info",
     );
+    appendText(lifecycle, "p", identity, "answer-identity");
     if (state.error) appendText(lifecycle, "p", state.error, "answer-error");
     if (state.resumed || !state.secret) {
       const resume = documentRoot.createElement("div");
@@ -4040,11 +4105,23 @@ function renderAnswerLifecycle(parent, documentRoot, view, state) {
   parent.append(lifecycle);
 }
 
-function renderAnswerForm(parent, documentRoot, view, question, state) {
+function renderAnswerForm(
+  parent,
+  documentRoot,
+  view,
+  question,
+  state,
+  identity,
+) {
   const form = documentRoot.createElement("div");
   form.className = "answer-form";
   if (state.stage === "review" || state.payload) {
-    appendText(form, "h4", "Review answer", "question-field-label");
+    appendText(
+      form,
+      "h4",
+      `Review answer · ${identity}`,
+      "question-field-label",
+    );
     if (state.payload?.option)
       appendText(
         form,
@@ -4208,6 +4285,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
   const visibleKeys = new Set();
   const questionOccurrences = new Map();
   const answerStore = getAnswerStore(documentRoot);
+  const duplicatedRepositories = duplicateRepositoryNames(documentRoot, views);
   for (const view of views) {
     for (const repository of view.fleet?.repositories ?? []) {
       for (const question of readerData(repository.questions)?.open ?? []) {
@@ -4263,6 +4341,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
     list.replaceChildren(
       textElement(documentRoot, "p", "No open questions", "empty"),
     );
+    updateQuestionDetailIdentities(documentRoot, duplicatedRepositories);
     return;
   }
   const cards = entries.map(
@@ -4271,6 +4350,12 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
       item.className = "question-queue-entry";
       const selection = hashSelection(documentRoot.defaultView);
       const key = answerKey(machine, repository.name, question.id);
+      const displayIdentity = questionDisplayIdentity(
+        machine,
+        repository.name,
+        question.id,
+        duplicatedRepositories,
+      );
       const hasUnambiguousLink =
         lifecycleOnly || questionOccurrences.get(key) === 1;
       if (
@@ -4283,7 +4368,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
         item.tabIndex = -1;
       }
       const title = documentRoot.createElement("h3");
-      const titleText = `${question.id} · ${question.title}`;
+      const titleText = `${displayIdentity} · ${question.title}`;
       if (hasUnambiguousLink) {
         const link = textElement(documentRoot, "a", titleText);
         link.href = questionHash(machine, repository.name, question.id);
@@ -4309,9 +4394,22 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
       let answerState = answerStore.get(key);
       if (lifecycleOnly) {
         if (answerState?.status === "uncertain") {
-          renderAnswerForm(item, documentRoot, view, question, answerState);
+          renderAnswerForm(
+            item,
+            documentRoot,
+            view,
+            question,
+            answerState,
+            displayIdentity,
+          );
         } else if (answerState) {
-          renderAnswerLifecycle(item, documentRoot, view, answerState);
+          renderAnswerLifecycle(
+            item,
+            documentRoot,
+            view,
+            answerState,
+            displayIdentity,
+          );
         }
         return item;
       }
@@ -4342,7 +4440,13 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
       if (references.length > 0) item.append(refs);
       const structured = renderQuestionBody(item, question);
       if (answerState?.id) {
-        renderAnswerLifecycle(item, documentRoot, view, answerState);
+        renderAnswerLifecycle(
+          item,
+          documentRoot,
+          view,
+          answerState,
+          displayIdentity,
+        );
         if (
           answerState.secret &&
           ["pending", "inflight"].includes(answerState.status)
@@ -4361,12 +4465,20 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
           };
           answerStore.set(key, answerState);
         }
-        renderAnswerForm(item, documentRoot, view, question, answerState);
+        renderAnswerForm(
+          item,
+          documentRoot,
+          view,
+          question,
+          answerState,
+          displayIdentity,
+        );
       }
       return item;
     },
   );
   list.replaceChildren(...cards);
+  updateQuestionDetailIdentities(documentRoot, duplicatedRepositories);
   list
     .querySelector(".question-queue-entry-linked")
     ?.scrollIntoView?.({ block: "start" });

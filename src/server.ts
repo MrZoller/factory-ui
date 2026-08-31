@@ -24,6 +24,7 @@ import type {
   UnknownAnswerOutcome,
 } from "./contracts";
 import { API_SCHEMA_VERSION } from "./contracts";
+import { discoverRepositories, type DiscoveryResult } from "./discovery";
 import {
   createFactoryFleetData,
   readRepositoryFactorySnapshot,
@@ -44,6 +45,7 @@ const STATIC_FILES = new Map([
 type FleetData = FactoryFleetData | FleetSnapshot;
 
 export interface HandlerDependencies {
+  discovery?: (config: AppConfigSource) => Promise<DiscoveryResult>;
   snapshot?: (config: AppConfigSource) => Promise<FleetData>;
   repositorySnapshot?: (
     repository: RepositorySource,
@@ -198,6 +200,7 @@ export function createRequestHandler(
   const outcome = dependencies.answerOutcome ?? getAnswerOutcome;
   const idempotencyStore =
     dependencies.answerIdempotencyStore ?? new DurableAnswerIdempotencyStore();
+  const discover = dependencies.discovery ?? discoverRepositories;
   const inFlightSubmissions = new Map<
     string,
     {
@@ -240,6 +243,21 @@ export function createRequestHandler(
     let response: Response | undefined;
 
     try {
+      const discovery = isApi
+        ? await discover(config).catch(() => ({
+            repositories: [...config.repositories],
+            warnings: [
+              {
+                code: "DISCOVERY_UNAVAILABLE",
+                message: "repository discovery could not be completed",
+              },
+            ],
+          }))
+        : undefined;
+      const requestConfig =
+        discovery === undefined
+          ? config
+          : { ...config, repositories: discovery.repositories };
       if (pathname === "/api/fleet") {
         if (request.method !== "GET") {
           response = methodNotAllowed();
@@ -247,11 +265,14 @@ export function createRequestHandler(
           response = Response.json({
             schemaVersion: API_SCHEMA_VERSION,
             generatedAt: now().toISOString(),
-            ...(await snapshot(config)),
+            ...(await snapshot(requestConfig)),
+            ...(discovery !== undefined && discovery.warnings.length > 0
+              ? { warnings: discovery.warnings }
+              : {}),
           });
         }
       } else if (pathname.startsWith("/api/repo/")) {
-        const intakeRoute = answerRoute(pathname, config.repositories);
+        const intakeRoute = answerRoute(pathname, requestConfig.repositories);
         const answerIntake = config.answerIntake;
         if (intakeRoute !== null && answerIntake !== undefined) {
           const allowedMethod =
@@ -408,7 +429,10 @@ export function createRequestHandler(
             }
           }
         } else {
-          const repository = repositorySelector(pathname, config.repositories);
+          const repository = repositorySelector(
+            pathname,
+            requestConfig.repositories,
+          );
           if (repository === null) {
             response = textResponse(404, "Not Found");
           } else if (request.method !== "GET") {

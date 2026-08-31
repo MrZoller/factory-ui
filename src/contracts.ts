@@ -58,6 +58,7 @@ export interface UnknownAnswerOutcome {
 export interface AppConfigSource {
   machine: string;
   repositories: RepositorySource[];
+  codeRoots?: string[];
   peers: PeerConfig[];
   port: number;
   bind?: string;
@@ -393,6 +394,7 @@ export interface FactoryFleetData {
   hostname: string;
   repositories: RepositoryFactorySnapshot[];
   peers: PeerConfig[];
+  warnings?: ReaderWarning[];
 }
 
 export interface FleetApiResponse extends FactoryFleetData {

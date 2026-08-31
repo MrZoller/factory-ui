@@ -381,6 +381,105 @@ function config(
 }
 
 describe("versioned read-only API", () => {
+  test("resolves discovery once per API request, refreshes fleets, routes discoveries, and falls back safely", async () => {
+    const discovery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        repositories: [{ name: "first", path: "/first" }],
+        warnings: [],
+      })
+      .mockResolvedValueOnce({
+        repositories: [{ name: "later", path: "/later" }],
+        warnings: [],
+      })
+      .mockRejectedValueOnce(new Error("private root"));
+    const snapshot = vi.fn(async (source: AppConfigSource) => ({
+      hostname: source.machine,
+      repositories: source.repositories.map(({ name }) => unavailable(name)),
+      peers: source.peers,
+    }));
+    const readRepository = vi.fn(async (repository: RepositorySource) =>
+      unavailable(repository.name),
+    );
+    const handler = createRequestHandler(
+      config([{ name: "explicit", path: "/explicit" }]),
+      {
+        discovery,
+        snapshot,
+        repositorySnapshot: readRepository,
+      },
+    );
+
+    const firstFleet = await handler(new Request("http://localhost/api/fleet"));
+    const discoveredRoute = await handler(
+      new Request("http://localhost/api/repo/later"),
+    );
+    const fallbackFleet = await handler(
+      new Request("http://localhost/api/fleet"),
+    );
+    await handler(new Request("http://localhost/"));
+
+    expect(
+      (await firstFleet.json()).repositories.map(
+        ({ name }: { name: string }) => name,
+      ),
+    ).toEqual(["first"]);
+    expect(discoveredRoute.status).toBe(200);
+    expect(readRepository).toHaveBeenLastCalledWith({
+      name: "later",
+      path: "/later",
+    });
+    expect((await fallbackFleet.json()).warnings).toEqual([
+      {
+        code: "DISCOVERY_UNAVAILABLE",
+        message: "repository discovery could not be completed",
+      },
+    ]);
+    expect(snapshot).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        repositories: [{ name: "explicit", path: "/explicit" }],
+      }),
+    );
+    expect(discovery).toHaveBeenCalledTimes(3);
+  });
+
+  test("uses discovered repositories for answer routes", async () => {
+    const secret = "secret";
+    const discovery = vi.fn(async () => ({
+      repositories: [{ name: "discovered", path: "/discovered" }],
+      warnings: [],
+    }));
+    const submit = vi.fn(async () => ({
+      status: "pending" as const,
+      id: "123e4567-e89b-42d3-a456-426614174000",
+    }));
+    const handler = createRequestHandler(
+      { ...config([]), answerIntake: { actor: "operator", secret } },
+      {
+        discovery,
+        submitAnswer: submit,
+        answerIdempotencyStore: new TestAnswerIdempotencyStore(),
+      },
+    );
+    const response = await handler(
+      new Request("http://localhost/api/repo/discovered/answers", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "123e4567-e89b-42d3-a456-426614174000",
+        },
+        body: JSON.stringify({ question: "Q1", option: "A" }),
+      }),
+    );
+
+    expect(response.status).toBe(202);
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ repositoryPath: "/discovered" }),
+    );
+    expect(discovery).toHaveBeenCalledTimes(1);
+  });
+
   test("serves every rich repository field with response and source timestamps", async () => {
     const fixture = createFactoryFixture();
     fixtures.push(fixture);

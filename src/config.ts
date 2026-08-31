@@ -8,6 +8,7 @@ export const DEFAULT_PORT = 7777;
 export const DEFAULT_BIND = "127.0.0.1";
 export const MAX_CONFIG_BYTES = 64 * 1024;
 export const MAX_REPOSITORIES = 32;
+export const MAX_CODE_ROOTS = 32;
 export const MAX_PEERS = 32;
 
 const MAX_NAME_LENGTH = 64;
@@ -42,6 +43,13 @@ function readIdentifier(value: unknown, field: string): string {
     throw new Error(`${field} must be a path-safe identifier`);
   }
   return result;
+}
+
+export function parseRepositoryName(
+  value: unknown,
+  field = "repository name",
+): string {
+  return readIdentifier(value, field);
 }
 
 function parseIpv6(value: string): number[] | null {
@@ -88,7 +96,10 @@ function parseBind(value: unknown): string {
     const octets = bind.split(".").map(Number);
     if (
       octets[0] === 127 ||
-      (octets[0] === 100 && octets[1]! >= 64 && octets[1]! <= 127)
+      (octets[0] === 100 &&
+        octets[1] !== undefined &&
+        octets[1] >= 64 &&
+        octets[1] <= 127)
     ) {
       return bind;
     }
@@ -145,7 +156,7 @@ function parseOrigin(
   return url.origin;
 }
 
-function parseGithubUrl(value: unknown, field: string): string {
+export function parseGithubUrl(value: unknown, field = "githubUrl"): string {
   const input = readString(value, field, MAX_URL_LENGTH);
   const match = /^https:\/\/github\.com\/([^/?#]+)\/([^/?#]+)\/?$/i.exec(input);
   if (match === null) {
@@ -170,10 +181,14 @@ function parseGithubUrl(value: unknown, field: string): string {
   ) {
     throw new Error(`${field} must be a GitHub repository URL`);
   }
-  const owner = match[1]!;
-  const repository = match[2]!.endsWith(".git")
-    ? match[2]!.slice(0, -4)
-    : match[2]!;
+  const owner = match[1];
+  const matchedRepository = match[2];
+  if (owner === undefined || matchedRepository === undefined) {
+    throw new Error(`${field} must be a GitHub repository URL`);
+  }
+  const repository = matchedRepository.endsWith(".git")
+    ? matchedRepository.slice(0, -4)
+    : matchedRepository;
   if (
     !GITHUB_OWNER.test(owner) ||
     !GITHUB_REPOSITORY.test(repository) ||
@@ -192,7 +207,11 @@ function parseGithubUrl(value: unknown, field: string): string {
   if (!accepted.includes(url.href)) {
     throw new Error(`${field} must be a canonical GitHub repository URL`);
   }
-  return accepted[0]!;
+  const canonical = accepted[0];
+  if (canonical === undefined) {
+    throw new Error(`${field} must be a canonical GitHub repository URL`);
+  }
+  return canonical;
 }
 
 function parseRepository(value: unknown, index: number): RepositoryConfig {
@@ -200,7 +219,7 @@ function parseRepository(value: unknown, index: number): RepositoryConfig {
     throw new Error(`repositories[${index}] must be an object`);
   }
   return {
-    name: readIdentifier(value.name, `repositories[${index}].name`),
+    name: parseRepositoryName(value.name, `repositories[${index}].name`),
     path: parseRepositoryPath(value.path, `repositories[${index}].path`),
     githubUrl: parseGithubUrl(
       value.githubUrl,
@@ -242,9 +261,21 @@ export function parseConfig(value: unknown): AppConfig {
     throw new Error("config must be a JSON object");
   }
   if (
-    !Array.isArray(value.repositories) ||
-    value.repositories.length === 0 ||
-    value.repositories.length > MAX_REPOSITORIES
+    value.repositories !== undefined &&
+    (!Array.isArray(value.repositories) ||
+      value.repositories.length > MAX_REPOSITORIES)
+  ) {
+    throw new Error("repositories must be a non-empty array");
+  }
+  if (
+    value.codeRoots !== undefined &&
+    (!Array.isArray(value.codeRoots) || value.codeRoots.length > MAX_CODE_ROOTS)
+  ) {
+    throw new Error("codeRoots must be an array");
+  }
+  if (
+    (!Array.isArray(value.repositories) || value.repositories.length === 0) &&
+    (!Array.isArray(value.codeRoots) || value.codeRoots.length === 0)
   ) {
     throw new Error("repositories must be a non-empty array");
   }
@@ -276,7 +307,12 @@ export function parseConfig(value: unknown): AppConfig {
     value.answerActor === undefined
       ? undefined
       : readString(value.answerActor, "answerActor", MAX_ANSWER_ACTOR_LENGTH);
-  const repositories = value.repositories.map(parseRepository);
+  const repositoryValues = value.repositories ?? [];
+  const codeRootValues = value.codeRoots ?? [];
+  const repositories = (repositoryValues as unknown[]).map(parseRepository);
+  const codeRoots = (codeRootValues as unknown[]).map((codeRoot, index) =>
+    parseRepositoryPath(codeRoot, `codeRoots[${index}]`),
+  );
   const peers = value.peers.map(parsePeer);
   const developmentOrigins = (developmentValues as unknown[]).map(
     (origin, index) =>
@@ -290,6 +326,7 @@ export function parseConfig(value: unknown): AppConfig {
     repositories.map(({ path }) => path),
     "repository roots must be unique",
   );
+  requireUnique(codeRoots, "code roots must be unique");
   requireUnique(
     [machine, ...peers.map(({ name }) => name)],
     "machine and peer names must be unique",
@@ -307,6 +344,7 @@ export function parseConfig(value: unknown): AppConfig {
   return {
     machine,
     repositories,
+    ...(value.codeRoots === undefined ? {} : { codeRoots }),
     peers,
     port: port as number,
     bind: parseBind(value.bind),
@@ -363,9 +401,24 @@ export async function loadConfig(path: string): Promise<AppConfig> {
     repositories.map(({ path: repositoryPath }) => repositoryPath),
     "canonical repository roots must be unique",
   );
+  const codeRoots = await Promise.all(
+    (config.codeRoots ?? []).map(async (codeRoot) => {
+      try {
+        const canonicalPath = await realpath(codeRoot);
+        if (!(await stat(canonicalPath)).isDirectory()) {
+          throw new Error("not-directory");
+        }
+        return canonicalPath;
+      } catch {
+        throw new Error("a code root is unavailable or invalid");
+      }
+    }),
+  );
+  requireUnique(codeRoots, "canonical code roots must be unique");
   return {
     ...config,
     repositories,
+    ...(config.codeRoots === undefined ? {} : { codeRoots }),
     ...(answerIntake === undefined ? {} : { answerIntake }),
   };
 }

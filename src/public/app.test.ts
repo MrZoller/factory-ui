@@ -2815,11 +2815,30 @@ accept unbounded input.
     ]);
   });
 
-  test("keeps table headers sticky and task-table scrolling internal", async () => {
+  test("keeps task scrolling horizontally contained while allowing vertical page chaining", async () => {
     const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+    expect(css).toMatch(/body\s*\{[^}]*overflow-x:\s*hidden;/s);
     expect(css).toMatch(/\.task-list-scroll\s*\{[^}]*max-height: 24rem;/s);
     expect(css).toMatch(/\.task-list-scroll\s*\{[^}]*overflow: auto;/s);
     expect(css).toMatch(/\.task-table-scroll\s*\{[^}]*overflow-x: auto;/s);
+    for (const selector of [".task-table-scroll", ".task-list-scroll"]) {
+      const escaped = selector.replace(".", "\\.");
+      expect(css).toMatch(
+        new RegExp(
+          `${escaped}\\s*\\{[^}]*overscroll-behavior-x:\\s*contain;`,
+          "s",
+        ),
+      );
+      expect(css).toMatch(
+        new RegExp(
+          `${escaped}\\s*\\{[^}]*overscroll-behavior-y:\\s*auto;`,
+          "s",
+        ),
+      );
+      expect(css).not.toMatch(
+        new RegExp(`${escaped}\\s*\\{[^}]*overscroll-behavior\\s*:`, "s"),
+      );
+    }
     expect(css).toMatch(/\.task-table thead th\s*\{[^}]*position: sticky;/s);
     expect(css).toMatch(/\.task-table\s*\{[^}]*table-layout: fixed;/s);
     expect(css).toMatch(

@@ -768,6 +768,89 @@ describe("answer lifecycle queue", () => {
     );
   });
 
+  test("ignores edit-only disappeared-repository drafts but retains durable and uncertain machine qualifiers", () => {
+    const document = dashboardDocument();
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "peer",
+          repository: "factory-ui",
+          question: "Q10",
+          status: "pending",
+        },
+      ]),
+    );
+    renderFleet(
+      fleet(
+        "mini",
+        [{ name: "peer", origin: "https://peer.example" }],
+        [answerableRepository()],
+      ),
+      document,
+      NOW,
+    );
+    expect(
+      document.querySelector(".question-queue-entry h3")?.textContent,
+    ).toBe("factory-ui/Q9 · Choose <img src=x onerror=1>");
+
+    const qualifiedDocument = dashboardDocument();
+    qualifiedDocument.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "peer",
+          repository: "factory-ui",
+          question: "Q10",
+          id: "123e4567-e89b-42d3-a456-426614174000",
+          status: "pending",
+        },
+      ]),
+    );
+    renderFleet(
+      fleet(
+        "mini",
+        [{ name: "peer", origin: "https://peer.example" }],
+        [answerableRepository()],
+      ),
+      qualifiedDocument,
+      NOW,
+    );
+    expect(
+      qualifiedDocument.querySelector(".question-queue-entry h3")?.textContent,
+    ).toBe("mini/factory-ui/Q9 · Choose <img src=x onerror=1>");
+
+    const uncertainDocument = dashboardDocument();
+    uncertainDocument.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "peer",
+          repository: "factory-ui",
+          question: "Q11",
+          status: "uncertain",
+          idempotencyKey: "223e4567-e89b-42d3-a456-426614174000",
+          payload: { question: "Q11", option: "A" },
+        },
+      ]),
+    );
+    renderFleet(
+      fleet(
+        "mini",
+        [{ name: "peer", origin: "https://peer.example" }],
+        [answerableRepository()],
+      ),
+      uncertainDocument,
+      NOW,
+    );
+    expect(
+      uncertainDocument.querySelector(".question-queue-entry h3")?.textContent,
+    ).toBe("mini/factory-ui/Q9 · Choose <img src=x onerror=1>");
+  });
+
   test("submits local answers once with the exact wire request and retains its idempotency key for retry", async () => {
     const document = dashboardDocument();
     const timers = fakeTimers();
@@ -4321,6 +4404,36 @@ accept unbounded input.
     expect(entry.querySelectorAll("script, img, [onerror]")).toHaveLength(0);
   });
 
+  test("links GitHub worklog URLs with repeated trailing punctuation while preserving that punctuation as text", () => {
+    const document = dashboardDocument();
+    const url = "https://github.com/example/factory-ui/pull/42";
+    const punctuation = ").,;:!?".repeat(32);
+    const repository = richRepository({
+      worklog: {
+        status: "available",
+        data: {
+          entries: [
+            {
+              date: "2026-08-16",
+              time: "12:00",
+              text: `- 2026-08-16 12:00 UTC - Reviewed ${url}${punctuation}`,
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const entry = document.querySelector(".worklog-entry")!;
+    const link = entry.querySelector<HTMLAnchorElement>(".worklog-url");
+    expect(link?.href).toBe(url);
+    expect(entry.querySelector(".worklog-summary")?.textContent).toBe(
+      `Reviewed PR #42${punctuation}`,
+    );
+  });
+
   test("keeps hostile worklog text inert and never invents remote links", () => {
     const document = dashboardDocument();
     const hostile =
@@ -6378,6 +6491,49 @@ describe("browser peer fan-out", () => {
     ).toContain("Unavailable");
   });
 
+  test("accepts server-valid bounded provider and model routing forms from peers", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "routing-peer", origin: "http://100.64.0.8:7777" };
+    const unusualModel = "provider with spaces/model?and=punctuation";
+    const unusualAgent = "agent provider/agent:model+variant";
+    const repository = richRepository({
+      routing: {
+        status: "available",
+        data: {
+          schemaVersion: 1,
+          recordedAt: "2026-08-16T11:59:00.000Z",
+          model: unusualModel,
+          smallModel: unusualModel,
+          agents: {
+            architect: {
+              provider: "agent provider",
+              model: "agent:model+variant",
+              steps: 1,
+            },
+          },
+        },
+        warnings: [],
+      },
+    });
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      Promise.resolve(
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [peer]))
+          : jsonResponse(fleet("routing-peer", [], [repository])),
+      ),
+    );
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    expect(document.querySelector(".peer-machine .unreachable")).toBeNull();
+    expect(document.querySelector(".peer-machine")?.textContent).toContain(
+      unusualModel,
+    );
+    expect(document.querySelector(".peer-machine")?.textContent).toContain(
+      unusualAgent,
+    );
+  });
+
   test("accepts a peer response with valid costs", async () => {
     const document = dashboardDocument();
     const peer = { name: "macbook", origin: "http://100.64.0.8:7777" };
@@ -7205,6 +7361,61 @@ describe("fleet dependency graph", () => {
     );
     expect(graph?.textContent).not.toContain("malformedT1 task");
     expect(graph?.querySelectorAll(".dependency-edge-cross")).toHaveLength(1);
+  });
+
+  test("keeps unavailable peers as machine graph groups and labels nonempty budget omissions", () => {
+    const document = dashboardDocument();
+    const tasks = Array.from({ length: 256 }, (_, index) =>
+      graphTask(`T${index + 1}`, "todo"),
+    );
+    renderFleet(
+      fleet(
+        "mini",
+        [{ name: "offline", origin: "https://offline.example" }],
+        [
+          graphRepository({
+            plan: {
+              status: "available",
+              data: {
+                tasks,
+                active: [],
+                review: [],
+                nextRunnable: tasks,
+                completed: [],
+                blocked: [],
+                remaining: [],
+              },
+              warnings: [],
+            },
+          }),
+          graphRepository({
+            name: "omitted",
+            plan: {
+              status: "available",
+              data: {
+                tasks: [graphTask("T257", "todo")],
+                active: [],
+                review: [],
+                nextRunnable: [],
+                completed: [],
+                blocked: [],
+                remaining: [],
+              },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const graph = document.querySelector("#dependency-graph")!;
+    expect(
+      graph.querySelector(".dependency-machine-unavailable")?.textContent,
+    ).toContain("offlineMachine unavailableDependency data unavailable");
+    expect(graph.textContent).toContain("Tasks omitted by graph limit");
+    expect(graph.textContent).not.toContain("omittedNo tasks");
   });
 
   test("isolates an over-limit peer task array before graph traversal", () => {

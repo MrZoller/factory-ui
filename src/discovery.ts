@@ -55,6 +55,7 @@ interface DiscoveredRepositoryIdentity {
   name: string;
   rootDevice: bigint;
   rootInode: bigint;
+  rootHandle: FileHandle;
   path: string;
   device: bigint;
   inode: bigint;
@@ -175,14 +176,42 @@ async function rootIdentity(root: string): Promise<{
   return { device: after.dev, inode: after.ino };
 }
 
+async function openRootIdentity(root: string): Promise<{
+  device: bigint;
+  inode: bigint;
+  handle: FileHandle;
+}> {
+  const handle = await open(root, "r");
+  try {
+    const held = await handle.stat({ bigint: true });
+    const current = await rootIdentity(root);
+    if (
+      !held.isDirectory() ||
+      held.dev !== current.device ||
+      held.ino !== current.inode
+    ) {
+      throw new Error("changed-root");
+    }
+    return { ...current, handle };
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+}
+
 async function sameRootIdentity(
   root: string,
-  expected: { device: bigint; inode: bigint },
+  expected: { device: bigint; inode: bigint; handle: FileHandle },
 ): Promise<boolean> {
   try {
+    const held = await expected.handle.stat({ bigint: true });
     const current = await rootIdentity(root);
     return (
-      current.device === expected.device && current.inode === expected.inode
+      held.isDirectory() &&
+      held.dev === expected.device &&
+      held.ino === expected.inode &&
+      current.device === expected.device &&
+      current.inode === expected.inode
     );
   } catch {
     return false;
@@ -192,7 +221,7 @@ async function sameRootIdentity(
 async function childIdentity(
   root: string,
   name: string,
-  rootExpected: { device: bigint; inode: bigint },
+  rootExpected: { device: bigint; inode: bigint; handle: FileHandle },
 ): Promise<{ path: string; device: bigint; inode: bigint }> {
   if (!(await sameRootIdentity(root, rootExpected))) {
     throw new Error("changed-root");
@@ -220,7 +249,7 @@ async function childIdentity(
 async function sameChildIdentity(
   root: string,
   name: string,
-  rootExpected: { device: bigint; inode: bigint },
+  rootExpected: { device: bigint; inode: bigint; handle: FileHandle },
   expected: { path: string; device: bigint; inode: bigint },
 ): Promise<boolean> {
   try {
@@ -250,7 +279,11 @@ async function isHeldChildIdentityCurrent(
     return sameChildIdentity(
       expected.root,
       expected.name,
-      { device: expected.rootDevice, inode: expected.rootInode },
+      {
+        device: expected.rootDevice,
+        inode: expected.rootInode,
+        handle: expected.rootHandle,
+      },
       {
         path: expected.path,
         device: expected.device,
@@ -273,13 +306,19 @@ export async function isRepositoryIdentityCurrent(
 export async function disposeDiscoveredRepositories(
   repositories: readonly RepositorySource[],
 ): Promise<void> {
+  const handles = new Set<FileHandle>();
+  for (const repository of repositories) {
+    const identity = discoveredRepositoryIdentities.get(repository);
+    if (identity !== undefined) {
+      handles.add(identity.handle);
+      handles.add(identity.rootHandle);
+    }
+  }
   await Promise.all(
-    repositories.map(async (repository) => {
-      const identity = discoveredRepositoryIdentities.get(repository);
-      if (identity === undefined) return;
+    [...handles].map(async (handle) => {
       try {
-        await identity.handle.close();
-        openDiscoveredHandles.delete(identity.handle);
+        await handle.close();
+        openDiscoveredHandles.delete(handle);
       } catch {
         // Closing an already-closed descriptor needs no recovery action.
       }
@@ -352,15 +391,30 @@ export async function discoverRepositories(
 
   for (const root of config.codeRoots ?? []) {
     if (repositories.length >= MAX_REPOSITORIES) break;
-    let expectedRoot: { device: bigint; inode: bigint };
+    let expectedRoot:
+      | {
+          device: bigint;
+          inode: bigint;
+          handle: FileHandle;
+        }
+      | undefined;
     let namesInRoot: string[] | null;
     try {
-      expectedRoot = await rootIdentity(root);
+      expectedRoot = await openRootIdentity(root);
+      openDiscoveredHandles.add(expectedRoot.handle);
       namesInRoot = await childNames(root);
       if (!(await sameRootIdentity(root, expectedRoot))) {
         throw new Error("changed-root");
       }
     } catch {
+      if (expectedRoot !== undefined) {
+        try {
+          await expectedRoot.handle.close();
+        } catch {
+          // The root was not retained, so a close failure needs no recovery.
+        }
+        openDiscoveredHandles.delete(expectedRoot.handle);
+      }
       addWarning(
         warnings,
         warning(
@@ -371,6 +425,8 @@ export async function discoverRepositories(
       continue;
     }
     if (namesInRoot === null) {
+      await expectedRoot.handle.close();
+      openDiscoveredHandles.delete(expectedRoot.handle);
       addWarning(
         warnings,
         warning(
@@ -382,6 +438,7 @@ export async function discoverRepositories(
     }
 
     let candidates = 0;
+    let retainedRoot = false;
     for (const childName of namesInRoot) {
       if (repositories.length >= MAX_REPOSITORIES) break;
       let identity: { path: string; device: bigint; inode: bigint };
@@ -497,6 +554,7 @@ export async function discoverRepositories(
           name: childName,
           rootDevice: expectedRoot.device,
           rootInode: expectedRoot.inode,
+          rootHandle: expectedRoot.handle,
           ...identity,
           handle,
         }))
@@ -533,6 +591,7 @@ export async function discoverRepositories(
           name: childName,
           rootDevice: expectedRoot.device,
           rootInode: expectedRoot.inode,
+          rootHandle: expectedRoot.handle,
           ...identity,
           handle,
         }))
@@ -558,14 +617,20 @@ export async function discoverRepositories(
         name: childName,
         rootDevice: expectedRoot.device,
         rootInode: expectedRoot.inode,
+        rootHandle: expectedRoot.handle,
         path: identity.path,
         device: identity.device,
         inode: identity.inode,
         handle,
       });
       repositories.push(repository);
+      retainedRoot = true;
       names.add(name);
       paths.add(identity.path);
+    }
+    if (!retainedRoot) {
+      await expectedRoot.handle.close();
+      openDiscoveredHandles.delete(expectedRoot.handle);
     }
   }
 

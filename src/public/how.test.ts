@@ -401,6 +401,36 @@ describe("how factory works page", () => {
     );
   });
 
+  test("does not substitute legacy routing when an explicit current-routing result is unavailable", () => {
+    const document = howDocument();
+    renderHow(
+      [
+        {
+          identity: "mini",
+          fleet: fleet({
+            currentRouting: { status: "unavailable", warnings: [] },
+          }),
+        },
+      ],
+      document,
+    );
+
+    expect(document.querySelector(".how-routing-source")?.textContent).toBe(
+      "Routing source: unavailable",
+    );
+    expect(
+      document.querySelector('[data-role="driver"] .unavailable')?.textContent,
+    ).toBe("Unavailable");
+
+    const legacyDocument = howDocument();
+    renderHow([{ identity: "mini", fleet: fleet() }], legacyDocument);
+    expect(
+      legacyDocument.querySelector(".how-routing-source")?.textContent,
+    ).toBe(
+      "Routing source: legacy peer fallback from a repository last-run snapshot",
+    );
+  });
+
   test("renders a missing role as unavailable without inventing model cost", () => {
     const document = howDocument();
     const data = fleet();

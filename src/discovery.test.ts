@@ -281,6 +281,34 @@ describe("repository discovery", () => {
     ]);
   });
 
+  test("holds the code-root identity through child validation and releases rejected-root handles", async () => {
+    const codeRoot = root();
+    const movedRoot = `${codeRoot}-moved`;
+    state(join(codeRoot, "candidate"));
+    const readState = vi.fn(async () => {
+      renameSync(codeRoot, movedRoot);
+      mkdirSync(codeRoot);
+      state(join(codeRoot, "replacement"), "replacement");
+      return {
+        status: "available" as const,
+        data: { project: "candidate", phase: "build" as const },
+        warnings: [] as [],
+      };
+    });
+
+    const result = await discoverRepositories(
+      { repositories: [], codeRoots: [codeRoot] },
+      { runner: remote, readState },
+    );
+
+    expect(result.repositories).toEqual([]);
+    expect(result.warnings).toContainEqual({
+      code: "DISCOVERY_IDENTITY_CHANGED",
+      message: "a discovery candidate changed while being checked",
+    });
+    await expect(disposeAllDiscoveredRepositories()).resolves.toBeUndefined();
+  });
+
   test("observes additions and removals on repeated scans", async () => {
     const codeRoot = root();
     const first = join(codeRoot, "first");

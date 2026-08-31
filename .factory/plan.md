@@ -114,8 +114,9 @@ task.
 - [x] T61 (standard) — UI polish follow-ups after #42 (how-page id ellipsis, table edge clipping, inline worklog URLs) (Fixes #55)
   - acceptance: In `/how` and dashboard rendering/styles plus colocated tests, keep full provider/model identifiers legible at 1280–1440px, make horizontally scrollable repository tables visibly discoverable or fit their cost columns at 1000–1100px, convert only policy-valid inline GitHub worklog URLs into safe concise links while leaving all others literal, and keep Current-panel approval facts readable below 1100px; preserve disclosure state, text-only rendering, URL validation, and responsive no-body-overflow behavior, and pass `bun test` plus `bun run lint`.
   - pr: 82
-- [~] T62 (standard) — queue view: question identity must be repo-qualified everywhere (Fixes #73)
+- [x] T62 (standard) — queue view: question identity must be repo-qualified everywhere (Fixes #73)
   - acceptance: In the question queue/detail and answer-delivery surfaces under `src/public/` plus colocated tests, display every question's durable identity as `<repo>/Q<n>` and include the machine when needed to disambiguate repositories across machines; use the qualified identity on every queue row, question detail header, answer confirmation, and notification copy emitted by this service; keep existing repository-bearing deep links aligned with the displayed identity, preserve text-only rendering for all source-derived names, and pass `bun test` plus `bun run lint`.
+  - pr: 83
 
 ## Risks
 
@@ -148,7 +149,7 @@ task.
 
 <!-- user-requested tasks get appended here by the driver -->
 
-- [ ] T63 (trivial) — parked review minors (batch)
+- [~] T63 (standard) — parked review minors (batch)
   - Keep an unavailable peer visible as an unavailable machine group in the dependency graph (PR #75 review).
   - Render a truncation-specific state rather than `No tasks` when the graph's global task budget skips a nonempty repository (PR #75 review).
   - Defer discovery until after cheap request rejection or bound shared discovery work (PR #80 review).
@@ -156,6 +157,7 @@ task.
   - Distinguish unavailable current routing from a field-omitted legacy last-run fallback in `/how` (PR #81 review).
   - Align browser and server routing validation grammar without rejecting an otherwise valid fleet response (PR #81 review).
   - Bound trailing punctuation stripping for inline worklog GitHub URLs and cover repeated punctuation (PR #82 review).
+  - Filter edit-only answer drafts for repositories no longer visible on a still-configured machine before collecting duplicate repository names, so visible same-named repositories do not receive an unnecessary machine qualifier (PR #83 review).
   - deps: none
 
 - [x] T11 (standard) — parked review minors (batch)

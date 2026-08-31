@@ -72,11 +72,13 @@ function availableData(result) {
 }
 
 function routingFor(fleet) {
-  const current =
-    fleet?.currentRouting?.status === "unavailable"
-      ? undefined
-      : fleet?.currentRouting?.data;
-  if (current) return { routing: current, source: "current" };
+  if (fleet?.currentRouting !== undefined) {
+    const current =
+      fleet.currentRouting.status === "unavailable"
+        ? undefined
+        : fleet.currentRouting.data;
+    return current ? { routing: current, source: "current" } : undefined;
+  }
   const legacy = fleet?.repositories
     ?.map((repository) =>
       repository.routing?.status === "unavailable"

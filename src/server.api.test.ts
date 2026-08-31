@@ -546,6 +546,65 @@ function config(
 }
 
 describe("versioned read-only API", () => {
+  test("rejects cheap invalid API routes, methods, and answer authentication before discovery", async () => {
+    const discovery = vi.fn(async () => ({ repositories: [], warnings: [] }));
+    const handler = createRequestHandler(
+      {
+        ...config([{ name: "owned", path: "/owned" }]),
+        answerIntake: { actor: "operator", secret: "secret" },
+      },
+      { discovery },
+    );
+
+    const responses = await Promise.all([
+      handler(new Request("http://localhost/api/fleet", { method: "POST" })),
+      handler(new Request("http://localhost/api/not-a-route")),
+      handler(
+        new Request("http://localhost/api/repo/owned", { method: "DELETE" }),
+      ),
+      handler(
+        new Request("http://localhost/api/repo/owned/answers", {
+          method: "POST",
+        }),
+      ),
+      handler(
+        new Request("http://localhost/api/repo/owned/answers", {
+          method: "GET",
+        }),
+      ),
+      handler(
+        new Request("http://localhost/api/repo/discovered/answers", {
+          method: "POST",
+        }),
+      ),
+      handler(
+        new Request("http://localhost/api/repo/unknown/answers", {
+          method: "POST",
+        }),
+      ),
+      handler(
+        new Request(
+          "http://localhost/api/repo/owned/answers/123e4567-e89b-42d3-a456-426614174000",
+        ),
+      ),
+      handler(
+        new Request(
+          "http://localhost/api/repo/discovered/answers/123e4567-e89b-42d3-a456-426614174000",
+        ),
+      ),
+      handler(
+        new Request(
+          "http://localhost/api/repo/unknown/answers/123e4567-e89b-42d3-a456-426614174000",
+        ),
+      ),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([
+      405, 404, 405, 401, 405, 404, 404, 401, 404, 404,
+    ]);
+    expect(discovery).not.toHaveBeenCalled();
+  });
+
   test("never exposes a replacement reached through a discovered child symlink", async () => {
     const codeRoot = temporaryRoot();
     const replacementRoot = temporaryRoot();

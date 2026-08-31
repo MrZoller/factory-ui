@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T62",
-  "branch": "factory/t62-qualified-question-identity",
+  "current_task": "T63",
+  "branch": "factory/t63-parked-review-minors",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-31T19:47:26Z"
+  "updated": "2026-08-31T20:30:09Z"
 }

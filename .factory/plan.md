@@ -149,7 +149,7 @@ task.
 
 <!-- user-requested tasks get appended here by the driver -->
 
-- [R] T63 (standard) — parked review minors (batch)
+- [x] T63 (standard) — parked review minors (batch)
   - Keep an unavailable peer visible as an unavailable machine group in the dependency graph (PR #75 review).
   - Render a truncation-specific state rather than `No tasks` when the graph's global task budget skips a nonempty repository (PR #75 review).
   - Defer discovery until after cheap request rejection or bound shared discovery work (PR #80 review).

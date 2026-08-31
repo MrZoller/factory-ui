@@ -284,8 +284,14 @@ p {
 }
 
 .routing-strip {
+  position: relative;
   margin-bottom: 1rem;
   padding: var(--space-3) var(--space-4);
+}
+
+.repository > .routing-strip {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
 }
 
 .routing-strip h3,
@@ -303,6 +309,24 @@ p {
   margin-bottom: var(--space-2) !important;
   color: var(--color-muted);
   overflow-wrap: anywhere;
+}
+
+.routing-freshness {
+  margin-bottom: var(--space-2) !important;
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+.routing-partial {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-4);
+}
+
+.how-routing-source {
+  margin: 0 0 var(--space-3);
+  color: var(--color-muted);
+  font-size: var(--text-xs);
 }
 
 .routing-agents {

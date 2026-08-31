@@ -72,13 +72,19 @@ function availableData(result) {
 }
 
 function routingFor(fleet) {
-  return fleet?.repositories
+  const current =
+    fleet?.currentRouting?.status === "unavailable"
+      ? undefined
+      : fleet?.currentRouting?.data;
+  if (current) return { routing: current, source: "current" };
+  const legacy = fleet?.repositories
     ?.map((repository) =>
       repository.routing?.status === "unavailable"
         ? undefined
         : repository.routing?.data,
     )
     .find(Boolean);
+  return legacy ? { routing: legacy, source: "legacy-last-run" } : undefined;
 }
 
 function splitModel(value) {
@@ -262,8 +268,21 @@ function renderOperators(documentRoot) {
 }
 
 function renderPipeline(documentRoot, fleet) {
-  const routing = routingFor(fleet);
+  const selectedRouting = routingFor(fleet);
+  const routing = selectedRouting?.routing;
   const diagram = element(documentRoot, "div", undefined, "pipeline-diagram");
+  diagram.append(
+    element(
+      documentRoot,
+      "p",
+      selectedRouting?.source === "current"
+        ? "Routing source: current configuration for the next factory run"
+        : selectedRouting?.source === "legacy-last-run"
+          ? "Routing source: legacy peer fallback from a repository last-run snapshot"
+          : "Routing source: unavailable",
+      "how-routing-source",
+    ),
+  );
   diagram.append(renderOperators(documentRoot));
   const stages = element(documentRoot, "div", undefined, "pipeline-stages");
   const gate = (label, detail) => {

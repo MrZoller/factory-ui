@@ -363,6 +363,44 @@ describe("how factory works page", () => {
     expect((globalThis as Record<string, unknown>).pwned).toBeUndefined();
   });
 
+  test("prefers current next-run routing and clearly falls back to legacy last-run routing", () => {
+    const document = howDocument();
+    const current = fleet({
+      currentRouting: {
+        status: "partial",
+        data: {
+          model: "openai/current",
+          smallModel: "openai/current-small",
+          agents: {
+            architect: {
+              provider: "openai",
+              model: "current-architect",
+              steps: 3,
+            },
+          },
+        },
+        warnings: [
+          { code: "CURRENT_ROUTING_INVALID_AGENT", message: "omitted" },
+        ],
+      },
+    });
+    renderHow([{ identity: "mini", fleet: current }], document);
+    expect(document.querySelector(".how-routing-source")?.textContent).toBe(
+      "Routing source: current configuration for the next factory run",
+    );
+    expect(
+      document.querySelector('[data-role="driver"] .agent-route')?.textContent,
+    ).toBe("openai/current");
+
+    const legacyDocument = howDocument();
+    renderHow([{ identity: "mini", fleet: fleet() }], legacyDocument);
+    expect(
+      legacyDocument.querySelector(".how-routing-source")?.textContent,
+    ).toBe(
+      "Routing source: legacy peer fallback from a repository last-run snapshot",
+    );
+  });
+
   test("renders a missing role as unavailable without inventing model cost", () => {
     const document = howDocument();
     const data = fleet();

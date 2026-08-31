@@ -633,6 +633,15 @@ describe("versioned read-only API", () => {
       hostname: source.machine,
       repositories: source.repositories.map(({ name }) => unavailable(name)),
       peers: source.peers,
+      currentRouting: {
+        status: "unavailable" as const,
+        warnings: [
+          {
+            code: "CURRENT_ROUTING_NOT_CONFIGURED",
+            message: "current opencode routing is not configured",
+          },
+        ],
+      },
     }));
     const readRepository = vi.fn(async (repository: RepositorySource) =>
       unavailable(repository.name),

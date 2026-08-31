@@ -26,9 +26,10 @@ defaults to `7777` when omitted. Machine-local
 ## Configuration
 
 The example is a valid configuration for `mini`. Replace its illustrative IP,
-clone paths, code roots, and GitHub URLs. A repository path or code root must
-be an existing, canonicalizable local directory. Repository names, repository
-paths, code roots, peer names, and peer origins must each be unique.
+clone paths, code roots, opencode config path, and GitHub URLs. A repository
+path or code root must be an existing, canonicalizable local directory.
+Repository names, repository paths, code roots, peer names, and peer origins
+must each be unique.
 
 `repositories` and `codeRoots` are both optional arrays, but at least one must
 contain an entry. Explicit repositories keep their configured name, path, and
@@ -44,6 +45,14 @@ service. The fleet, individual-repository, and answer routes use that request's
 same resolved list. Static HTML, JavaScript, and CSS requests do not scan code
 roots. A failed root or candidate produces a generic bounded fleet warning and
 does not prevent explicit repositories or other roots from being served.
+
+`opencodeConfigPath` is optional. When present, it must be an explicit absolute,
+normalized file path to this machine's `opencode.jsonc`. The service reads it
+once per fleet snapshot through a bounded, descriptor-checked, read-only open;
+regular files only are accepted, and symlinks are rejected. Omitting the field
+disables the current/next-run routing view without failing startup. A missing,
+unreadable, replaced, malformed, or oversized configured file makes only that
+view unavailable and never exposes the configured path in API warnings.
 
 To enable answering, set a non-secret `answerActor` in each machine's config
 and provide the shared credential only in the server process environment:
@@ -121,6 +130,12 @@ machine.
   string; an agent's optional step cap is an integer from 0 through 1,000,000.
   Optional model metadata is capped at 64 entries and 200 characters per
   string.
+- Current opencode routing: the optional configured `opencodeConfigPath` is
+  capped at 256 KiB, 256 top-level or per-agent fields, 64 agents, 128
+  characters per agent name, 1,024 characters per full provider/model id, and
+  a step cap from 0 through 1,000,000. JSONC line and block comments plus
+  trailing commas are accepted without treating comment-like string content as
+  syntax.
 - Task costs: `.factory/logs/costs.json` is capped at 64 KiB, 256 tasks, and 64
   models per task. Cost strings are capped at 1,024 characters.
 - Review metrics: `.factory/metrics.jsonl` is capped at 256 KiB, 4,096 lines,
@@ -214,6 +229,15 @@ link can be shown; its contents are not returned. Routing, cost, metrics, or
 spec absence and invalidity are independent and do not make repository state
 unavailable.
 
+The optional machine-level `opencodeConfigPath` is deliberately outside the
+repository `.factory` fixed-path allowlist. It is the only configuration-owned
+read target: no request or repository value can select it. The reader returns
+only top-level `model`, `small_model`, and bounded `agent.<name>.model`/`steps`
+routing fields; all unrelated opencode settings are ignored. Full
+`provider/model` identifiers are validated, output maps have null prototypes,
+and warning text never contains the external path. The dashboard labels this
+data as current configuration for the next factory run.
+
 Configured code roots add one narrow discovery boundary: the service reads
 bounded immediate directory metadata, rejects symlinks, validates and rechecks
 canonical direct-child identity, and applies the existing bounded
@@ -271,6 +295,13 @@ is reported as routing `Unavailable` with a warning. The optional `models` map
 is additive: malformed entries are omitted with partial status, model metadata
 strings are bounded, token limits are non-negative safe integers, and prices
 are finite non-negative numbers or null.
+
+Repository routing is the last routing recorded when that repository's factory
+ran. Each repository panel displays its validated `recordedAt` time and age so
+it can be compared directly with the machine's current/next-run configuration.
+The `/how` page prefers current routing; for older peer snapshots that omit the
+additive `currentRouting` field, it falls back to the first available repository
+snapshot and explicitly labels that source as a legacy last-run fallback.
 
 Costs use schema version 1:
 
@@ -371,6 +402,9 @@ machines have been deployed or verified.
 - **Configuration fails before startup:** check JSON syntax, duplicate names,
   normalized absolute paths, existing clone/code-root directories, canonical
   GitHub URLs, and the documented limits. Errors intentionally omit paths.
+- **Current routing is unavailable:** configure an absolute normalized regular
+  `opencode.jsonc` path, not a symlink, and check its JSONC syntax and size.
+  Omitting `opencodeConfigPath` intentionally leaves this feature disabled.
 - **A discovered repository is absent:** it must be an immediate non-symlink
   directory with a path-safe basename and a valid bounded
   `.factory/state.json`. Check fleet discovery warnings for a generic limit or

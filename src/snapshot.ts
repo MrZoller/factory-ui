@@ -17,6 +17,7 @@ import {
 } from "./liveness";
 import { isRepositoryIdentityCurrent } from "./discovery";
 import { readFactoryCosts } from "./readers/costs";
+import { readCurrentRouting } from "./readers/current-routing";
 import { readFactoryFile } from "./readers/file";
 import { readFactoryLogsWithSelection } from "./readers/logs";
 import { readFactoryMetrics } from "./readers/metrics";
@@ -292,9 +293,8 @@ export async function createFactoryFleetData(
     repository: RepositorySource,
   ) => Promise<RepositoryFactorySnapshot> = readRepositoryFactorySnapshot,
 ): Promise<FactoryFleetData> {
-  return {
-    hostname: config.machine,
-    repositories: await Promise.all(
+  const [repositories, currentRouting] = await Promise.all([
+    Promise.all(
       config.repositories.map(async (repository) => {
         try {
           if (!(await isRepositoryIdentityCurrent(repository))) {
@@ -309,7 +309,13 @@ export async function createFactoryFleetData(
         }
       }),
     ),
+    readCurrentRouting(config.opencodeConfigPath),
+  ]);
+  return {
+    hostname: config.machine,
+    repositories,
     peers: config.peers,
+    currentRouting,
   };
 }
 

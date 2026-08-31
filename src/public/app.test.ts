@@ -32,6 +32,7 @@ function dashboardDocument(): Document {
     '<span id="question-queue-count">0</span>',
     '<table id="fleet-summary"><tbody></tbody></table>',
     '<section id="question-queue"><h2 id="question-queue-heading"></h2><div id="question-queue-list"></div></section>',
+    '<section id="dependency-graph"><div id="dependency-graph-list"></div></section>',
     '<div id="machine-tabs" role="tablist"></div>',
     '<div id="repositories"></div>',
   ].join("");
@@ -6292,5 +6293,276 @@ describe("dashboard auto-refresh", () => {
     await older;
 
     expect(document.querySelector("#machine")?.textContent).toBe("newer");
+  });
+});
+
+describe("fleet dependency graph", () => {
+  function graphTask(
+    id: string,
+    status: string,
+    overrides: Record<string, unknown> = {},
+  ) {
+    return {
+      id,
+      status,
+      size: "standard",
+      title: `${id} task`,
+      localDependencies: [],
+      crossRepoDependencies: [],
+      runnable: status === "todo",
+      ...overrides,
+    };
+  }
+
+  function graphRepository(overrides: Record<string, unknown> = {}) {
+    const runnable = graphTask("T1", "todo", {
+      title: "Ready <img src=x onerror=globalThis.graphPwned=1>",
+      crossRepoDependencies: ["acme/media#17"],
+    });
+    const building = graphTask("T2", "active", {
+      localDependencies: ["T1"],
+    });
+    const review = graphTask("T3", "review", { pr: 42 });
+    const blocked = graphTask("T4", "blocked", { runnable: false });
+    const done = graphTask("T5", "completed", { runnable: false });
+    return richRepository({
+      name: "dashboard",
+      repositoryUrl: "https://github.com/example/dashboard",
+      planUrl:
+        "https://github.com/example/dashboard/blob/HEAD/.factory/plan.md",
+      state: {
+        status: "available",
+        data: { hold: true, currentTask: "T3", pr: 42 },
+        warnings: [],
+      },
+      plan: {
+        status: "available",
+        data: {
+          tasks: [runnable, building, review, blocked, done],
+          active: [building],
+          review: [review],
+          nextRunnable: [runnable],
+          completed: [done],
+          blocked: [blocked],
+          remaining: [],
+        },
+        warnings: [],
+      },
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q4",
+              taskId: "T4",
+              title: "Choose safe rollout",
+              text: "Question text",
+            },
+          ],
+        },
+        warnings: [],
+      },
+      ...overrides,
+    });
+  }
+
+  test("renders grouped local and cross-repository edges with every task state and safe destinations", () => {
+    const document = dashboardDocument();
+    renderFleet(fleet("mini", [], [graphRepository()]), document, NOW);
+
+    const graph = document.querySelector("#dependency-graph");
+    expect(graph?.querySelector(".dependency-machine")?.textContent).toBe(
+      "mini",
+    );
+    expect(graph?.querySelector(".dependency-repository h3")?.textContent).toBe(
+      "dashboard",
+    );
+    expect(graph?.textContent).toContain("T1 · Ready <img");
+    expect(
+      graph?.querySelectorAll(".dependency-state-runnable"),
+    ).not.toHaveLength(0);
+    expect(
+      graph?.querySelectorAll(".dependency-state-building"),
+    ).not.toHaveLength(0);
+    expect(
+      graph?.querySelectorAll(".dependency-state-question-blocked"),
+    ).not.toHaveLength(0);
+    expect(graph?.querySelectorAll(".dependency-state-held")).not.toHaveLength(
+      0,
+    );
+    expect(graph?.querySelectorAll(".dependency-state-done")).not.toHaveLength(
+      0,
+    );
+    const reviewDocument = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          graphRepository({
+            state: { status: "available", data: { hold: false }, warnings: [] },
+          }),
+        ],
+      ),
+      reviewDocument,
+      NOW,
+    );
+    expect(
+      reviewDocument.querySelectorAll(".dependency-state-review"),
+    ).not.toHaveLength(0);
+    expect(graph?.querySelectorAll(".dependency-edge-local")).toHaveLength(1);
+    expect(graph?.querySelectorAll(".dependency-edge-cross")).toHaveLength(1);
+    expect(graph?.textContent).toContain("acme/media#17");
+
+    const questionLink = graph?.querySelector<HTMLAnchorElement>(
+      '.dependency-state-question-blocked a[href="#machine=mini&repo=dashboard&question=Q4"]',
+    );
+    expect(questionLink?.textContent).toContain("T4");
+    const prLink = graph?.querySelector<HTMLAnchorElement>(
+      '.dependency-state-held a[href="https://github.com/example/dashboard/pull/42"]',
+    );
+    expect(prLink?.target).toBe("_blank");
+    expect(prLink?.rel).toBe("noopener noreferrer");
+    expect(document.querySelectorAll("#dependency-graph img")).toHaveLength(0);
+    expect((globalThis as Record<string, unknown>).graphPwned).toBeUndefined();
+  });
+
+  test("renders peer graph groups while isolating unavailable and malformed repository graph data", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "legion", origin: "https://legion.tailnet:7777" };
+    const malformed = graphRepository({
+      name: "malformed",
+      plan: {
+        status: "available",
+        data: { tasks: "not task data" },
+        warnings: [],
+      },
+    });
+    const unavailable = graphRepository({
+      name: "offline",
+      status: "unavailable",
+      plan: { status: "unavailable", warnings: [] },
+    });
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      Promise.resolve(
+        String(input) === "/api/fleet"
+          ? jsonResponse(
+              fleet(
+                "mini",
+                [peer],
+                [graphRepository(), malformed, unavailable],
+              ),
+            )
+          : jsonResponse(
+              fleet(
+                "legion",
+                [],
+                [
+                  graphRepository({
+                    name: "media",
+                    plan: {
+                      status: "available",
+                      data: {
+                        tasks: [
+                          graphTask("T17", "completed", {
+                            title: "Remote provider",
+                            crossRepoDependencies: [],
+                          }),
+                        ],
+                        active: [],
+                        review: [],
+                        nextRunnable: [],
+                        completed: [],
+                        blocked: [],
+                        remaining: [],
+                      },
+                      warnings: [],
+                    },
+                  }),
+                ],
+              ),
+            ),
+      ),
+    );
+
+    await expect(
+      loadFleet(document, fetcher, { now: () => NOW }),
+    ).resolves.toBe(true);
+    const graph = document.querySelector("#dependency-graph");
+    expect(graph?.textContent).toContain("Dependency data unavailable");
+    expect(graph?.textContent).toContain(
+      "Some malformed task data was isolated",
+    );
+    expect(graph?.textContent).not.toContain("malformedT1 task");
+    expect(graph?.querySelectorAll(".dependency-edge-cross")).toHaveLength(1);
+  });
+
+  test("isolates an over-limit peer task array before graph traversal", () => {
+    const document = dashboardDocument();
+    const oversized = Array.from({ length: 257 }, (_, index) =>
+      graphTask(`T${index + 1}`, "todo"),
+    );
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          graphRepository({
+            plan: {
+              status: "available",
+              data: { tasks: oversized },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const group = document.querySelector(".dependency-repository");
+    expect(group?.textContent).toContain(
+      "Some malformed task data was isolated",
+    );
+    expect(group?.querySelectorAll(".dependency-task")).toHaveLength(0);
+  });
+
+  test("keeps graph navigation hash-addressable and provides responsive static hooks", async () => {
+    const document = dashboardDocument();
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=dashboard&question=Q4";
+    renderFleet(fleet("mini", [], [graphRepository()]), document, NOW);
+
+    const link = document.querySelector<HTMLAnchorElement>(
+      ".dependency-state-question-blocked a",
+    );
+    expect(link?.getAttribute("href")).toBe(
+      "#machine=mini&repo=dashboard&question=Q4",
+    );
+    document.defaultView!.location.hash = link!.getAttribute("href")!;
+    document.defaultView!.dispatchEvent(
+      new document.defaultView!.Event("hashchange"),
+    );
+    expect(document.defaultView!.location.hash).toBe(
+      "#machine=mini&repo=dashboard&question=Q4",
+    );
+    expect(
+      document.querySelector(".question-queue-entry-linked"),
+    ).not.toBeNull();
+
+    document.defaultView!.location.hash = "#dependency-graph";
+    document.defaultView!.dispatchEvent(
+      new document.defaultView!.Event("hashchange"),
+    );
+    expect(document.defaultView!.location.hash).toBe("#dependency-graph");
+
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+    expect(css).toMatch(
+      /\.dependency-graph-section\s*\{[^}]*scroll-margin-top/,
+    );
+    expect(css).toMatch(/#dependency-graph-list\s*\{[^}]*display:\s*grid/);
+    expect(css).toMatch(
+      /@media \(max-width: 49\.999rem\)[\s\S]*#dependency-graph-list\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/,
+    );
   });
 });

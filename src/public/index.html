@@ -35,6 +35,9 @@
             <a class="button button-secondary" href="#question-queue">
               Questions <span id="question-queue-count">0</span>
             </a>
+            <a class="button button-secondary" href="#dependency-graph">
+              Dependencies
+            </a>
             <button id="refresh" class="button button-primary" type="button">
               Refresh
             </button>
@@ -64,6 +67,25 @@
             <tbody></tbody>
           </table>
         </div>
+      </section>
+      <section
+        id="dependency-graph"
+        class="dependency-graph-section content-section"
+        aria-labelledby="dependency-graph-heading"
+      >
+        <div class="section-heading-row">
+          <div>
+            <p class="eyebrow">Plan topology</p>
+            <h2 id="dependency-graph-heading">Fleet dependencies</h2>
+          </div>
+          <div class="dependency-legend" aria-label="Dependency legend">
+            <span class="dependency-edge dependency-edge-local">Local</span>
+            <span class="dependency-edge dependency-edge-cross"
+              >Cross-repo</span
+            >
+          </div>
+        </div>
+        <div id="dependency-graph-list" class="dependency-graph-groups"></div>
       </section>
       <section
         id="question-queue"

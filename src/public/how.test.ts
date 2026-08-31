@@ -507,19 +507,19 @@ describe("how factory works page", () => {
     expect(document.activeElement).toBe(refreshedSummary);
   });
 
-  test("uses responsive stage and operator grids without diagram overflow", () => {
+  test("wraps provider/model routes and uses a 3x2 pipeline grid below 1500px without diagram overflow", () => {
     expect(stylesheet).toMatch(
       /\.pipeline-stages\s*\{[^}]*grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\)/s,
     );
     expect(stylesheet).toMatch(
-      /@media \(max-width: 79\.999rem\)[\s\S]*?\.pipeline-stages\s*\{[^}]*repeat\(3, minmax\(0, 1fr\)\)/,
+      /@media \(max-width: 93\.749rem\)[\s\S]*?\.pipeline-stages\s*\{[^}]*repeat\(3, minmax\(0, 1fr\)\)/,
     );
     expect(stylesheet).toMatch(
       /@media \(max-width: 49\.999rem\)[\s\S]*?\.pipeline-stages,[\s\S]*?\.operator-nodes\s*\{[^}]*minmax\(0, 1fr\)/,
     );
     expect(stylesheet).toMatch(/\.operator-nodes\s*\{[^}]*repeat\(3, 1fr\)/s);
     expect(stylesheet).toMatch(
-      /@media \(max-width: 79\.999rem\)[\s\S]*?\.operator-nodes\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/,
+      /@media \(max-width: 93\.749rem\)[\s\S]*?\.operator-nodes\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/,
     );
     expect(stylesheet).not.toContain("min-width: 100rem");
     expect(stylesheet).not.toMatch(/\.pipeline-stage\s*\{[^}]*min-height:/s);
@@ -527,9 +527,12 @@ describe("how factory works page", () => {
     expect(stylesheet).not.toContain('content: "↳"');
   });
 
-  test("truncates model routes visually while retaining their full title", () => {
+  test("wraps model routes rather than truncating them", () => {
     expect(stylesheet).toMatch(
-      /\.agent-route\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/s,
+      /\.agent-route\s*\{[^}]*overflow-wrap:\s*anywhere;/s,
+    );
+    expect(stylesheet).not.toMatch(
+      /\.agent-route\s*\{[^}]*?(?:text-overflow:\s*ellipsis|white-space:\s*nowrap|overflow:\s*hidden)/s,
     );
   });
 

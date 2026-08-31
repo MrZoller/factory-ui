@@ -739,8 +739,16 @@ p {
   background: var(--color-surface);
 }
 
-.repository-summary-scroll {
+.repository-summary-region {
   margin: 1rem 0;
+}
+
+.repository-summary-hint {
+  display: none;
+  margin: 0 0 var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
 }
 
 .repository-summary th,
@@ -1064,11 +1072,9 @@ p {
 
 .agent-route {
   min-width: 0;
-  overflow: hidden;
   margin-top: var(--space-2);
   font-size: var(--text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .agent-model-details {
@@ -1919,8 +1925,8 @@ a:focus-visible {
   background: var(--color-canvas);
 }
 
-/* The process remains fully visible: three stages and two operators per row. */
-@media (max-width: 79.999rem) {
+/* Keep complete provider/model identifiers legible before six columns pinch. */
+@media (max-width: 93.749rem) {
   .pipeline-stages {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -1941,6 +1947,17 @@ a:focus-visible {
   .questions-panel,
   .questions-compact {
     grid-column: 1 / -1;
+  }
+
+  .repository-summary-hint {
+    display: block;
+  }
+}
+
+/* A half-width Current card needs one approval fact per row at this width. */
+@media (max-width: 68.749rem) {
+  .current-facts {
+    grid-template-columns: max-content minmax(0, 1fr);
   }
 }
 

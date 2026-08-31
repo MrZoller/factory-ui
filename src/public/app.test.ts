@@ -2860,6 +2860,45 @@ accept unbounded input.
     expect(css).not.toMatch(/\.questions-compact\s*\{[^}]*align-self:/s);
   });
 
+  test("keeps repository cost columns in an internally scrollable summary and shows a mid-width scroll hint", async () => {
+    const document = dashboardDocument();
+    renderFleet(fleet("mini", [], [richRepository()]), document, NOW);
+
+    const region = document.querySelector<HTMLElement>(
+      ".repository-summary-region",
+    )!;
+    const scroll = region.querySelector<HTMLElement>(
+      ".repository-summary-scroll.table-scroll",
+    )!;
+    expect(region.querySelector(".repository-summary-hint")?.textContent).toBe(
+      "Scroll horizontally for cost columns →",
+    );
+    expect(scroll.querySelector(".repository-summary")?.textContent).toContain(
+      "Total cost",
+    );
+    expect(scroll.querySelector(".repository-summary")?.textContent).toContain(
+      "Factory overhead",
+    );
+
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+    expect(css).toMatch(
+      /\.repository-summary-scroll\.table-scroll\s*\{|\.table-scroll\s*\{[^}]*overflow-x:\s*auto;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 74\.999rem\)[\s\S]*?\.repository-summary-hint\s*\{[^}]*display:\s*block;/,
+    );
+  });
+
+  test("uses four Current fact tracks on desktop and two term/value tracks below 1100px", async () => {
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+    expect(css).toMatch(
+      /\.current-facts\s*\{[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\) max-content minmax\(0, 1fr\);/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 68\.749rem\)[\s\S]*?\.current-facts\s*\{[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\);/,
+    );
+  });
+
   test("sizes summary and review tables instead of squeezing labels", async () => {
     const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
     for (const selector of [
@@ -4059,6 +4098,55 @@ accept unbounded input.
       "not a worklog stamp <em>at all</em>",
     );
     expect(malformed.querySelector(".worklog-body")).toBeNull();
+  });
+
+  test("renders policy-valid GitHub worklog URLs concisely in headlines and bodies while leaving unsafe URLs literal", () => {
+    const document = dashboardDocument();
+    const discussion =
+      "https://github.com/example/factory-ui/pull/42#discussion_r123";
+    const unsafe = [
+      "https://example.invalid/factory-ui/pull/42",
+      "https://user:secret@github.com/example/factory-ui/pull/42",
+      "https://github.com/example/factory-ui/pull/42?redirect=evil",
+      "https://github.com/example/factory-ui/pull/42#discussion_r0",
+      "https://github.com/example/factory-ui/pull/42#discussion_r123/extra",
+    ];
+    const repository = richRepository({
+      worklog: {
+        status: "available",
+        data: {
+          entries: [
+            {
+              date: "2026-08-16",
+              time: "12:00",
+              text: `- 2026-08-16 12:00 UTC - Reviewed (${discussion}). Follow-up ${discussion}; ${unsafe.join(" ")}.`,
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const entry = document.querySelector(".worklog-entry")!;
+    expect(entry.querySelector(".worklog-summary")?.textContent).toBe(
+      "Reviewed (PR #42 discussion).",
+    );
+    expect(entry.querySelector(".worklog-body")?.textContent).toContain(
+      "Follow-up PR #42 discussion;",
+    );
+    const links = Array.from(entry.querySelectorAll<HTMLAnchorElement>("a"));
+    expect(links.map((link) => [link.textContent, link.href])).toEqual([
+      ["PR #42 discussion", discussion],
+      ["PR #42 discussion", discussion],
+    ]);
+    links.forEach((link) => {
+      expect(link.target).toBe("_blank");
+      expect(link.rel).toBe("noopener noreferrer");
+    });
+    unsafe.forEach((url) => expect(entry.textContent).toContain(url));
+    expect(entry.querySelectorAll("script, img, [onerror]")).toHaveLength(0);
   });
 
   test("keeps hostile worklog text inert and never invents remote links", () => {

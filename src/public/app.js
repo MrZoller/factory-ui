@@ -203,6 +203,8 @@ function safeGithubUrl(value, kind) {
       /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/blob\/HEAD\/\.factory\/worklog\.md$/,
     questions:
       /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/blob\/HEAD\/\.factory\/questions\.md$/,
+    discussion:
+      /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]+\/pull\/[1-9][0-9]*#discussion_r[1-9][0-9]*$/,
   };
   const match = typeof value === "string" ? patterns[kind]?.exec(value) : null;
   if (
@@ -223,7 +225,9 @@ function safeGithubUrl(value, kind) {
       url.username !== "" ||
       url.password !== "" ||
       url.search !== "" ||
-      url.hash !== ""
+      (kind === "discussion"
+        ? !/^#discussion_r[1-9][0-9]*$/.test(url.hash)
+        : url.hash !== "")
     ) {
       return undefined;
     }
@@ -331,6 +335,19 @@ function worklogReferenceUrl(repositoryUrl, kind, value) {
   return undefined;
 }
 
+function conciseWorklogUrlLabel(href, kind) {
+  const url = new URL(href);
+  if (kind === "repository") return url.pathname.slice(1);
+  if (kind === "branch") return `branch ${url.pathname.split("/tree/")[1]}`;
+  if (kind === "pull") return `PR #${url.pathname.split("/").at(-1)}`;
+  if (kind === "issue") return `#${url.pathname.split("/").at(-1)}`;
+  if (kind === "commit") return url.pathname.split("/").at(-1).slice(0, 7);
+  if (kind === "discussion") {
+    return `PR #${url.pathname.split("/").at(-1)} discussion`;
+  }
+  return url.pathname.split("/").at(-1);
+}
+
 function safeBareGithubUrl(value) {
   for (const kind of [
     "repository",
@@ -342,9 +359,10 @@ function safeBareGithubUrl(value) {
     "spec",
     "worklog",
     "questions",
+    "discussion",
   ]) {
     const href = safeGithubUrl(value, kind);
-    if (href) return href;
+    if (href) return { href, label: conciseWorklogUrlLabel(href, kind) };
   }
   return undefined;
 }
@@ -362,17 +380,17 @@ function appendWorklogHighlight(parent, text, repositoryUrl) {
     if (token.startsWith("`")) {
       appendText(parent, "code", token.slice(1, -1));
     } else if (token.startsWith("https://")) {
-      let label = token;
+      let candidate = token;
       let suffix = "";
-      let href = safeBareGithubUrl(label);
-      if (!href && /[.,;:!?]$/.test(label)) {
-        suffix = label.slice(-1);
-        label = label.slice(0, -1);
-        href = safeBareGithubUrl(label);
+      let safeUrl = safeBareGithubUrl(candidate);
+      while (!safeUrl && /[).,;:!?]$/.test(candidate)) {
+        suffix = candidate.slice(-1) + suffix;
+        candidate = candidate.slice(0, -1);
+        safeUrl = safeBareGithubUrl(candidate);
       }
-      if (href) {
-        const link = textElement(parent.ownerDocument, "a", label);
-        link.href = href;
+      if (safeUrl) {
+        const link = textElement(parent.ownerDocument, "a", safeUrl.label);
+        link.href = safeUrl.href;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
         link.className = "worklog-reference worklog-url";
@@ -3109,6 +3127,13 @@ function renderRepositorySummaryRow(row, summary) {
 }
 
 function createRepositorySummary(documentRoot) {
+  const region = documentRoot.createElement("div");
+  const hint = textElement(
+    documentRoot,
+    "p",
+    "Scroll horizontally for cost columns →",
+    "repository-summary-hint",
+  );
   const scroll = documentRoot.createElement("div");
   const table = documentRoot.createElement("table");
   const head = documentRoot.createElement("thead");
@@ -3144,7 +3169,9 @@ function createRepositorySummary(documentRoot) {
   head.append(headingRow);
   table.append(head, body);
   scroll.append(table);
-  return { scroll, body };
+  region.className = "repository-summary-region";
+  region.append(hint, scroll);
+  return { region, body };
 }
 
 function createRepositoryView(
@@ -3294,7 +3321,7 @@ function updateMachineView(view, summary, fleet, now, unreachable = false) {
   );
   view.grid.replaceChildren(
     ...(fleet.warnings?.length > 0 ? [fleetWarnings] : []),
-    repositorySummary.scroll,
+    repositorySummary.region,
     repositoryTabs,
     repositoryPanels,
   );

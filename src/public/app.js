@@ -383,11 +383,15 @@ function appendWorklogHighlight(parent, text, repositoryUrl) {
       let candidate = token;
       let suffix = "";
       let safeUrl = safeBareGithubUrl(candidate);
-      while (/[).,;:!?]$/.test(candidate)) {
-        suffix = candidate.slice(-1) + suffix;
-        candidate = candidate.slice(0, -1);
-        safeUrl = safeBareGithubUrl(candidate);
-        if (safeUrl) break;
+      const punctuation = /[).,;:!?]+$/.exec(candidate);
+      if (punctuation) {
+        const stripped = candidate.slice(0, -punctuation[0].length);
+        const strippedUrl = safeBareGithubUrl(stripped);
+        if (strippedUrl) {
+          suffix = punctuation[0];
+          candidate = stripped;
+          safeUrl = strippedUrl;
+        }
       }
       if (safeUrl) {
         const link = textElement(parent.ownerDocument, "a", safeUrl.label);
@@ -2222,10 +2226,9 @@ function isBoundedRoutingString(value) {
 }
 
 function isRoutingModelId(value) {
-  return (
-    isBoundedRoutingString(value) &&
-    /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._:@+/-]*$/.test(value)
-  );
+  if (!isBoundedRoutingString(value)) return false;
+  const separator = value.indexOf("/");
+  return separator > 0 && separator < value.length - 1;
 }
 
 function isRoutingTimestamp(value) {
@@ -3549,7 +3552,10 @@ function duplicateRepositoryNames(documentRoot, views) {
     }
   }
   for (const state of getAnswerStore(documentRoot).values()) {
-    if (visibleMachines.has(state.machine))
+    if (
+      visibleMachines.has(state.machine) &&
+      (state.id || state.status === "uncertain")
+    )
       add(state.machine, state.repository);
   }
   return new Set(
@@ -4642,6 +4648,15 @@ function renderDependencyGraph(documentRoot, views) {
   let renderedTasks = 0;
   let availableTasks = 0;
   for (const view of views) {
+    if (!view.fleet) {
+      const group = documentRoot.createElement("article");
+      group.className = "dependency-repository dependency-machine-unavailable";
+      appendText(group, "p", view.identity, "eyebrow dependency-machine");
+      appendText(group, "h3", "Machine unavailable");
+      appendText(group, "p", "Dependency data unavailable", "unavailable");
+      groups.push(group);
+      continue;
+    }
     for (const repository of view.fleet?.repositories ?? []) {
       const group = documentRoot.createElement("article");
       group.className = "dependency-repository";
@@ -4681,7 +4696,12 @@ function renderDependencyGraph(documentRoot, views) {
         renderedTasks += 1;
       }
       if (list.childElementCount === 0)
-        appendText(group, "p", "No tasks", "empty");
+        appendText(
+          group,
+          "p",
+          validTasks.length > 0 ? "Tasks omitted by graph limit" : "No tasks",
+          validTasks.length > 0 ? "unavailable" : "empty",
+        );
       else group.append(list);
       groups.push(group);
     }

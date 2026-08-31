@@ -88,6 +88,17 @@ function jsonError(status: number, message: string): Response {
   return Response.json({ error: message }, { status });
 }
 
+function answerPreflight(allowedMethod: string): Response {
+  const response = new Response(null, { status: 204 });
+  response.headers.set("allow", allowedMethod);
+  response.headers.set("access-control-allow-methods", allowedMethod);
+  response.headers.set(
+    "access-control-allow-headers",
+    "Authorization, Content-Type, Idempotency-Key",
+  );
+  return response;
+}
+
 function repositorySelector(
   pathname: string,
   repositories: RepositorySource[],
@@ -249,17 +260,80 @@ export function createRequestHandler(
     let discovery: DiscoveryResult | undefined;
 
     try {
-      discovery = isApi
-        ? await discover(config).catch(() => ({
-            repositories: [...config.repositories],
-            warnings: [
-              {
-                code: "DISCOVERY_UNAVAILABLE",
-                message: "repository discovery could not be completed",
-              },
-            ],
-          }))
-        : undefined;
+      if (pathname === "/api/fleet" && request.method !== "GET") {
+        response = methodNotAllowed();
+      } else if (pathname.startsWith("/api/repo/")) {
+        const answerSecret = config.answerIntake?.secret;
+        const suffix = pathname.slice("/api/repo/".length);
+        const segments = suffix.split("/");
+        const answerKind =
+          (segments.length === 2 || segments.length === 3) &&
+          segments[0] &&
+          segments[1] === "answers"
+            ? segments.length === 2
+              ? "submit"
+              : "outcome"
+            : undefined;
+        const repositoryDetail =
+          suffix.length > 0 && !suffix.includes("/") && !suffix.includes("\\");
+        if (answerKind !== undefined) {
+          if (answerSecret === undefined) {
+            response = textResponse(404, "Not Found");
+          } else {
+            const allowedMethod =
+              answerKind === "submit" ? "POST, OPTIONS" : "GET, OPTIONS";
+            if (
+              request.method !== "OPTIONS" &&
+              request.method !== (answerKind === "submit" ? "POST" : "GET")
+            ) {
+              response = methodNotAllowed(allowedMethod);
+            } else {
+              let explicitlyConfigured = false;
+              try {
+                const name = decodeURIComponent(segments[0] ?? "");
+                explicitlyConfigured =
+                  !name.includes("/") &&
+                  !name.includes("\\") &&
+                  config.repositories.some(
+                    (repository) => repository.name === name,
+                  );
+              } catch {
+                // Malformed names remain ordinary not-found routes below.
+              }
+              if (explicitlyConfigured && request.method === "OPTIONS") {
+                response = answerPreflight(allowedMethod);
+              } else if (
+                explicitlyConfigured &&
+                !authenticated(
+                  request.headers.get("authorization"),
+                  answerSecret,
+                )
+              ) {
+                response = jsonError(401, "Unauthorized");
+              }
+            }
+          }
+        } else if (repositoryDetail) {
+          if (request.method !== "GET") response = methodNotAllowed();
+        } else {
+          response = textResponse(404, "Not Found");
+        }
+      } else if (isApi && pathname !== "/api/fleet") {
+        response = textResponse(404, "Not Found");
+      }
+
+      discovery =
+        isApi && response === undefined
+          ? await discover(config).catch(() => ({
+              repositories: [...config.repositories],
+              warnings: [
+                {
+                  code: "DISCOVERY_UNAVAILABLE",
+                  message: "repository discovery could not be completed",
+                },
+              ],
+            }))
+          : undefined;
       const requestConfig =
         discovery === undefined
           ? config
@@ -284,13 +358,7 @@ export function createRequestHandler(
           const allowedMethod =
             intakeRoute.kind === "submit" ? "POST, OPTIONS" : "GET, OPTIONS";
           if (request.method === "OPTIONS") {
-            response = new Response(null, { status: 204 });
-            response.headers.set("allow", allowedMethod);
-            response.headers.set("access-control-allow-methods", allowedMethod);
-            response.headers.set(
-              "access-control-allow-headers",
-              "Authorization, Content-Type, Idempotency-Key",
-            );
+            response = answerPreflight(allowedMethod);
           } else if (
             request.method !== (intakeRoute.kind === "submit" ? "POST" : "GET")
           ) {

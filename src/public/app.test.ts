@@ -6497,6 +6497,36 @@ describe("fleet dependency graph", () => {
     expect(graph?.querySelectorAll(".dependency-edge-cross")).toHaveLength(1);
   });
 
+  test("isolates an over-limit peer task array before graph traversal", () => {
+    const document = dashboardDocument();
+    const oversized = Array.from({ length: 257 }, (_, index) =>
+      graphTask(`T${index + 1}`, "todo"),
+    );
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          graphRepository({
+            plan: {
+              status: "available",
+              data: { tasks: oversized },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const group = document.querySelector(".dependency-repository");
+    expect(group?.textContent).toContain(
+      "Some malformed task data was isolated",
+    );
+    expect(group?.querySelectorAll(".dependency-task")).toHaveLength(0);
+  });
+
   test("keeps graph navigation hash-addressable and provides responsive static hooks", async () => {
     const document = dashboardDocument();
     document.defaultView!.location.hash =

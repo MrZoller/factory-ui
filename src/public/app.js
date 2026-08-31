@@ -4271,7 +4271,10 @@ function renderDependencyGraph(documentRoot, views) {
       appendText(group, "p", view.identity, "eyebrow dependency-machine");
       appendText(group, "h3", repository.name);
       const plan = readerData(repository.plan);
-      if (!Array.isArray(plan?.tasks)) {
+      if (
+        !Array.isArray(plan?.tasks) ||
+        plan.tasks.length > MAX_DEPENDENCY_GRAPH_TASKS
+      ) {
         appendText(
           group,
           "p",

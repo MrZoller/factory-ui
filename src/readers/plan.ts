@@ -183,9 +183,11 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
     )
       continue;
 
-    let dependencies: string[] | null = null;
-    let localDependencies: string[] | null = null;
-    let crossRepoDependencies: string[] | null = null;
+    // The protocol makes deps optional; omission means no prerequisites.
+    // Null remains reserved for a present declaration that failed validation.
+    let dependencies: string[] | null = [];
+    let localDependencies: string[] | null = [];
+    let crossRepoDependencies: string[] | null = [];
     let dependencyLines = 0;
     let pr: number | undefined;
     let prLines = 0;
@@ -338,17 +340,6 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
           ),
         );
       }
-    }
-    if (dependencyLines === 0) {
-      addWarning(
-        warnings,
-        planWarning(
-          "PLAN_MISSING_DEPS",
-          "task is missing dependency metadata",
-          index + 1,
-          line,
-        ),
-      );
     }
     parsed.push({
       id,

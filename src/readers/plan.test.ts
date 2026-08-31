@@ -55,7 +55,7 @@ describe("plan", () => {
         expect(result.warnings[0]!.code).toBe("PLAN_TOO_MANY_LINES");
       });
 
-      test("returns partial for plan with exactly MAX_PLAN_LINES (missing deps)", () => {
+      test("accepts a plan with exactly MAX_PLAN_LINES", () => {
         // Create a single task with enough lines to hit the limit
         // We need 4096 lines total, with the first being the task and rest being blank or comments
         const taskLine = `- [ ] T1 (trivial) — Task`;
@@ -65,7 +65,7 @@ describe("plan", () => {
         ).join("\n");
         const lines = taskLine + "\n" + blankLines;
         const result = parseFactoryPlan(lines);
-        expect(result.status).toBe("partial"); // Missing deps
+        expect(result.status).toBe("available");
         if (result.status === "partial" || result.status === "available") {
           expect(result.data.tasks).toHaveLength(1);
         }
@@ -85,10 +85,10 @@ describe("plan", () => {
         expect(result.warnings[0]!.excerpt?.endsWith("…")).toBe(true);
       });
 
-      test("returns partial for line with exactly MAX_PLAN_LINE_LENGTH (missing deps)", () => {
+      test("accepts a line with exactly MAX_PLAN_LINE_LENGTH", () => {
         const line = `- [ ] T1 (standard) — ${"x".repeat(MAX_PLAN_LINE_LENGTH - 27)}`;
         const result = parseFactoryPlan(line);
-        expect(result.status).toBe("partial"); // Missing deps
+        expect(result.status).toBe("available");
         if (result.status === "partial" || result.status === "available") {
           expect(result.data.tasks).toHaveLength(1);
         }
@@ -116,7 +116,7 @@ describe("plan", () => {
       test("parses todo task", () => {
         const plan = `- [ ] T1 (standard) — Implement feature`;
         const result = parseFactoryPlan(plan);
-        expect(result.status).toBe("partial");
+        expect(result.status).toBe("available");
         if (result.status === "partial" || result.status === "available") {
           expect(result.data.tasks).toHaveLength(1);
           expect(result.data.tasks[0]).toEqual({
@@ -124,10 +124,10 @@ describe("plan", () => {
             status: "todo",
             size: "standard",
             title: "Implement feature",
-            dependencies: null,
-            localDependencies: null,
-            crossRepoDependencies: null,
-            runnable: false,
+            dependencies: [],
+            localDependencies: [],
+            crossRepoDependencies: [],
+            runnable: true,
           });
         }
       });
@@ -519,13 +519,19 @@ describe("plan", () => {
         ).toBe(true);
       });
 
-      test("warns when task is missing dependency metadata", () => {
+      test("treats omitted dependency metadata as no prerequisites", () => {
         const plan = `- [ ] T1 (standard) — Task without deps`;
         const result = parseFactoryPlan(plan);
-        expect(
-          result.warnings.some((w) => w.code === "PLAN_MISSING_DEPS"),
-        ).toBe(true);
-        expect(result.warnings[0]!.line).toBe(1);
+        expect(result.status).toBe("available");
+        expect(result.warnings).toEqual([]);
+        if (result.status === "available") {
+          expect(result.data.tasks[0]).toMatchObject({
+            dependencies: [],
+            localDependencies: [],
+            crossRepoDependencies: [],
+            runnable: true,
+          });
+        }
       });
 
       test("warns about malformed dependencies line", () => {
@@ -613,13 +619,15 @@ describe("plan", () => {
         }
       });
 
-      test("does not identify runnable task when dependencies are not completed", () => {
+      test("does not identify the dependent task when its dependency is not completed", () => {
         const plan = `- [ ] T1 (standard) — Task
   - deps: T2
 - [ ] T2 (standard) — Dependency`;
         const result = parseFactoryPlan(plan);
         if (result.status === "partial" || result.status === "available") {
-          expect(result.data.nextRunnable).toHaveLength(0);
+          expect(result.data.nextRunnable.map((task) => task.id)).toEqual([
+            "T2",
+          ]);
           expect(result.data.tasks[0]!.runnable).toBe(false);
         }
       });
@@ -679,8 +687,8 @@ describe("plan", () => {
           expect(result.data.completed[0]!.id).toBe("T4");
           expect(result.data.blocked).toHaveLength(1);
           expect(result.data.blocked[0]!.id).toBe("T5");
-          expect(result.data.remaining).toHaveLength(1);
-          expect(result.data.remaining[0]!.id).toBe("T1");
+          expect(result.data.remaining).toHaveLength(0);
+          expect(result.data.nextRunnable[0]!.id).toBe("T1");
         }
       });
 
@@ -751,13 +759,13 @@ describe("plan", () => {
         expect(result.warnings[0]!.code).toBe("PLAN_TOO_MANY_TASKS");
       });
 
-      test("returns partial for plan with exactly MAX_PLAN_TASKS (missing deps)", () => {
+      test("accepts a plan with exactly MAX_PLAN_TASKS", () => {
         const lines = Array.from(
           { length: MAX_PLAN_TASKS },
           (_, i) => `- [ ] T${i + 1} (standard) — Task ${i + 1}`,
         ).join("\n");
         const result = parseFactoryPlan(lines);
-        expect(result.status).toBe("partial");
+        expect(result.status).toBe("available");
         if (result.status === "partial" || result.status === "available") {
           expect(result.data.tasks).toHaveLength(MAX_PLAN_TASKS);
         }
@@ -853,7 +861,8 @@ describe("plan", () => {
         // Create many malformed tasks to trigger warning truncation
         const lines = Array.from(
           { length: MAX_PLAN_WARNINGS + 5 },
-          (_, i) => `- [ ] T${i + 1} (standard) — Task`, // Missing deps
+          (_, i) =>
+            `- [ ] T${i + 1} (standard) — Task\n  - deps: malformed#${i + 1}`,
         ).join("\n");
         const result = parseFactoryPlan(lines);
         expect(result.warnings).toHaveLength(MAX_PLAN_WARNINGS);
@@ -886,7 +895,9 @@ describe("plan", () => {
         const result = parseFactoryPlan(plan);
         if (result.status === "partial" || result.status === "available") {
           expect(result.data.tasks[0]!.runnable).toBe(false);
-          expect(result.data.nextRunnable).toHaveLength(0);
+          expect(result.data.nextRunnable.map((task) => task.id)).toEqual([
+            "T2",
+          ]);
         }
       });
 
@@ -982,7 +993,8 @@ describe("plan", () => {
     });
 
     test("returns partial for valid UTF-8 with warnings", async () => {
-      const plan = `- [ ] T1 (standard) — Task without deps`;
+      const plan = `- [ ] T1 (standard) — Task with malformed deps
+  - deps: malformed`;
       await Bun.write(join(factoryDir, "plan.md"), plan);
 
       const result = await readFactoryPlan(tempDir);

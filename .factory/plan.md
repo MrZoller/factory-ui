@@ -156,7 +156,7 @@ task.
   - Retain a code-root handle while discovery validates child identities to harden root inode reuse (PR #80 review).
   - Distinguish unavailable current routing from a field-omitted legacy last-run fallback in `/how` (PR #81 review).
   - Align browser and server routing validation grammar without rejecting an otherwise valid fleet response (PR #81 review).
- - Bound trailing punctuation stripping for inline worklog GitHub URLs and cover repeated punctuation (PR #82 review).
+  - Bound trailing punctuation stripping for inline worklog GitHub URLs and cover repeated punctuation (PR #82 review).
   - Filter edit-only answer drafts for repositories no longer visible on a still-configured machine before collecting duplicate repository names, so visible same-named repositories do not receive an unnecessary machine qualifier (PR #83 review).
   - deps: none
 

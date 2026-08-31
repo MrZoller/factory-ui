@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T59",
+  "branch": "factory/t59-repository-discovery",
   "pr": null,
   "hold": false,
-  "updated": "2026-08-31T16:45:00Z"
+  "updated": "2026-08-31T16:47:04Z"
 }

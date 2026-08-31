@@ -105,7 +105,7 @@ task.
 - [x] T58 (standard) — Scroll trap: task-list scrollbox captures the wheel and never chains back to the page (Fixes #63)
   - acceptance: In `src/public/styles.css`, task-list rendering in `src/public/app.js` if needed, and colocated tests, ensure wheel scrolling over expanded task lists can return to page scrolling at the inner boundary without requiring the pointer to leave the panel; retain bounded long-list presentation and keyboard access, avoid horizontal body overflow, cover collapsed and expanded task-list behavior, and pass `bun test` plus `bun run lint`.
   - pr: 79
-- [R] T59 (standard) — serve: repositories must be hand-registered in config — auto-add factory projects that exist on the machine (Fixes #59)
+- [x] T59 (standard) — serve: repositories must be hand-registered in config — auto-add factory projects that exist on the machine (Fixes #59)
   - acceptance: In `src/config.ts`, filesystem/discovery modules, `src/snapshot.ts`/server composition, README/example configuration, and colocated tests, support a bounded configured code-root scan for child repositories containing a valid `.factory/state.json`; merge discovered repositories with explicit entries without replacing explicit names, paths, or GitHub URLs; derive a remote URL only through a fixed shell-free bounded Git invocation and existing URL validation; refresh discovery without restarting the service; isolate unreadable, malformed, duplicate, symlink-escaping, or hostile entries with safe warnings; preserve fixed read boundaries and pass `bun test` plus `bun run lint`.
   - pr: 80
 - [ ] T60 (standard) — Routing display is stale and machine-global: show per-repo routing plus current opencode config (Fixes #58)
@@ -149,6 +149,8 @@ task.
 - [!] T63 (trivial) — parked review minors (batch)
   - Keep an unavailable peer visible as an unavailable machine group in the dependency graph (PR #75 review).
   - Render a truncation-specific state rather than `No tasks` when the graph's global task budget skips a nonempty repository (PR #75 review).
+  - Defer discovery until after cheap request rejection or bound shared discovery work (PR #80 review).
+  - Retain a code-root handle while discovery validates child identities to harden root inode reuse (PR #80 review).
   - deps: none
 
 - [x] T11 (standard) — parked review minors (batch)

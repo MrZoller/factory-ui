@@ -532,6 +532,111 @@ describe("answer lifecycle queue", () => {
     );
   });
 
+  test("qualifies duplicate-repository question identities", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "macbook", origin: "https://macbook.example" };
+    const local = answerableRepository({ name: "factory-ui" });
+    const remote = answerableRepository({
+      name: "factory-ui",
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q10",
+              taskId: "T10",
+              title: "Peer question",
+              text: "raw",
+              context: "Context",
+              options: [{ label: "A", text: "Proceed" }],
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "macbook",
+          repository: "factory-ui",
+          question: "Q10",
+          id: "123e4567-e89b-42d3-a456-426614174000",
+          status: "accepted",
+          actor: "Verified Actor",
+        },
+      ]),
+    );
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      Promise.resolve(
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [peer], [local]))
+          : jsonResponse(fleet("macbook", [], [remote])),
+      ),
+    );
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    expect(
+      Array.from(
+        document.querySelectorAll(".question-queue-entry h3"),
+        (heading) => heading.textContent,
+      ),
+    ).toEqual([
+      "mini/factory-ui/Q9 · Choose <img src=x onerror=1>",
+      "macbook/factory-ui/Q10 · Peer question",
+    ]);
+    expect(
+      Array.from(
+        document.querySelectorAll<HTMLAnchorElement>(
+          ".question-queue-entry h3 a",
+        ),
+        (link) => [link.textContent, link.getAttribute("href")],
+      ),
+    ).toEqual([
+      [
+        "mini/factory-ui/Q9 · Choose <img src=x onerror=1>",
+        "#machine=mini&repo=factory-ui&question=Q9",
+      ],
+      [
+        "macbook/factory-ui/Q10 · Peer question",
+        "#machine=macbook&repo=factory-ui&question=Q10",
+      ],
+    ]);
+    expect(
+      Array.from(
+        document.querySelectorAll(".questions-panel article.question h5"),
+        (heading) => heading.textContent,
+      ),
+    ).toEqual(["mini/factory-ui/Q9 · T8", "macbook/factory-ui/Q10 · T10"]);
+
+    const option = document.querySelector<HTMLInputElement>(
+      '.question-queue-entry input[type="radio"]',
+    )!;
+    option.checked = true;
+    option.dispatchEvent(new document.defaultView!.Event("change"));
+    const secret = document.querySelector<HTMLInputElement>(
+      '.question-queue-entry input[type="password"]',
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new document.defaultView!.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Review answer")!
+      .click();
+
+    expect(document.querySelector(".answer-form")?.textContent).toContain(
+      "mini/factory-ui/Q9",
+    );
+    expect(
+      document.querySelector(".answer-attribution")?.textContent,
+    ).toContain("macbook/factory-ui/Q10");
+    expect(document.querySelectorAll(".question-queue-entry img")).toHaveLength(
+      0,
+    );
+  });
+
   test("keeps the T50 open header count separate from lifecycle-only cards and renders hostile terminal text inert", () => {
     const document = dashboardDocument();
     document.defaultView!.localStorage.setItem(
@@ -1224,7 +1329,7 @@ describe("answer lifecycle queue", () => {
       "applied/consumed",
     );
     expect(document.querySelector(".answer-attribution")?.textContent).toBe(
-      "Answered by Verified via factory-ui",
+      "factory-ui/Q9 · Answered by Verified via factory-ui",
     );
     controller.cleanup();
   });
@@ -1514,7 +1619,7 @@ describe("local dashboard rendering", () => {
         document.querySelectorAll(".question-queue-entry h3"),
         (node) => node.textContent,
       ),
-    ).toEqual([`Q2 · ${hostile}`, "Q10 · Later", "Q1 · Last"]);
+    ).toEqual([`alpha/Q2 · ${hostile}`, "alpha/Q10 · Later", "zeta/Q1 · Last"]);
     const structured = document.querySelectorAll<HTMLElement>(
       ".question-queue-entry",
     )[1]!;
@@ -1706,11 +1811,11 @@ accept unbounded input.
     ).toEqual([
       ...Array.from(
         { length: 128 },
-        (_, index) => `Q${index + 1} · alpha question ${index + 1}`,
+        (_, index) => `alpha/Q${index + 1} · alpha question ${index + 1}`,
       ),
       ...Array.from(
         { length: 128 },
-        (_, index) => `Q${index + 1} · beta question ${index + 1}`,
+        (_, index) => `beta/Q${index + 1} · beta question ${index + 1}`,
       ),
     ]);
   });
@@ -5904,7 +6009,7 @@ describe("browser peer fan-out", () => {
     );
     const peerLink = Array.from(
       document.querySelectorAll<HTMLAnchorElement>(".question-queue-entry a"),
-    ).find((link) => link.textContent === "Q2 · Peer");
+    ).find((link) => link.textContent === "alpha/Q2 · Peer");
     expect(peerLink?.getAttribute("href")).toBe(
       "#machine=macbook&repo=alpha&question=Q2",
     );
@@ -5919,7 +6024,7 @@ describe("browser peer fan-out", () => {
     ).toContain("macbook");
     expect(
       document.querySelector(".question-queue-entry-linked")?.textContent,
-    ).toContain("Q2 · Peer");
+    ).toContain("alpha/Q2 · Peer");
   });
 
   test("omits ambiguous duplicate question deep links and highlights no duplicate card", () => {
@@ -5952,7 +6057,7 @@ describe("browser peer fan-out", () => {
         document.querySelectorAll(".question-queue-entry h3"),
         (heading) => heading.textContent,
       ),
-    ).toEqual(["Q7 · First", "Q7 · Second"]);
+    ).toEqual(["factory-ui/Q7 · First", "factory-ui/Q7 · Second"]);
   });
 
   test("isolates an unsafe peer question without losing local or valid-peer queue entries", async () => {
@@ -6036,7 +6141,7 @@ describe("browser peer fan-out", () => {
         document.querySelectorAll(".question-queue-entry h3"),
         (node) => node.textContent,
       ),
-    ).toEqual(["Q3 · Valid peer", "Q1 · Local"]);
+    ).toEqual(["good-project/Q3 · Valid peer", "local-project/Q1 · Local"]);
     expect(document.body.textContent).not.toContain("Unsafe peer question");
   });
 

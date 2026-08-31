@@ -104,43 +104,69 @@ function bodyField(
   return value || undefined;
 }
 
-function parseOptions(value: string | undefined): QuestionOption[] | undefined {
-  if (!value) return undefined;
-  const labelledLines = value
+function joinHardWraps(value: string): string {
+  return value
     .split("\n")
-    .filter((line) => line.trim().length > 0)
-    .map((line) => /^\s*([A-Z])\s*(?:—|-|:)\s*(.*)$/.exec(line));
-  let segments: string[];
-  if (labelledLines.length > 1) {
-    segments = [];
-    for (const line of labelledLines) {
-      const label = line?.[1];
-      const detail = line?.[2];
-      if (label === undefined || detail === undefined) return undefined;
-      segments.push(`${label} — ${detail}`);
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function parseOptions(value: string | undefined): {
+  options?: QuestionOption[];
+  proseOptions?: string[];
+} {
+  if (!value) return {};
+  const lines = value.split("\n").filter((line) => line.trim().length > 0);
+  const first = lines[0]?.trim() ?? "";
+  const labelledStart = /^([A-Z])(?:\s*(?:—|-|:)\s*([\s\S]*)|\s*)$/;
+
+  // Legacy prose hard-wraps are continuations of the current option. A label
+  // at a line start, or after the historical semicolon/slash separators,
+  // starts the next option; ordinary capitals inside prose do not.
+  if (
+    labelledStart.test(
+      first.split(
+        /\s*;\s+(?=[A-Z]\s*(?:—|-|:))|\s+\/\s+(?=[A-Z](?:\s*(?:—|-|:)|\s*(?:\/|$)))/,
+      )[0] ?? "",
+    )
+  ) {
+    const segments: string[] = [];
+    for (const line of lines) {
+      const fragments = line.trim().split(
+        /\s*;\s+(?=[A-Z]\s*(?:—|-|:))|\s+\/\s+(?=[A-Z](?:\s*(?:—|-|:)|\s*(?:\/|$)))/,
+      );
+      for (const fragment of fragments) {
+        if (labelledStart.test(fragment.trim())) segments.push(fragment.trim());
+        else if (segments.length > 0)
+          segments[segments.length - 1] = `${segments.at(-1)} ${fragment.trim()}`;
+        else return {};
+      }
     }
-  } else {
-    segments = value.split(/\s+\/\s+|\s*;\s+(?=[A-Z](?:\s*(?:—|-|:)|\s))/);
+    if (segments.length < 1 || segments.length > 26) return {};
+    const options: QuestionOption[] = [];
+    for (const segment of segments) {
+      const match = labelledStart.exec(segment);
+      const label = match?.[1];
+      if (label === undefined) return {};
+      const raw = (match[2] ?? "").trim();
+      const recommended = /\(\s*recommended\b/i.test(raw);
+      options.push({
+        label,
+        text: raw,
+        ...(recommended ? { recommended: true } : {}),
+      });
+    }
+    return { options };
   }
-  if (segments.length < 1 || segments.length > 26) return undefined;
-  const options: QuestionOption[] = [];
-  for (const segment of segments) {
-    const match = /^([A-Z])(?:\s*(?:—|-|:)\s*([\s\S]*)|\s*)$/.exec(
-      segment.trim(),
-    );
-    if (!match) return undefined;
-    const label = match[1];
-    const rawText = match[2] ?? "";
-    if (label === undefined) return undefined;
-    const raw = rawText.trim();
-    const recommended = /\(\s*recommended\b/i.test(raw);
-    options.push({
-      label,
-      text: raw,
-      ...(recommended ? { recommended: true } : {}),
-    });
-  }
-  return options;
+
+  const proseOptions = joinHardWraps(value)
+    .split(/\s+\/\s+/)
+    .map((option) => option.trim())
+    .filter(Boolean);
+  return proseOptions.length >= 2 && proseOptions.length <= 26
+    ? { proseOptions }
+    : {};
 }
 
 export function parseQuestionDetails(
@@ -190,11 +216,11 @@ export function parseQuestionDetails(
     answerIndex >= 0 ? answerIndex : lines.length,
     qualifierPrefix ?? "",
   );
-  const options = parseOptions(optionsText);
+  const parsedOptions = parseOptions(optionsText);
   const branch = PARKED_BRANCH.exec(context ?? "")?.[1];
   return {
     ...(context === undefined ? {} : { context }),
-    ...(options === undefined ? {} : { options }),
+    ...parsedOptions,
     ...(qualifier === undefined ? {} : { qualifier }),
     ...(branch === undefined ? {} : { branch }),
   };

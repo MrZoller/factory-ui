@@ -174,6 +174,8 @@ export interface OpenQuestion {
   text: string;
   context?: string;
   options?: QuestionOption[];
+  /** Legacy prose choices separated by the protocol's literal ` / `. */
+  proseOptions?: string[];
   qualifier?: string;
   branch?: string;
   branchUrl?: string;

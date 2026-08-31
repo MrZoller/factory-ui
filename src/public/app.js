@@ -1174,6 +1174,110 @@ function renderReviewStrip(card, repository, disclosure) {
   card.append(strip);
 }
 
+function questionParagraphs(value) {
+  return String(value ?? "")
+    .split(/\n\s*\n/)
+    .map((paragraph) =>
+      paragraph
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join(" "),
+    )
+    .filter(Boolean);
+}
+
+function appendQuestionOptionText(row, option) {
+  const marker = option.recommended
+    ? /\(\s*recommended\b[^)]*\)/i.exec(option.text)
+    : null;
+  if (marker?.index !== undefined) {
+    row.append(row.ownerDocument.createTextNode(option.text.slice(0, marker.index)));
+    appendText(
+      row,
+      "span",
+      marker[0],
+      "chip chip-accent question-recommended",
+    );
+    row.append(
+      row.ownerDocument.createTextNode(
+        option.text.slice(marker.index + marker[0].length),
+      ),
+    );
+  } else {
+    row.append(row.ownerDocument.createTextNode(option.text));
+  }
+  if (option.recommended && !/\(\s*recommended\b/i.test(option.text))
+    appendText(
+      row,
+      "span",
+      "(recommended)",
+      "chip chip-accent question-recommended",
+    );
+}
+
+function renderQuestionBody(parent, question) {
+  const documentRoot = parent.ownerDocument;
+  const labelled = Array.isArray(question?.options) && question.options.length > 0;
+  const prose =
+    Array.isArray(question?.proseOptions) && question.proseOptions.length > 0;
+  const structured = question?.context !== undefined && (labelled || prose);
+  const body = documentRoot.createElement("div");
+  body.className = "question-body";
+
+  if (structured) {
+    appendText(body, "h4", "Context", "question-field-label");
+    for (const paragraph of questionParagraphs(question.context))
+      appendText(body, "p", paragraph, "question-context");
+    appendText(body, "h4", "Options", "question-field-label");
+    const options = documentRoot.createElement(labelled ? "ol" : "ul");
+    options.className = `question-options${prose ? " question-options-prose" : ""}`;
+    if (labelled) {
+      for (const option of question.options) {
+        const row = documentRoot.createElement("li");
+        appendText(row, "strong", option.label, "question-option-label");
+        if (option.text) {
+          row.append(documentRoot.createTextNode(" · "));
+          appendQuestionOptionText(row, {
+            ...option,
+            text: questionParagraphs(option.text).join(" "),
+          });
+        } else if (option.recommended) {
+          appendQuestionOptionText(row, option);
+        }
+        options.append(row);
+      }
+    } else {
+      for (const option of question.proseOptions) {
+        appendText(options, "li", questionParagraphs(option).join(" "));
+      }
+    }
+    body.append(options);
+    if (question.qualifier !== undefined) {
+      appendText(body, "h4", "Qualifier", "question-field-label");
+      for (const paragraph of questionParagraphs(question.qualifier))
+        appendText(body, "p", paragraph, "question-qualifier");
+    }
+  } else {
+    const lines = String(question?.text ?? "").split("\n");
+    if (/^## Q[1-9][0-9]*\b/.test(lines[0]?.trim() ?? "")) lines.shift();
+    while (lines.length > 0 && !lines.at(-1)?.trim()) lines.pop();
+    if (/^\*\*A:\*\*\s*$/.test(lines.at(-1)?.trim() ?? "")) lines.pop();
+    while (lines.length > 0 && !lines.at(-1)?.trim()) lines.pop();
+    for (const paragraph of questionParagraphs(lines.join("\n"))) {
+      const field = /^(Context:|Options considered:)\s*(.*)$/s.exec(paragraph);
+      if (field) {
+        appendText(body, "h4", field[1], "question-field-label");
+        if (field[2]) appendText(body, "p", field[2], "question-fallback-text");
+      } else {
+        appendText(body, "p", paragraph, "question-fallback-text");
+      }
+    }
+  }
+  parent.append(body);
+  return structured;
+}
+
 function renderQuestions(card, repository, now) {
   const open = readerData(repository.questions)?.open;
   if (Array.isArray(open) && open.length === 0) {
@@ -1226,7 +1330,7 @@ function renderQuestions(card, repository, now) {
         "age",
       );
     }
-    appendText(item, "pre", question?.text ?? "", "verbatim");
+    renderQuestionBody(item, question);
     panel.append(item);
   }
 }
@@ -1928,6 +2032,15 @@ function isQuestion(value) {
       (Array.isArray(value.options) &&
         value.options.length <= MAX_QUESTION_OPTIONS &&
         value.options.every(isQuestionOption))) &&
+    (value.proseOptions === undefined ||
+      (Array.isArray(value.proseOptions) &&
+        value.proseOptions.length <= MAX_QUESTION_OPTIONS &&
+        value.proseOptions.every(
+          (option) =>
+            typeof option === "string" &&
+            option.length > 0 &&
+            option.length <= MAX_QUESTION_OPTION_LENGTH,
+        ))) &&
     (value.branch === undefined ||
       (typeof value.branch === "string" && value.branch.length <= 200)) &&
     (value.branchUrl === undefined ||
@@ -4012,70 +4125,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
         appendExternalOrText(refs, label, url, kind);
       });
       if (references.length > 0) item.append(refs);
-      if (question.context !== undefined) {
-        appendText(item, "h4", "Context", "question-field-label");
-        appendText(item, "p", question.context, "question-context");
-      }
-      if (Array.isArray(question.options) && question.options.length > 0) {
-        appendText(item, "h4", "Options", "question-field-label");
-        const options = documentRoot.createElement("ol");
-        options.className = "question-options";
-        for (const option of question.options) {
-          const row = documentRoot.createElement("li");
-          appendText(row, "strong", option.label, "question-option-label");
-          if (option.text) {
-            row.append(documentRoot.createTextNode(" · "));
-            const marker = option.recommended
-              ? /\(\s*recommended\b[^)]*\)/i.exec(option.text)
-              : null;
-            if (marker?.index !== undefined) {
-              row.append(
-                documentRoot.createTextNode(option.text.slice(0, marker.index)),
-              );
-              appendText(
-                row,
-                "span",
-                marker[0],
-                "chip chip-accent question-recommended",
-              );
-              row.append(
-                documentRoot.createTextNode(
-                  option.text.slice(marker.index + marker[0].length),
-                ),
-              );
-            } else {
-              row.append(documentRoot.createTextNode(option.text));
-            }
-          }
-          if (option.recommended && !/\(\s*recommended\b/i.test(option.text))
-            appendText(
-              row,
-              "span",
-              "(recommended)",
-              "chip chip-accent question-recommended",
-            );
-          options.append(row);
-        }
-        item.append(options);
-      }
-      if (question.qualifier !== undefined) {
-        appendText(item, "h4", "Qualifier", "question-field-label");
-        appendText(item, "p", question.qualifier, "question-qualifier");
-      }
-      if (
-        question.context === undefined ||
-        !Array.isArray(question.options) ||
-        question.options.length === 0
-      ) {
-        appendText(
-          item,
-          "pre",
-          question.text,
-          "verbatim question-raw-fallback",
-        );
-      }
-      const structured =
-        question.context !== undefined && Array.isArray(question.options);
+      const structured = renderQuestionBody(item, question);
       if (answerState?.id) {
         renderAnswerLifecycle(item, documentRoot, view, answerState);
         if (

@@ -1607,6 +1607,8 @@ export const WARNING_EXPLANATIONS = Object.freeze({
   QUESTIONS_TOO_MANY_LINES:
     "The questions file has more lines than the reader permits.",
   QUESTIONS_LINE_TOO_LONG: "A questions line exceeds the safe parsing limit.",
+  QUESTIONS_OPTION_TOO_LONG:
+    "A question option exceeds the structured rendering limit.",
   QUESTIONS_EMPTY: "The questions file contains no entries.",
   QUESTIONS_TOO_MANY_ENTRIES:
     "The questions file has more entries than are retained.",

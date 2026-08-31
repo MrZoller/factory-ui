@@ -65,6 +65,7 @@ const discoveredRepositoryIdentities = new WeakMap<
   RepositorySource,
   DiscoveredRepositoryIdentity
 >();
+const openDiscoveredHandles = new Set<FileHandle>();
 
 async function readBounded(
   stream: ReadableStream<Uint8Array>,
@@ -278,11 +279,18 @@ export async function disposeDiscoveredRepositories(
       if (identity === undefined) return;
       try {
         await identity.handle.close();
+        openDiscoveredHandles.delete(identity.handle);
       } catch {
         // Closing an already-closed descriptor needs no recovery action.
       }
     }),
   );
+}
+
+export async function disposeAllDiscoveredRepositories(): Promise<void> {
+  const handles = [...openDiscoveredHandles];
+  openDiscoveredHandles.clear();
+  await Promise.all(handles.map(async (handle) => handle.close()));
 }
 
 async function childNames(root: string): Promise<string[] | null> {
@@ -422,11 +430,13 @@ export async function discoverRepositories(
         continue;
       }
       if (handle === undefined) continue;
+      openDiscoveredHandles.add(handle);
       let name: string;
       try {
         name = parseRepositoryName(childName);
       } catch {
         await handle.close();
+        openDiscoveredHandles.delete(handle);
         addWarning(
           warnings,
           warning("DISCOVERY_ENTRY_INVALID", "a discovery entry was ignored"),
@@ -436,6 +446,7 @@ export async function discoverRepositories(
       candidates += 1;
       if (candidates > MAX_DISCOVERY_CANDIDATES) {
         await handle.close();
+        openDiscoveredHandles.delete(handle);
         addWarning(
           warnings,
           warning(
@@ -447,6 +458,7 @@ export async function discoverRepositories(
       }
       if (names.has(name) || paths.has(identity.path)) {
         await handle.close();
+        openDiscoveredHandles.delete(handle);
         addWarning(
           warnings,
           warning(
@@ -469,6 +481,7 @@ export async function discoverRepositories(
         state.data.phase === undefined
       ) {
         await handle.close();
+        openDiscoveredHandles.delete(handle);
         addWarning(
           warnings,
           warning(
@@ -489,6 +502,7 @@ export async function discoverRepositories(
         }))
       ) {
         await handle.close();
+        openDiscoveredHandles.delete(handle);
         addWarning(
           warnings,
           warning(
@@ -524,6 +538,7 @@ export async function discoverRepositories(
         }))
       ) {
         await handle.close();
+        openDiscoveredHandles.delete(handle);
         addWarning(
           warnings,
           warning(

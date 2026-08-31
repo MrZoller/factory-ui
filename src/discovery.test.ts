@@ -23,6 +23,7 @@ import {
   MAX_DISCOVERY_CANDIDATES,
   MAX_DISCOVERY_ROOT_ENTRIES,
   MAX_DISCOVERY_WARNINGS,
+  disposeAllDiscoveredRepositories,
   MAX_GIT_REMOTE_OUTPUT_BYTES,
   discoverRepositories,
   isRepositoryIdentityCurrent,
@@ -63,8 +64,10 @@ const remote = async () => ({
 });
 
 afterEach(() => {
-  for (const value of roots.splice(0))
-    rmSync(value, { recursive: true, force: true });
+  return disposeAllDiscoveredRepositories().then(() => {
+    for (const value of roots.splice(0))
+      rmSync(value, { recursive: true, force: true });
+  });
 });
 
 describe("repository discovery", () => {

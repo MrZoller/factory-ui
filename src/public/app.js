@@ -23,6 +23,7 @@ const MAX_QUESTION_QUEUE_ENTRIES = 256;
 const MAX_QUESTION_TEXT_LENGTH = 256 * 1024;
 const MAX_QUESTION_OPTIONS = 26;
 const MAX_QUESTION_OPTION_LENGTH = 8192;
+const MAX_QUESTION_FILED_AT_LENGTH = 64;
 const MAX_ANSWER_TEXT_LENGTH = 10_000;
 const MAX_ANSWER_RESPONSE_BYTES = 64 * 1024;
 const MAX_STORED_ANSWER_LIFECYCLES = 128;
@@ -1170,7 +1171,7 @@ function renderReviewStrip(card, repository, disclosure) {
   card.append(strip);
 }
 
-function renderQuestions(card, repository) {
+function renderQuestions(card, repository, now) {
   const open = readerData(repository.questions)?.open;
   if (Array.isArray(open) && open.length === 0) {
     const compact = card.ownerDocument.createElement("section");
@@ -1214,6 +1215,14 @@ function renderQuestions(card, repository) {
       question?.title ?? "Untitled question",
       "entry-title",
     );
+    if (question?.filedAt !== undefined) {
+      appendText(
+        item,
+        "p",
+        `Filed ${displayAge(question.filedAt, now)}`,
+        "age",
+      );
+    }
     appendText(item, "pre", question?.text ?? "", "verbatim");
     panel.append(item);
   }
@@ -1810,7 +1819,7 @@ function renderRepository(repository, machine, documentRoot, now, generatedAt) {
   card.className = "repository";
   renderCurrent(card, repository ?? {});
   renderLogs(card, repository ?? {}, now, generatedAt);
-  renderQuestions(card, repository ?? {});
+  renderQuestions(card, repository ?? {}, now);
   renderTasks(card, repository ?? {}, disclosure);
   const warnings = collectWarnings(repository ?? {});
   renderWorklog(
@@ -1927,7 +1936,7 @@ function isQuestion(value) {
 
 function isFiledAt(value) {
   const fields =
-    typeof value === "string"
+    typeof value === "string" && value.length <= MAX_QUESTION_FILED_AT_LENGTH
       ? /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d+)?Z$/.exec(
           value,
         )
@@ -3853,7 +3862,7 @@ function renderAnswerForm(parent, documentRoot, view, question, state) {
   parent.append(form);
 }
 
-function renderQuestionQueue(documentRoot, views) {
+function renderQuestionQueue(documentRoot, views, now = new Date()) {
   const list = documentRoot.querySelector("#question-queue-list");
   const heading = documentRoot.querySelector("#question-queue-heading");
   const headerCount = documentRoot.querySelector("#question-queue-count");
@@ -3954,6 +3963,14 @@ function renderQuestionQueue(documentRoot, views) {
         `${machine} · ${repository.name}`,
         "question-location",
       );
+      if (question.filedAt !== undefined) {
+        appendText(
+          item,
+          "p",
+          `Filed ${displayAge(question.filedAt, now)}`,
+          "age",
+        );
+      }
       let answerState = answerStore.get(key);
       if (lifecycleOnly) {
         if (answerState?.status === "uncertain") {
@@ -4158,7 +4175,7 @@ export function renderFleet(fleet, documentRoot = document, now = new Date()) {
   summaryBody.replaceChildren(...views.map((view) => view.row));
   tabs.replaceChildren(...views.map((view) => view.tab));
   repositories.replaceChildren(...views.map((view) => view.panel));
-  renderQuestionQueue(documentRoot, views);
+  renderQuestionQueue(documentRoot, views, now);
   installTabs(documentRoot, views);
   machineViews.set(documentRoot, views);
 }

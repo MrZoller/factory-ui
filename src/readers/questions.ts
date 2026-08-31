@@ -13,6 +13,7 @@ export const MAX_QUESTIONS_LINES = 4096;
 export const MAX_QUESTION_LINE_LENGTH = 8192;
 export const MAX_QUESTIONS = 128;
 export const MAX_QUESTIONS_WARNINGS = 32;
+export const MAX_QUESTION_FILED_AT_LENGTH = 64;
 
 export const QUESTIONS_WARNING_CODES = [
   "WARNINGS_TRUNCATED",
@@ -29,10 +30,8 @@ export const QUESTIONS_WARNING_CODES = [
   "QUESTIONS_UNAVAILABLE",
 ] as const;
 
-const LEGACY_QUESTION_HEADING =
-  /^## (Q[1-9][0-9]*) \(task (T[1-9][0-9]*), (open|answered|consumed|withdrawn)\) — (.+)$/;
-const TIMESTAMPED_QUESTION_HEADING =
-  /^## (Q[1-9][0-9]*) \(task (T[1-9][0-9]*), (open|answered|consumed|withdrawn), filed-at ([^\s)]+)\) — (.+)$/;
+const QUESTION_HEADING =
+  /^## (Q[1-9][0-9]*) \(task (T[1-9][0-9]*), (open|answered|consumed|withdrawn)(?:, filed-at (.*?))?\) — (.+)$/;
 const TIMESTAMP_MARKER = "<!-- factory-question-timestamps-required-below -->";
 const RFC3339_Z =
   /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d+)?Z$/;
@@ -255,21 +254,39 @@ export function parseFactoryQuestions(
 
   const open: OpenQuestion[] = [];
   const identifiers = new Map<string, number[]>();
-  const markerIndex = lines.findIndex(
-    (line) => line.value === TIMESTAMP_MARKER,
+  const markerIndices = lines.flatMap((line, index) =>
+    line.value === TIMESTAMP_MARKER ? [index] : [],
   );
+  const markerIndex = markerIndices[0] ?? -1;
+  for (const duplicateIndex of markerIndices.slice(1)) {
+    addWarning(
+      warnings,
+      "QUESTIONS_MALFORMED_ENTRY",
+      "questions.md contains more than one timestamp marker",
+      duplicateIndex + 1,
+      lines[duplicateIndex]?.value,
+    );
+  }
+  lines.forEach((line, index) => {
+    if (
+      line.value !== TIMESTAMP_MARKER &&
+      /^\s*<!--\s*factory-question-timestamps-required-below/.test(line.value)
+    ) {
+      addWarning(
+        warnings,
+        "QUESTIONS_MALFORMED_ENTRY",
+        "a question timestamp marker is malformed",
+        index + 1,
+        line.value,
+      );
+    }
+  });
   for (let boundary = 0; boundary < boundaries.length; boundary += 1) {
     const current = boundaries[boundary];
     if (current === undefined) continue;
     const timestampRequired = markerIndex >= 0 && current.index > markerIndex;
-    const timestamped = TIMESTAMPED_QUESTION_HEADING.exec(current.line.value);
-    const legacy =
-      timestamped === null && !timestampRequired
-        ? LEGACY_QUESTION_HEADING.exec(current.line.value)
-        : null;
-    const match = timestamped ?? legacy;
-    const filedAt = timestamped?.[4];
-    if (!match || (filedAt !== undefined && !validFiledAt(filedAt))) {
+    const match = QUESTION_HEADING.exec(current.line.value);
+    if (!match) {
       addWarning(
         warnings,
         "QUESTIONS_MALFORMED_ENTRY",
@@ -279,10 +296,29 @@ export function parseFactoryQuestions(
       );
       continue;
     }
+    const filedAtCandidate = match[4];
+    const filedAtValid =
+      filedAtCandidate !== undefined &&
+      filedAtCandidate.length <= MAX_QUESTION_FILED_AT_LENGTH &&
+      validFiledAt(filedAtCandidate);
+    if (
+      (timestampRequired && !filedAtValid) ||
+      (!timestampRequired && filedAtCandidate !== undefined && !filedAtValid)
+    ) {
+      addWarning(
+        warnings,
+        "QUESTIONS_MALFORMED_ENTRY",
+        timestampRequired && filedAtCandidate === undefined
+          ? "a question below the timestamp marker is missing filed-at"
+          : "a question filed-at timestamp is malformed",
+        current.index + 1,
+        current.line.value,
+      );
+    }
     const id = match[1];
     const taskId = match[2];
     const status = match[3];
-    const title = match[timestamped === null ? 4 : 5];
+    const title = match[5];
     if (
       id === undefined ||
       taskId === undefined ||
@@ -301,22 +337,41 @@ export function parseFactoryQuestions(
     const seenAt = identifiers.get(id) ?? [];
     seenAt.push(current.index + 1);
     identifiers.set(id, seenAt);
-    if (status !== "open") continue;
-
     const nextBoundaryStart =
       boundaries[boundary + 1]?.line.start ?? text.length;
+    const nextMarkerIndex = markerIndices.find(
+      (index) => index > current.index,
+    );
+    const nextBoundaryIndex = boundaries[boundary + 1]?.index ?? lines.length;
+    let bodyEndIndex =
+      nextMarkerIndex !== undefined
+        ? Math.min(nextBoundaryIndex, nextMarkerIndex)
+        : nextBoundaryIndex;
+    let bodyLines = lines.slice(current.index + 1, bodyEndIndex);
+    const markerInsideEntry =
+      nextMarkerIndex !== undefined &&
+      nextMarkerIndex < nextBoundaryIndex &&
+      !["Context:", "Options considered:", "**A:**"].every((prefix) =>
+        bodyLines.some((line) => line.value.startsWith(prefix)),
+      );
+    if (markerInsideEntry) {
+      bodyEndIndex = nextBoundaryIndex;
+      bodyLines = lines.slice(current.index + 1, bodyEndIndex);
+      addWarning(
+        warnings,
+        "QUESTIONS_MALFORMED_ENTRY",
+        "a question timestamp marker is misplaced inside an entry",
+        nextMarkerIndex + 1,
+        lines[nextMarkerIndex]?.value,
+      );
+    }
+    if (status !== "open") continue;
     const markerStart =
-      markerIndex > current.index
-        ? (lines[markerIndex]?.start ?? text.length)
-        : text.length;
+      nextMarkerIndex === undefined || markerInsideEntry
+        ? text.length
+        : (lines[nextMarkerIndex]?.start ?? text.length);
     const nextStart = Math.min(nextBoundaryStart, markerStart);
     const textSlice = text.slice(current.line.start, nextStart);
-    const nextBoundaryIndex = boundaries[boundary + 1]?.index ?? lines.length;
-    const bodyEndIndex =
-      markerIndex > current.index
-        ? Math.min(nextBoundaryIndex, markerIndex)
-        : nextBoundaryIndex;
-    const bodyLines = lines.slice(current.index + 1, bodyEndIndex);
     const contextIndex = bodyLines.findIndex((line) =>
       line.value.startsWith("Context:"),
     );
@@ -342,7 +397,7 @@ export function parseFactoryQuestions(
       id,
       taskId,
       title,
-      ...(filedAt === undefined ? {} : { filedAt }),
+      ...(filedAtValid ? { filedAt: filedAtCandidate } : {}),
       text: textSlice,
       ...parseQuestionDetails(textSlice),
     });

@@ -1363,6 +1363,74 @@ function summaryCells(document: Document, name: string): Array<string | null> {
 }
 
 describe("local dashboard rendering", () => {
+  test("derives panel and queue question age from valid filed-at at render time while keeping legacy hostile titles inert", () => {
+    const document = dashboardDocument();
+    const hostile = '<img src=x onerror="globalThis.questionPwned=1">';
+    const repository = richRepository({
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            { id: "Q1", taskId: "T1", title: "Legacy", text: "raw" },
+            {
+              id: "Q2",
+              taskId: "T2",
+              title: hostile,
+              text: "raw",
+              filedAt: "2026-08-15T00:00:00Z",
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const panelQuestions = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        ".questions-panel article.question",
+      ),
+    );
+    const queueQuestions = Array.from(
+      document.querySelectorAll<HTMLElement>(".question-queue-entry"),
+    );
+    const panelLegacy = panelQuestions.find((item) =>
+      item.textContent?.includes("Legacy"),
+    );
+    const panelTimestamped = panelQuestions.find((item) =>
+      item.textContent?.includes(hostile),
+    );
+    const queueLegacy = queueQuestions.find((item) =>
+      item.textContent?.includes("Legacy"),
+    );
+    const queueTimestamped = queueQuestions.find((item) =>
+      item.textContent?.includes(hostile),
+    );
+    expect(panelTimestamped?.textContent).toContain("36h ago");
+    expect(queueTimestamped?.textContent).toContain("36h ago");
+    expect(panelLegacy?.textContent).not.toContain("ago");
+    expect(queueLegacy?.textContent).not.toContain("ago");
+    expect(
+      document.querySelectorAll(".questions-panel img, #question-queue img"),
+    ).toHaveLength(0);
+    expect(
+      (globalThis as Record<string, unknown>).questionPwned,
+    ).toBeUndefined();
+
+    renderFleet(
+      fleet("mini", [], [repository]),
+      document,
+      new Date("2026-08-17T12:00:00.000Z"),
+    );
+    expect(document.querySelector(".questions-panel")?.textContent).toContain(
+      "2d ago",
+    );
+    expect(
+      document.querySelector("#question-queue-list")?.textContent,
+    ).toContain("2d ago");
+  });
+
   test("renders ordered structured questions, old-schema fallbacks, and hostile strings as text", () => {
     const document = dashboardDocument();
     const hostile = '<img src=x onerror="globalThis.queuePwned=1">';

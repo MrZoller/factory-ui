@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T57",
-  "branch": "factory/t57-cost-table-legibility",
-  "pr": 78,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-08-31T16:19:03Z"
+  "updated": "2026-08-31T16:26:01Z"
 }

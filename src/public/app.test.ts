@@ -561,6 +561,28 @@ describe("answer lifecycle queue", () => {
     expect(document.querySelectorAll("img")).toHaveLength(0);
   });
 
+  test("separates label/count with an explicit header gap", async () => {
+    const html = await Bun.file(
+      new URL("./index.html", import.meta.url),
+    ).text();
+    const document = new Window({ url: "https://dashboard.test/" })
+      .document as unknown as Document;
+    document.write(html);
+
+    const questions = document.querySelector<HTMLAnchorElement>(
+      '.header-actions a[href="#question-queue"]',
+    );
+    expect(
+      Array.from(questions?.children ?? [], (child) => child.textContent),
+    ).toEqual(["Questions", "0"]);
+    expect(questions?.querySelector("#question-queue-count")?.textContent).toBe(
+      "0",
+    );
+
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+    expect(css).toMatch(/\.header-actions a\s*\{[^}]*gap:\s*var\(--space-2\)/);
+  });
+
   test("fans peer delivery directly to its configured origin rather than through the local server", async () => {
     const document = dashboardDocument();
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
@@ -2596,7 +2618,7 @@ accept unbounded input.
     );
 
     expect(document.querySelector("#generated")?.textContent).toMatch(
-      /^Stale · last good snapshot 31s ago/,
+      /^Stale · last good snapshot less than 1m ago/,
     );
     expect(document.querySelector("#generated")?.classList).toContain("stale");
     expect(document.querySelector("#generated")?.textContent).toContain(
@@ -5928,7 +5950,7 @@ describe("browser peer fan-out", () => {
     ).toBe(true);
   });
 
-  test("aborts and replaces a timed-out peer in place", async () => {
+  test("shows a timed-out peer on a fresh Updated snapshot", async () => {
     const document = dashboardDocument();
     const peer = { name: "slow", origin: "http://100.64.0.30:7777" };
     let timeoutCallback: (() => void) | undefined;
@@ -5963,7 +5985,12 @@ describe("browser peer fan-out", () => {
     expect(document.querySelector("#generated")?.textContent).toContain(
       "— peer timed out",
     );
-    expect(document.querySelector("#generated")?.classList).toContain("stale");
+    expect(document.querySelector("#generated")?.textContent).toMatch(
+      /^Updated /,
+    );
+    expect(document.querySelector("#generated")?.classList).not.toContain(
+      "stale",
+    );
   });
 
   test("refresh discards stale peer data and can recover", async () => {
@@ -6102,8 +6129,7 @@ describe("dashboard auto-refresh", () => {
     }
   });
 
-  test("shows a fresh absolute Updated time, marks a hidden tab stale, and clears it after refresh", async () => {
-    vi.useFakeTimers();
+  test("pauses fresh snapshots before the age limit", async () => {
     const document = dashboardDocument();
     const window = document.defaultView!;
     window.history.replaceState(null, "", "?refresh=5");
@@ -6112,12 +6138,17 @@ describe("dashboard auto-refresh", () => {
       value: false,
     });
     const timers = fakeTimers();
-    const generatedAt = new Date().toISOString();
+    let now = NOW;
     const fetcher = vi.fn(async () =>
-      jsonResponse({ ...fleet("mini"), generatedAt }),
+      jsonResponse({ ...fleet("mini"), generatedAt: NOW.toISOString() }),
     );
-    const restore = await bootDashboard(document, fetcher, timers);
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, { now: () => now }),
+    );
     try {
+      await flushPromises();
       expect(fetcher).toHaveBeenCalledTimes(1);
       expect(timers.callbacksAt(5_000)).not.toHaveLength(0);
       expect(window.location.search).toBe("?refresh=5");
@@ -6136,7 +6167,28 @@ describe("dashboard auto-refresh", () => {
       await flushPromises();
       expect(fetcher).toHaveBeenCalledTimes(1);
       expect(document.querySelector("#generated")?.textContent).toContain(
-        "Stale · last good snapshot",
+        "Updated ",
+      );
+      expect(document.querySelector("#generated")?.textContent).toContain(
+        "— paused",
+      );
+      expect(document.querySelector("#generated")?.classList).not.toContain(
+        "stale",
+      );
+
+      now = new Date(NOW.valueOf() + 5_000);
+      timers.callbacksAt(1_000).forEach(({ callback }) => callback());
+      expect(document.querySelector("#generated")?.textContent).toMatch(
+        /^Updated .*— paused$/,
+      );
+      expect(document.querySelector("#generated")?.classList).not.toContain(
+        "stale",
+      );
+
+      now = new Date(NOW.valueOf() + 5_001);
+      timers.callbacksAt(1_000).forEach(({ callback }) => callback());
+      expect(document.querySelector("#generated")?.textContent).toContain(
+        "Stale · last good snapshot less than 1m ago",
       );
       expect(document.querySelector("#generated")?.textContent).toContain(
         "— paused",
@@ -6144,23 +6196,39 @@ describe("dashboard auto-refresh", () => {
       expect(document.querySelector("#generated")?.classList).toContain(
         "stale",
       );
-
-      Object.defineProperty(document, "hidden", {
-        configurable: true,
-        value: false,
-      });
-      document.dispatchEvent(new window.Event("visibilitychange"));
-      await flushPromises();
-      expect(fetcher).toHaveBeenCalledTimes(2);
-      expect(document.querySelector("#generated")?.textContent).toMatch(
-        /^Updated /,
-      );
-      expect(document.querySelector("#generated")?.classList).not.toContain(
-        "stale",
-      );
     } finally {
-      restore();
-      vi.useRealTimers();
+      controller.cleanup();
+    }
+  });
+
+  test("avoids status mutation on unchanged one-second ticks", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    const controller = startDashboard(
+      document,
+      async () =>
+        jsonResponse({ ...fleet("mini"), generatedAt: NOW.toISOString() }),
+      dashboardDependencies(timers, { now: () => NOW }),
+    );
+    try {
+      await flushPromises();
+      const generated = document.querySelector("#generated")!;
+      const observer = new document.defaultView!.MutationObserver(
+        () => undefined,
+      );
+      observer.observe(generated, {
+        attributes: true,
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
+
+      timers.callbacksAt(1_000).forEach(({ callback }) => callback());
+
+      expect(observer.takeRecords()).toHaveLength(0);
+      observer.disconnect();
+    } finally {
+      controller.cleanup();
     }
   });
 
@@ -6193,7 +6261,7 @@ describe("dashboard auto-refresh", () => {
     }
   });
 
-  test("marks an otherwise successful snapshot stale when its age exceeds the refresh interval", async () => {
+  test("marks an otherwise successful old snapshot stale with a coarse age", async () => {
     const document = dashboardDocument();
     const timers = fakeTimers();
     const restore = await bootDashboard(
@@ -6207,7 +6275,7 @@ describe("dashboard auto-refresh", () => {
     );
     try {
       expect(document.querySelector("#generated")?.textContent).toMatch(
-        /Stale · last good snapshot \d+s ago/,
+        /Stale · last good snapshot less than 1m ago/,
       );
       expect(document.querySelector("#generated")?.classList).toContain(
         "stale",
@@ -6322,7 +6390,7 @@ describe("dashboard auto-refresh", () => {
     expect(repositoryPanel.scrollTop).toBe(73);
   });
 
-  test("retains the last good snapshot on failure, reports its age, and backs off retries", async () => {
+  test("keeps fresh failures Updated with retry backoff", async () => {
     vi.useFakeTimers();
     const document = dashboardDocument();
     const timers = fakeTimers();
@@ -6343,12 +6411,15 @@ describe("dashboard auto-refresh", () => {
       expect(document.querySelector("#machine")?.textContent).toBe("mini");
       expect(document.body.textContent).toContain("factory-ui");
       expect(document.querySelector("#error")?.textContent).toMatch(
-        /last good.*0s ago/i,
+        /last good.*less than 1m ago/i,
       );
       expect(document.querySelector("#generated")?.textContent).toContain(
         "— refresh failed",
       );
-      expect(document.querySelector("#generated")?.classList).toContain(
+      expect(document.querySelector("#generated")?.textContent).toMatch(
+        /^Updated /,
+      );
+      expect(document.querySelector("#generated")?.classList).not.toContain(
         "stale",
       );
       expect(timers.callbacksAt(60_000)).not.toHaveLength(0);

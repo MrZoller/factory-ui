@@ -102,34 +102,56 @@ function displayAge(value, now) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function displayCoarseAge(value, now) {
+  if (typeof value !== "string") return "Unknown";
+  const timestamp = new Date(value).valueOf();
+  if (!Number.isFinite(timestamp)) return "Unknown";
+  const minutes = Math.floor(
+    Math.max(0, now.valueOf() - timestamp) / (60 * 1_000),
+  );
+  if (minutes < 1) return "less than 1m ago";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function replaceText(element, text) {
+  if (element.textContent !== text) element.textContent = text;
+}
+
 function updateSnapshotStatus(documentRoot, state, now) {
   const generated = documentRoot.querySelector("#generated");
   if (generated && state.lastGoodGeneratedAt) {
     const stale =
       now.valueOf() - new Date(state.lastGoodGeneratedAt).valueOf() >
-        state.refreshIntervalMilliseconds ||
-      state.lastError ||
-      state.paused ||
-      state.peerTimedOut;
+      state.refreshIntervalMilliseconds;
     const reason = state.lastError
       ? "refresh failed"
       : state.paused
         ? "paused"
         : state.peerTimedOut
           ? "peer timed out"
-          : "snapshot too old";
-    generated.classList.toggle("stale", Boolean(stale));
-    generated.textContent = stale
-      ? `Stale · last good snapshot ${displayAge(state.lastGoodGeneratedAt, now)} (${displayTime(state.lastGoodGeneratedAt)}) — ${reason}`
-      : `Updated ${displayTime(state.lastGoodGeneratedAt)}`;
+          : stale
+            ? "snapshot too old"
+            : undefined;
+    if (generated.classList.contains("stale") !== stale) {
+      generated.classList.toggle("stale", stale);
+    }
+    replaceText(
+      generated,
+      stale
+        ? `Stale · last good snapshot ${displayCoarseAge(state.lastGoodGeneratedAt, now)} (${displayTime(state.lastGoodGeneratedAt)}) — ${reason}`
+        : `Updated ${displayTime(state.lastGoodGeneratedAt)}${reason ? ` — ${reason}` : ""}`,
+    );
   }
   if (state.lastError) {
     const error = documentRoot.querySelector("#error");
     if (error) {
       const suffix = state.lastGoodGeneratedAt
-        ? ` · Last good snapshot ${displayAge(state.lastGoodGeneratedAt, now)}`
+        ? ` · Last good snapshot ${displayCoarseAge(state.lastGoodGeneratedAt, now)}`
         : "";
-      error.textContent = `${state.lastError}${suffix}`;
+      replaceText(error, `${state.lastError}${suffix}`);
     }
   }
 }

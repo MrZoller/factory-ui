@@ -3925,7 +3925,7 @@ function renderAnswerForm(parent, documentRoot, view, question, state) {
   }
 
   appendText(form, "h4", "Answer", "question-field-label");
-  if (question.options.length > 0) {
+  if (Array.isArray(question.options) && question.options.length > 0) {
     const options = documentRoot.createElement("fieldset");
     appendText(options, "legend", "Select an option", "answer-label");
     for (const option of question.options) {

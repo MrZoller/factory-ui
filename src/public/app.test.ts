@@ -1594,6 +1594,37 @@ accept unbounded input.
     ).toBeUndefined();
   });
 
+  test("renders prose-only structured questions without assuming labelled answer options", () => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q89",
+              taskId: "T9",
+              title: "Choose a migration",
+              text: "source",
+              context: "Choose the least disruptive migration.",
+              proseOptions: ["Keep the current format", "Migrate now"],
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    expect(() =>
+      renderFleet(fleet("mini", [], [repository]), document, NOW),
+    ).not.toThrow();
+    const queueEntry = document.querySelector(".question-queue-entry");
+    expect(queueEntry?.textContent).toContain("Keep the current format");
+    expect(queueEntry?.textContent).toContain("Migrate now");
+    expect(queueEntry?.querySelectorAll('input[type="radio"]')).toHaveLength(0);
+    expect(queueEntry?.querySelector('input[type="text"]')).not.toBeNull();
+  });
+
   test("caps the globally ordered question queue while retaining its total", async () => {
     const document = dashboardDocument();
     const peer = { name: "macbook", origin: "https://macbook.example" };

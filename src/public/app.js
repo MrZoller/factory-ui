@@ -3534,6 +3534,7 @@ function questionHash(machine, repository, question) {
 
 function duplicateRepositoryNames(documentRoot, views) {
   const machinesByRepository = new Map();
+  const visibleMachines = new Set(views.map((view) => view.identity));
   const add = (machine, repository) => {
     let machines = machinesByRepository.get(repository);
     if (!machines) {
@@ -3548,7 +3549,8 @@ function duplicateRepositoryNames(documentRoot, views) {
     }
   }
   for (const state of getAnswerStore(documentRoot).values()) {
-    add(state.machine, state.repository);
+    if (visibleMachines.has(state.machine))
+      add(state.machine, state.repository);
   }
   return new Set(
     Array.from(machinesByRepository, ([repository, machines]) =>

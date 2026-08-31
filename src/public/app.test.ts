@@ -567,6 +567,23 @@ describe("answer lifecycle queue", () => {
           status: "accepted",
           actor: "Verified Actor",
         },
+        {
+          version: 1,
+          machine: "macbook",
+          repository: "factory-ui",
+          question: "Q11",
+          id: "223e4567-e89b-42d3-a456-426614174000",
+          status: "pending",
+        },
+        {
+          version: 1,
+          machine: "macbook",
+          repository: "factory-ui",
+          question: "Q12",
+          id: "323e4567-e89b-42d3-a456-426614174000",
+          status: "rejected",
+          reason: "Question already answered",
+        },
       ]),
     );
     const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
@@ -587,6 +604,8 @@ describe("answer lifecycle queue", () => {
     ).toEqual([
       "mini/factory-ui/Q9 · Choose <img src=x onerror=1>",
       "macbook/factory-ui/Q10 · Peer question",
+      "macbook/factory-ui/Q11 · Answer lifecycle",
+      "macbook/factory-ui/Q12 · Answer lifecycle",
     ]);
     expect(
       Array.from(
@@ -603,6 +622,14 @@ describe("answer lifecycle queue", () => {
       [
         "macbook/factory-ui/Q10 · Peer question",
         "#machine=macbook&repo=factory-ui&question=Q10",
+      ],
+      [
+        "macbook/factory-ui/Q11 · Answer lifecycle",
+        "#machine=macbook&repo=factory-ui&question=Q11",
+      ],
+      [
+        "macbook/factory-ui/Q12 · Answer lifecycle",
+        "#machine=macbook&repo=factory-ui&question=Q12",
       ],
     ]);
     expect(
@@ -632,9 +659,42 @@ describe("answer lifecycle queue", () => {
     expect(
       document.querySelector(".answer-attribution")?.textContent,
     ).toContain("macbook/factory-ui/Q10");
+    expect(
+      Array.from(
+        document.querySelectorAll(".answer-identity"),
+        (identity) => identity.textContent,
+      ),
+    ).toEqual(["macbook/factory-ui/Q11", "macbook/factory-ui/Q12"]);
     expect(document.querySelectorAll(".question-queue-entry img")).toHaveLength(
       0,
     );
+  });
+
+  test("ignores lifecycle records for removed machines when qualifying visible repositories", () => {
+    const document = dashboardDocument();
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "removed-machine",
+          repository: "factory-ui",
+          question: "Q10",
+          id: "123e4567-e89b-42d3-a456-426614174000",
+          status: "pending",
+        },
+      ]),
+    );
+
+    renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
+
+    expect(
+      document.querySelector(".question-queue-entry h3")?.textContent,
+    ).toBe("factory-ui/Q9 · Choose <img src=x onerror=1>");
+    expect(
+      document.querySelector(".questions-panel article.question h5")
+        ?.textContent,
+    ).toBe("factory-ui/Q9 · T8");
   });
 
   test("keeps the T50 open header count separate from lifecycle-only cards and renders hostile terminal text inert", () => {

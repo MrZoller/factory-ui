@@ -4104,6 +4104,8 @@ accept unbounded input.
     const document = dashboardDocument();
     const discussion =
       "https://github.com/example/factory-ui/pull/42#discussion_r123";
+    const branch = "https://github.com/example/factory-ui/tree/factory/T61";
+    const githubRepository = "https://github.com/example/factory-ui";
     const unsafe = [
       "https://example.invalid/factory-ui/pull/42",
       "https://user:secret@github.com/example/factory-ui/pull/42",
@@ -4119,7 +4121,7 @@ accept unbounded input.
             {
               date: "2026-08-16",
               time: "12:00",
-              text: `- 2026-08-16 12:00 UTC - Reviewed (${discussion}). Follow-up ${discussion}; ${unsafe.join(" ")}.`,
+              text: `- 2026-08-16 12:00 UTC - Reviewed (${discussion}). Follow-up ${discussion}; see ${branch}. Repository ${githubRepository}. ${unsafe.join(" ")}.`,
             },
           ],
         },
@@ -4136,10 +4138,15 @@ accept unbounded input.
     expect(entry.querySelector(".worklog-body")?.textContent).toContain(
       "Follow-up PR #42 discussion;",
     );
+    expect(entry.querySelector(".worklog-body")?.textContent).toContain(
+      "see branch factory/T61. Repository example/factory-ui.",
+    );
     const links = Array.from(entry.querySelectorAll<HTMLAnchorElement>("a"));
     expect(links.map((link) => [link.textContent, link.href])).toEqual([
       ["PR #42 discussion", discussion],
       ["PR #42 discussion", discussion],
+      ["branch factory/T61", branch],
+      ["example/factory-ui", githubRepository],
     ]);
     links.forEach((link) => {
       expect(link.target).toBe("_blank");

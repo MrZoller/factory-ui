@@ -383,10 +383,11 @@ function appendWorklogHighlight(parent, text, repositoryUrl) {
       let candidate = token;
       let suffix = "";
       let safeUrl = safeBareGithubUrl(candidate);
-      while (!safeUrl && /[).,;:!?]$/.test(candidate)) {
+      while (/[).,;:!?]$/.test(candidate)) {
         suffix = candidate.slice(-1) + suffix;
         candidate = candidate.slice(0, -1);
         safeUrl = safeBareGithubUrl(candidate);
+        if (safeUrl) break;
       }
       if (safeUrl) {
         const link = textElement(parent.ownerDocument, "a", safeUrl.label);

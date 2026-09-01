@@ -118,7 +118,7 @@ task.
   - acceptance: In the question queue/detail and answer-delivery surfaces under `src/public/` plus colocated tests, display every question's durable identity as `<repo>/Q<n>` and include the machine when needed to disambiguate repositories across machines; use the qualified identity on every queue row, question detail header, answer confirmation, and notification copy emitted by this service; keep existing repository-bearing deep links aligned with the displayed identity, preserve text-only rendering for all source-derived names, and pass `bun test` plus `bun run lint`.
   - pr: 83
 
-- [R] T64 (major) — Tailnet-open answering: config opt-in to drop the browser-facing shared-secret prompt (Fixes #88)
+- [x] T64 (major) — Tailnet-open answering: config opt-in to drop the browser-facing shared-secret prompt (Fixes #88)
   - acceptance: In `src/config.ts`, `src/contracts.ts`, `src/server.ts`, the answer-intake browser surfaces under `src/public/`, README trust documentation, `AGENTS.md`, and colocated tests, add an explicit `answerAuth: "tailnet-open"` opt-in whose default preserves secret-authenticated browser requests; advertise whether browser authentication is required, omit browser secret prompts and authorization only in open mode, and continue requiring the server-side `FACTORY_ANSWER_SECRET` for every fixed `factory-answers` helper invocation; preserve strict pre-body `application/json` validation, the required `Idempotency-Key`, bounded and idempotent intake behavior, configured actor attribution, and zero answer-route CORS allow-origin headers; document that anyone able to reach the port can answer as the configured actor in open mode, prove hostile cross-origin requests cannot pass the request-shape boundary, and pass `bun test` plus `bun run lint`.
   - pr: 92
 - [ ] T65 (standard) — Fleet dependency graph lists every task ever — show only live tasks, render done deps as satisfied edges (Fixes #87)
@@ -174,6 +174,12 @@ task.
   - Filter edit-only answer drafts for repositories no longer visible on a still-configured machine before collecting duplicate repository names, so visible same-named repositories do not receive an unnecessary machine qualifier (PR #83 review).
   - deps: none
   - pr: 84
+
+- [!] T70 (trivial) — parked review minors (batch)
+  - PR #92: Require a non-simple header or equivalent request boundary for tailnet-open outcome reads.
+  - PR #92: Evaluate Host validation or equivalent anti-rebinding protection for tailnet-open answer submission.
+  - PR #92: Provide a migration path for pre-existing peer answer lifecycle records after owner-link routing changes.
+  - deps: none
 
 - [x] T11 (standard) — parked review minors (batch)
   - Add `O_NONBLOCK` when opening validated `state.json` so a locally planted FIFO cannot block the fleet snapshot before the existing regular-file check rejects it (PR #2 review).

@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T69",
+  "branch": "factory/t69-header-navigation",
   "pr": null,
   "hold": false,
-  "updated": "2026-09-01T05:56:28Z"
+  "updated": "2026-09-01T05:59:16Z"
 }

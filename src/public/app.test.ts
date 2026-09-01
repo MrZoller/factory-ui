@@ -833,7 +833,7 @@ describe("answer lifecycle queue", () => {
     expect(document.querySelectorAll("img")).toHaveLength(0);
   });
 
-  test("separates label/count with an explicit header gap", async () => {
+  test("separates page navigation from explicitly labelled section jumps", async () => {
     const html = await Bun.file(
       new URL("./index.html", import.meta.url),
     ).text();
@@ -841,8 +841,31 @@ describe("answer lifecycle queue", () => {
       .document as unknown as Document;
     document.write(html);
 
-    const questions = document.querySelector<HTMLAnchorElement>(
-      '.header-actions a[href="#question-queue"]',
+    const pageNavigation = document.querySelector(
+      'nav.header-actions[aria-label="Dashboard pages"]',
+    );
+    expect(
+      Array.from(
+        pageNavigation?.querySelectorAll<HTMLAnchorElement>("a") ?? [],
+        (link) => link.getAttribute("href"),
+      ),
+    ).toEqual(["/how"]);
+    expect(pageNavigation?.querySelector('a[href^="#"]')).toBeNull();
+    expect(pageNavigation?.querySelector("#refresh")).toBeNull();
+
+    const sectionNavigation = document.querySelector(
+      'nav.section-navigation[aria-label="Dashboard sections"]',
+    );
+    expect(
+      Array.from(
+        sectionNavigation?.querySelectorAll<HTMLAnchorElement>("a") ?? [],
+        (link) => link.getAttribute("href"),
+      ),
+    ).toEqual(["#dependency-graph", "#question-queue"]);
+    expect(sectionNavigation?.textContent).toContain("On this page");
+
+    const questions = sectionNavigation?.querySelector<HTMLAnchorElement>(
+      'a[href="#question-queue"]',
     );
     expect(
       Array.from(questions?.children ?? [], (child) => child.textContent),
@@ -852,7 +875,12 @@ describe("answer lifecycle queue", () => {
     );
 
     const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
-    expect(css).toMatch(/\.header-actions a\s*\{[^}]*gap:\s*var\(--space-2\)/);
+    expect(css).toMatch(
+      /\.section-navigation a\s*\{[^}]*gap:\s*var\(--space-2\)/,
+    );
+    expect(css).toMatch(
+      /\.section-navigation a::before\s*\{[^}]*content:\s*"↓"/,
+    );
   });
 
   test("fans peer delivery directly to its configured origin rather than through the local server", async () => {
@@ -8005,6 +8033,12 @@ describe("fleet dependency graph", () => {
       new document.defaultView!.Event("hashchange"),
     );
     expect(document.defaultView!.location.hash).toBe("#dependency-graph");
+
+    document.defaultView!.location.hash = "#question-queue";
+    document.defaultView!.dispatchEvent(
+      new document.defaultView!.Event("hashchange"),
+    );
+    expect(document.defaultView!.location.hash).toBe("#question-queue");
 
     const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
     expect(css).toMatch(

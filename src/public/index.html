@@ -32,19 +32,20 @@
           <p id="generated" class="age">Waiting for snapshot…</p>
           <nav class="header-actions" aria-label="Dashboard pages">
             <a class="button button-secondary" href="/how">How it works</a>
-            <a class="button button-secondary" href="#question-queue">
-              <span>Questions</span><span id="question-queue-count">0</span>
-            </a>
-            <a class="button button-secondary" href="#dependency-graph">
-              Dependencies
-            </a>
-            <button id="refresh" class="button button-primary" type="button">
-              Refresh
-            </button>
           </nav>
+          <button id="refresh" class="button button-primary" type="button">
+            Refresh
+          </button>
         </div>
       </header>
       <p id="error" role="alert"></p>
+      <nav class="section-navigation" aria-label="Dashboard sections">
+        <span class="section-navigation-label">On this page</span>
+        <a href="#dependency-graph">Dependencies</a>
+        <a href="#question-queue">
+          <span>Questions</span><span id="question-queue-count">0</span>
+        </a>
+      </nav>
       <section
         class="fleet-summary-section content-section"
         aria-labelledby="fleet-heading"

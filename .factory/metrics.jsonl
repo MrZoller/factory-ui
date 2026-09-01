@@ -73,3 +73,4 @@
 {"schemaVersion":1,"task":"T63","event":"ship","at":"2026-08-31T21:01:12Z","size":"standard","reclassifiedFrom":"trivial","internal":{"rounds":2,"findings":{"blocking":1,"minor":1,"invalid":0},"fixed":2}}
 {"schemaVersion":1,"task":"T63","event":"pr","at":"2026-08-31T21:11:19Z","by":"factory-git","pr":84,"openedAt":"2026-08-31T21:01:01Z","mergedAt":"2026-08-31T21:11:11Z","commits":9,"commitsAfterOpen":0,"reviews":{},"issueComments":{"chatgpt-codex-connector":1},"reactions":{"chatgpt-codex-connector":{"+1":1}},"threads":{},"checkRuns":{"total":1,"failed":0}}
 {"schemaVersion":1,"task":"T63","event":"merge","at":"2026-08-31T21:11:29Z","pr":84,"external":{"codex":{"rounds":1,"findings":{"blocking":0,"minor":0,"refuted":0},"fixPushes":0}},"ci":{"runs":1,"reruns":0}}
+{"schemaVersion":1,"task":"T64","event":"ship","at":"2026-09-01T02:50:33Z","size":"major","reclassifiedFrom":"standard","internal":{"rounds":1,"findings":{"blocking":0,"minor":0,"invalid":0},"fixed":0}}

@@ -1295,13 +1295,72 @@ function appendQuestionOptionText(row, option) {
     );
 }
 
-function renderQuestionBody(parent, question) {
+function questionIsStructured(question) {
+  const labelled =
+    Array.isArray(question?.options) && question.options.length > 0;
+  const prose =
+    Array.isArray(question?.proseOptions) && question.proseOptions.length > 0;
+  return question?.context !== undefined && (labelled || prose);
+}
+
+function renderQuestionOptions(parent, question, interactive) {
   const documentRoot = parent.ownerDocument;
   const labelled =
     Array.isArray(question?.options) && question.options.length > 0;
   const prose =
     Array.isArray(question?.proseOptions) && question.proseOptions.length > 0;
-  const structured = question?.context !== undefined && (labelled || prose);
+  const options = documentRoot.createElement(
+    interactive && labelled ? "fieldset" : labelled ? "ol" : "ul",
+  );
+  options.className = `question-options${prose ? " question-options-prose" : ""}${interactive && labelled ? " question-options-edit" : ""}`;
+
+  if (interactive && labelled) {
+    appendText(options, "legend", "Options", "question-field-label");
+  } else {
+    appendText(parent, "h4", "Options", "question-field-label");
+  }
+
+  if (labelled) {
+    for (const option of question.options) {
+      const row = documentRoot.createElement(interactive ? "label" : "li");
+      let content = row;
+      if (interactive) {
+        row.className = "answer-option";
+        const input = documentRoot.createElement("input");
+        input.type = "radio";
+        input.name = interactive.name;
+        input.value = option.label;
+        input.checked = interactive.state.option === option.label;
+        input.addEventListener("change", () => {
+          interactive.state.option = option.label;
+        });
+        row.append(input);
+        content = documentRoot.createElement("span");
+        row.append(content);
+      }
+      appendText(content, "strong", option.label, "question-option-label");
+      if (option.text) {
+        content.append(documentRoot.createTextNode(" · "));
+        appendQuestionOptionText(content, {
+          ...option,
+          text: questionParagraphs(option.text).join(" "),
+        });
+      } else if (option.recommended) {
+        appendQuestionOptionText(content, option);
+      }
+      options.append(row);
+    }
+  } else {
+    for (const option of question.proseOptions) {
+      appendText(options, "li", questionParagraphs(option).join(" "));
+    }
+  }
+  parent.append(options);
+}
+
+function renderQuestionBody(parent, question, interactiveOptions) {
+  const documentRoot = parent.ownerDocument;
+  const structured = questionIsStructured(question);
   const body = documentRoot.createElement("div");
   body.className = "question-body";
 
@@ -1309,30 +1368,7 @@ function renderQuestionBody(parent, question) {
     appendText(body, "h4", "Context", "question-field-label");
     for (const paragraph of questionParagraphs(question.context))
       appendText(body, "p", paragraph, "question-context");
-    appendText(body, "h4", "Options", "question-field-label");
-    const options = documentRoot.createElement(labelled ? "ol" : "ul");
-    options.className = `question-options${prose ? " question-options-prose" : ""}`;
-    if (labelled) {
-      for (const option of question.options) {
-        const row = documentRoot.createElement("li");
-        appendText(row, "strong", option.label, "question-option-label");
-        if (option.text) {
-          row.append(documentRoot.createTextNode(" · "));
-          appendQuestionOptionText(row, {
-            ...option,
-            text: questionParagraphs(option.text).join(" "),
-          });
-        } else if (option.recommended) {
-          appendQuestionOptionText(row, option);
-        }
-        options.append(row);
-      }
-    } else {
-      for (const option of question.proseOptions) {
-        appendText(options, "li", questionParagraphs(option).join(" "));
-      }
-    }
-    body.append(options);
+    renderQuestionOptions(body, question, interactiveOptions);
     if (question.qualifier !== undefined) {
       appendText(body, "h4", "Qualifier", "question-field-label");
       for (const paragraph of questionParagraphs(question.qualifier))
@@ -4253,28 +4289,6 @@ function renderAnswerForm(
   }
 
   appendText(form, "h4", "Answer", "question-field-label");
-  if (Array.isArray(question.options) && question.options.length > 0) {
-    const options = documentRoot.createElement("fieldset");
-    appendText(options, "legend", "Select an option", "answer-label");
-    for (const option of question.options) {
-      const label = documentRoot.createElement("label");
-      label.className = "answer-option";
-      const input = documentRoot.createElement("input");
-      input.type = "radio";
-      input.name = `answer-${view.identity}-${state.repository}-${question.id}`;
-      input.value = option.label;
-      input.checked = state.option === option.label;
-      input.addEventListener("change", () => {
-        state.option = option.label;
-      });
-      label.append(
-        input,
-        documentRoot.createTextNode(`${option.label} · ${option.text}`),
-      );
-      options.append(label);
-    }
-    form.append(options);
-  }
   const textLabel = appendText(
     form,
     "label",
@@ -4570,7 +4584,39 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
         appendExternalOrText(refs, label, url, kind);
       });
       if (references.length > 0) item.append(refs);
-      const structured = renderQuestionBody(item, question);
+      const structured = questionIsStructured(question);
+      if (
+        view.origin === undefined &&
+        intakeEnabled &&
+        structured &&
+        !answerState
+      ) {
+        answerState = {
+          machine,
+          repository: repository.name,
+          question: question.id,
+          stage: "edit",
+          text: "",
+          secret: "",
+          authRequired,
+        };
+        answerStore.set(key, answerState);
+      }
+      const interactiveOptions =
+        view.origin === undefined &&
+        intakeEnabled &&
+        Array.isArray(question.options) &&
+        question.options.length > 0 &&
+        answerState &&
+        !answerState.id &&
+        answerState.stage !== "review" &&
+        !answerState.payload
+          ? {
+              state: answerState,
+              name: `answer-${view.identity}-${answerState.repository}-${question.id}`,
+            }
+          : undefined;
+      renderQuestionBody(item, question, interactiveOptions);
       if (view.origin !== undefined) {
         if (answerState) {
           renderAnswerLifecycle(
@@ -4610,18 +4656,6 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
           scheduleAnswerPoll(documentRoot, view, answerState);
         }
       } else if (structured) {
-        if (!answerState) {
-          answerState = {
-            machine,
-            repository: repository.name,
-            question: question.id,
-            stage: "edit",
-            text: "",
-            secret: "",
-            authRequired,
-          };
-          answerStore.set(key, answerState);
-        }
         answerState.authRequired = authRequired;
         renderAnswerForm(
           item,

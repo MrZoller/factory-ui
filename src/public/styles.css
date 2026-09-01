@@ -643,6 +643,16 @@ p {
   list-style: disc;
 }
 
+.question-options-edit {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.question-options-edit .question-field-label {
+  padding: 0;
+}
+
 .question-option-label {
   font-family: var(--font-mono);
 }

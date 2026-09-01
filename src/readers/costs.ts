@@ -8,8 +8,8 @@ import {
 import { readFactoryFileWindow } from "./file";
 
 export const MAX_COSTS_BYTES = 64 * 1024;
-export const MAX_COSTS_PREFIX_BYTES = 16 * 1024;
 export const MAX_COSTS_WINDOW_BYTES = 256 * 1024;
+export const MAX_COSTS_SOURCE_BYTES = 4 * 1024 * 1024;
 export const MAX_COST_TASKS = 256;
 export const MAX_COST_MODELS_PER_TASK = 64;
 export const MAX_COST_STRING_LENGTH = 1024;
@@ -234,162 +234,79 @@ export function parseFactoryCosts(bytes: Uint8Array): ReaderResult<CostsData> {
   };
 }
 
-function findTasksStart(text: string): number {
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === '"') inString = false;
-      continue;
-    }
-    if (character === '"') {
-      if (depth === 1 && text.startsWith('"tasks"', index)) {
-        const match = /^"tasks"\s*:\s*\{/.exec(text.slice(index));
-        if (match) return index + match[0].length;
-      }
-      inString = true;
-    } else if (character === "{" || character === "[") depth += 1;
-    else if (character === "}" || character === "]") depth -= 1;
-    if (depth < 0) return -1;
-  }
-  return -1;
-}
-
-function isEscapedQuote(text: string, index: number): boolean {
-  let slashes = 0;
-  for (
-    let cursor = index - 1;
-    cursor >= 0 && text[cursor] === "\\";
-    cursor -= 1
-  ) {
-    slashes += 1;
-  }
-  return slashes % 2 === 1;
-}
-
-function recentMemberSlices(text: string): string[] | null {
-  let cursor = text.length - 1;
-  while (cursor >= 0 && /\s/.test(text[cursor] ?? "")) cursor -= 1;
-  if (text[cursor] !== "}") return null; // root
-  cursor -= 1;
-  while (cursor >= 0 && /\s/.test(text[cursor] ?? "")) cursor -= 1;
-  if (text[cursor] !== "}") return null; // tasks
-  const tasksEnd = cursor;
-  cursor -= 1;
-  let objectDepth = 0;
-  let arrayDepth = 0;
-  let inString = false;
-  let memberEnd = tasksEnd;
-  const slices: string[] = [];
-  for (; cursor >= 0; cursor -= 1) {
-    const character = text[cursor];
-    if (character === '"' && !isEscapedQuote(text, cursor)) {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
-    if (character === "}") objectDepth += 1;
-    else if (character === "{") objectDepth -= 1;
-    else if (character === "]") arrayDepth += 1;
-    else if (character === "[") arrayDepth -= 1;
-    if (objectDepth < 0 || arrayDepth < 0) break; // intersected leading member
-    if (character === "," && objectDepth === 0 && arrayDepth === 0) {
-      slices.push(text.slice(cursor + 1, memberEnd));
-      memberEnd = cursor;
-      if (slices.length === MAX_COST_TASKS) break;
-    }
-  }
-  if (memberEnd < tasksEnd && slices.length < MAX_COST_TASKS) {
-    const candidate = text.slice(cursor + 1, memberEnd).trim();
-    if (candidate.startsWith('"')) slices.push(candidate);
-  }
-  return slices;
-}
-
-function parseFactoryCostsWindow(
-  prefixBytes: Uint8Array,
-  suffixBytes: Uint8Array,
-): ReaderResult<CostsData> {
-  let prefix: string;
-  let suffix: string;
+function parseFactoryCostsWindow(bytes: Uint8Array): ReaderResult<CostsData> {
+  let text: string;
   try {
-    prefix = new TextDecoder("utf-8", { fatal: true }).decode(prefixBytes);
-    // A suffix may begin in the middle of a multibyte character. Decoding with
-    // replacement is safe because the intersected leading member is discarded.
-    suffix = new TextDecoder("utf-8").decode(suffixBytes);
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     return unavailable("COSTS_INVALID_UTF8", "costs.json is not valid UTF-8");
   }
-  const tasksStart = findTasksStart(prefix);
-  if (tasksStart < 0) {
-    return unavailable(
-      "COSTS_INVALID_JSON",
-      "costs.json has no bounded tasks header",
-    );
-  }
-  let header: unknown;
+  let value: unknown;
   try {
-    header = JSON.parse(`${prefix.slice(0, tasksStart)}}}`);
+    value = JSON.parse(text);
   } catch {
+    return unavailable("COSTS_INVALID_JSON", "costs.json is not valid JSON");
+  }
+  if (!isRecord(value)) {
     return unavailable(
-      "COSTS_INVALID_JSON",
-      "costs.json has an invalid header",
+      "COSTS_INVALID_ROOT",
+      "costs.json must contain an object",
     );
   }
-  if (!isRecord(header) || header.schemaVersion !== 1) {
+  if (value.schemaVersion !== 1) {
     return unavailable(
       "COSTS_UNSUPPORTED_SCHEMA",
       "costs.json schemaVersion must be 1",
     );
   }
-  if (!isUtcTimestamp(header.recordedAt) || header.currency !== "USD") {
+  if (
+    !isUtcTimestamp(value.recordedAt) ||
+    !isBoundedString(value.currency) ||
+    !isRecord(value.tasks)
+  ) {
     return unavailable(
       "COSTS_INVALID_FIELD",
       "costs.json contains a missing or invalid field",
     );
   }
-  const slices = recentMemberSlices(suffix);
-  if (slices === null || slices.length === 0) {
+  if (value.currency !== "USD") {
     return unavailable(
-      "COSTS_INVALID_JSON",
-      "costs.json has no complete recent task entries",
+      "COSTS_UNSUPPORTED_CURRENCY",
+      "costs.json currency must be USD",
+    );
+  }
+  const entries = Object.entries(value.tasks);
+  if (entries.length > MAX_COST_TASKS) {
+    return unavailable(
+      "COSTS_TOO_MANY_TASKS",
+      "costs.json contains too many tasks",
+    );
+  }
+  const encoder = new TextEncoder();
+  const retained: Array<[string, unknown]> = [];
+  let retainedBytes = 2;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (!entry) continue;
+    const serialized = JSON.stringify({ [entry[0]]: entry[1] });
+    const entryBytes = encoder.encode(serialized).byteLength - 2;
+    const separatorBytes = retained.length === 0 ? 0 : 1;
+    if (retainedBytes + entryBytes + separatorBytes > MAX_COSTS_WINDOW_BYTES) {
+      break;
+    }
+    retained.unshift(entry);
+    retainedBytes += entryBytes + separatorBytes;
+  }
+  if (retained.length === 0 && entries.length > 0) {
+    return unavailable(
+      "COSTS_INVALID_TASK",
+      "costs.json has no complete task within the recent window",
     );
   }
   const tasks: Record<string, CostTask> = Object.create(null);
-  for (const slice of slices.reverse()) {
-    let member: unknown;
-    try {
-      member = JSON.parse(`{${slice}}`);
-    } catch {
-      return unavailable(
-        "COSTS_INVALID_JSON",
-        "costs.json contains an invalid recent task entry",
-      );
-    }
-    if (!isRecord(member))
-      return unavailable(
-        "COSTS_INVALID_TASK",
-        "costs.json contains an invalid task",
-      );
-    const entries = Object.entries(member);
-    if (entries.length !== 1)
-      return unavailable(
-        "COSTS_INVALID_TASK",
-        "costs.json contains an invalid task",
-      );
-    const entry = entries[0];
-    if (!entry)
-      return unavailable(
-        "COSTS_INVALID_TASK",
-        "costs.json contains an invalid task",
-      );
-    const [taskId, taskValue] = entry;
+  for (const [taskId, taskValue] of retained) {
     const task = parseTask(taskId, taskValue);
-    if (task === null || tasks[taskId] !== undefined) {
+    if (task === null) {
       return unavailable(
         "COSTS_INVALID_TASK",
         "costs.json contains an invalid task",
@@ -401,7 +318,7 @@ function parseFactoryCostsWindow(
     status: "partial",
     data: {
       schemaVersion: 1,
-      recordedAt: header.recordedAt,
+      recordedAt: value.recordedAt,
       currency: "USD",
       tasks,
       coverage: {
@@ -425,19 +342,26 @@ export async function readFactoryCosts(
   const result = await readFactoryFileWindow(
     repositoryPath,
     "costs",
-    MAX_COSTS_BYTES,
-    MAX_COSTS_PREFIX_BYTES,
-    MAX_COSTS_WINDOW_BYTES,
+    MAX_COSTS_SOURCE_BYTES,
+    0,
+    0,
   );
-  if (result.status === "available") return parseFactoryCosts(result.bytes);
-  if (result.status === "window") {
-    return parseFactoryCostsWindow(result.prefix, result.suffix);
+  if (result.status === "available") {
+    return result.bytes.byteLength <= MAX_COSTS_BYTES
+      ? parseFactoryCosts(result.bytes)
+      : parseFactoryCostsWindow(result.bytes);
   }
   const code =
-    result.status === "missing" ? "COSTS_MISSING" : "COSTS_UNAVAILABLE";
+    result.status === "missing"
+      ? "COSTS_MISSING"
+      : result.status === "window"
+        ? "COSTS_TOO_LARGE"
+        : "COSTS_UNAVAILABLE";
   const message =
     result.status === "missing"
       ? "costs.json is missing"
-      : "costs.json could not be read safely";
+      : result.status === "window"
+        ? "costs.json exceeds the bounded source limit"
+        : "costs.json could not be read safely";
   return unavailable(code, message);
 }

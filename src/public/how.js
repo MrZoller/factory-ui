@@ -113,10 +113,11 @@ function modelUsage(fleet, modelId) {
   let tokens = 0;
   let found = false;
   let partial = false;
+  let incomplete = false;
   for (const repository of fleet.repositories) {
     const costs = availableData(repository.costs);
     if (!costs || costs.currency !== "USD") {
-      partial = true;
+      incomplete = true;
       continue;
     }
     partial ||= costs.coverage?.kind === "recent-window";
@@ -136,7 +137,9 @@ function modelUsage(fleet, modelId) {
       }
     }
   }
-  return found || partial ? { usd: total, tokens, found, partial } : undefined;
+  return found || partial || incomplete
+    ? { usd: total, tokens, found, partial, incomplete }
+    : undefined;
 }
 
 function formatTokenLimit(value) {
@@ -222,13 +225,22 @@ function renderRole(documentRoot, role, routing, fleet) {
       ? usage.usd === 0 && usage.tokens > 0
         ? "sub"
         : `$${usage.usd.toFixed(2)} metered`
-      : "Partial";
+      : usage.partial
+        ? "Partial"
+        : "Unavailable";
+    const qualifier = usage.found
+      ? usage.partial
+        ? " · partial"
+        : usage.incomplete
+          ? " · incomplete"
+          : ""
+      : "";
     item.append(
       element(
         documentRoot,
         "p",
-        `${base}${usage.partial && usage.found ? " · partial" : ""}`,
-        `agent-cost${usage.partial ? " cost-partial" : ""}`,
+        `${base}${qualifier}`,
+        `agent-cost${usage.partial ? " cost-partial" : usage.incomplete ? " unavailable" : ""}`,
       ),
     );
   }

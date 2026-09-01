@@ -153,10 +153,11 @@ not expose the port to a broader LAN or public network.
   a step cap from 0 through 1,000,000. JSONC line and block comments plus
   trailing commas are accepted without treating comment-like string content as
   syntax.
-- Task costs: files up to and including 64 KiB are read completely. A larger,
-  canonical schema-1 file is read through a 16 KiB header prefix and a 256 KiB
-  recent-task suffix, retaining at most 256 complete task entries and 64 models
-  per task. Cost strings are capped at 1,024 characters.
+- Task costs: files up to and including 64 KiB are exposed completely. A larger
+  schema-1 file is read and validated within a 4 MiB source bound, then exposes
+  the newest complete task entries that fit a 256 KiB serialized window. At
+  most 256 tasks and 64 models per task are retained. Cost strings are capped
+  at 1,024 characters.
 - Review metrics: `.factory/metrics.jsonl` is capped at 256 KiB, 4,096 lines,
   and 8 KiB per line. Metric maps contain at most 64 entries and their keys
   are capped at 128 characters.
@@ -371,13 +372,14 @@ Costs use schema version 1:
 keys must be `T1` or greater without leading zeroes, or `unattributed`; model
 keys are `provider/model` identifiers. Every counter is a finite,
 non-negative number. Unknown keys are ignored. Files up to and including 64 KiB
-are read completely. For an oversized canonical schema-1 file, the reader uses
-only a bounded 16 KiB header prefix and 256 KiB recent-task suffix, retaining
-complete entries only, up to 256 tasks and 64 models per task. Such data is
-reported as `Partial`: omitted older tasks and omitted or unattributed entries
-are unknown, not zero. Repository, machine, fleet, and `/how` aggregates that
+are exposed completely. Larger files are fully validated within a fixed 4 MiB
+source bound, then expose the newest complete task entries that fit a 256 KiB
+serialized window, up to 256 tasks and 64 models per task. Such data is reported
+as `Partial`: omitted older tasks and omitted or unattributed entries are
+unknown, not zero. Repository, machine, fleet, and `/how` aggregates that
 include it are partial lower bounds. Missing, malformed, unsupported-version,
-unsafe, or otherwise unreadable input remains `Unavailable` with a warning.
+unsafe, over-bound, or otherwise unreadable input remains `Unavailable` with a
+warning.
 
 Review metrics are newline-delimited schema-version-1 JSON events. Each line
 has a `task` (`T1` or greater) and an `event`: `ship` records task size,

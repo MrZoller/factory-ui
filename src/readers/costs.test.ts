@@ -7,6 +7,7 @@ import {
   MAX_COST_MODELS_PER_TASK,
   MAX_COST_TASKS,
   MAX_COSTS_BYTES,
+  MAX_COSTS_SOURCE_BYTES,
   MAX_COSTS_WINDOW_BYTES,
   parseFactoryCosts,
   readFactoryCosts,
@@ -269,6 +270,49 @@ describe("costs reader", () => {
           code: "COSTS_RECENT_WINDOW",
           message:
             "costs.json exceeded the complete-read limit; totals cover retained recent entries only",
+        },
+      ],
+    });
+  });
+
+  test("ignores task-shaped unknown root properties after tasks in an oversized costs source", async () => {
+    const item = fixture();
+    await item.writeCosts(
+      JSON.stringify({
+        schemaVersion: 1,
+        recordedAt: validCosts.recordedAt,
+        currency: "USD",
+        tasks: { T2: costTask(2) },
+        futureTasks: { T99: { ...costTask(99), padding: "x".repeat(70_000) } },
+      }),
+    );
+
+    const result = await readFactoryCosts(item.root);
+    expect(result).toMatchObject({
+      status: "partial",
+      data: {
+        tasks: { T2: costTask(2) },
+        coverage: { kind: "recent-window", retainedTaskCount: 1 },
+      },
+      warnings: [{ code: "COSTS_RECENT_WINDOW" }],
+    });
+    if (result.status === "unavailable")
+      throw new Error("costs must be readable");
+    expect(Object.keys(result.data.tasks)).toEqual(["T2"]);
+    expect(JSON.stringify(result.data)).not.toContain("futureTasks");
+    expect(JSON.stringify(result.data)).not.toContain("T99");
+  });
+
+  test("rejects a costs source above the bounded source limit", async () => {
+    const item = fixture();
+    await item.writeCosts("x".repeat(MAX_COSTS_SOURCE_BYTES + 1));
+
+    expect(await readFactoryCosts(item.root)).toEqual({
+      status: "unavailable",
+      warnings: [
+        {
+          code: "COSTS_TOO_LARGE",
+          message: "costs.json exceeds the bounded source limit",
         },
       ],
     });

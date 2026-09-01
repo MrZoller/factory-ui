@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T68",
-  "branch": "factory/t68-bounded-cost-window",
+  "current_task": null,
+  "branch": null,
   "pr": null,
   "hold": false,
-  "updated": "2026-09-01T05:05:38Z"
+  "updated": "2026-09-01T05:56:28Z"
 }

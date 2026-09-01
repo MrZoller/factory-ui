@@ -29,3 +29,19 @@ Context: The re-review confirmed that `factory-answers` can durably publish a pe
 Options considered: A — retain the reservation on every ambiguous helper failure and require operator verification before cleanup (recommended; fail closed and at-most-once) / B — extend the engine intake contract with a client-supplied idempotency key before shipping T49
 For A, confirm that manual inspection and cleanup of a rare stranded reservation is acceptable.
 **A:** A — retain the idempotency reservation on every ambiguous helper failure and require operator verification before cleanup; fail closed, at-most-once. Manual inspection and cleanup of a rare stranded reservation is acceptable (Chris, 2026-08-30).
+
+## Q5 (task T68, open, filed-at 2026-09-01T05:56:28Z) — Should T68 receive another fix-and-review round after exhausting its panel budget?
+Context:
+Observable failure: An active repository's cost history can contain an invalid older task, but the dashboard currently labels the retained newer totals as Partial instead of warning that the source is unavailable. The required initial panel and one re-panel each found a blocking validation defect, so the factory protocol now requires the task to stop rather than silently taking another review round. Parked branch: `factory/t68-bounded-cost-window`.
+Engine detail: The bounded reader fully parses up to 4 MiB, but validates only task entries retained by the 256 KiB recent window; a malformed older entry outside that window is therefore masked.
+Options considered: A — the factory owner authorizes one additional fix-and-review round that validates every bounded-source task before retention (recommended) / B — the product owner abandons the recent-window behavior and restores fail-closed unavailability for every file above 64 KiB
+Option A: The T68 implementation owner adds a full bounded validation pass, retains the requested recent-window behavior, and runs the complete suite plus one final panel.
+Owner: T68 implementation owner.
+Day-to-day consequence: active repositories keep partial recent costs instead of losing the panel when the file crosses 64 KiB.
+Cost or risk: one exception to the normal two-panel-round convergence budget and another implementation/review pass.
+Option B: The dashboard product owner accepts that repositories above 64 KiB continue to show costs as unavailable.
+Owner: dashboard product owner.
+Day-to-day consequence: operators lose cost visibility again as active histories grow.
+Cost or risk: T68's stated acceptance and Fixes #89 outcome are not delivered and would require replanning.
+Recommendation rationale: A fixes the confirmed fail-closed gap without weakening the approved bounded-window acceptance criteria.
+**A:**

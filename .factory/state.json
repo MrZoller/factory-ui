@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T66",
-  "branch": "factory/t66-stateful-question-options",
-  "pr": 95,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-09-01T04:28:39Z"
+  "updated": "2026-09-01T04:37:07Z"
 }

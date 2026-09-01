@@ -180,11 +180,12 @@ task.
   - deps: none
   - pr: 84
 
-- [~] T70 (trivial) — parked review minors (batch)
+- [R] T70 (standard) — parked review minors (batch)
   - PR #92: Require a non-simple header or equivalent request boundary for tailnet-open outcome reads.
   - PR #92: Evaluate Host validation or equivalent anti-rebinding protection for tailnet-open answer submission.
   - PR #92: Provide a migration path for pre-existing peer answer lifecycle records after owner-link routing changes.
   - deps: none
+  - pr: 99
 
 - [x] T11 (standard) — parked review minors (batch)
   - Add `O_NONBLOCK` when opening validated `state.json` so a locally planted FIFO cannot block the fleet snapshot before the existing regular-file check rejects it (PR #2 review).

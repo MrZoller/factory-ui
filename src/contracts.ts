@@ -302,11 +302,17 @@ export interface CostTask extends CostCounters {
   lastAt: string;
 }
 
+export interface CostCoverage {
+  kind: "recent-window";
+  retainedTaskCount: number;
+}
+
 export interface CostsData {
   schemaVersion: 1;
   recordedAt: string;
   currency: string;
   tasks: Record<string, CostTask>;
+  coverage?: CostCoverage;
 }
 
 export interface MetricFindings {

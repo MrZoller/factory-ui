@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, symlinkSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { createFactoryFixture, type FactoryFixture } from "../test-support";
@@ -7,6 +7,7 @@ import {
   MAX_COST_MODELS_PER_TASK,
   MAX_COST_TASKS,
   MAX_COSTS_BYTES,
+  MAX_COSTS_WINDOW_BYTES,
   parseFactoryCosts,
   readFactoryCosts,
 } from "./costs";
@@ -40,6 +41,24 @@ const validCosts = {
 
 function encode(value: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(value));
+}
+
+function costTask(usd: number, note?: string) {
+  return {
+    ...validCosts.tasks.T23,
+    usd,
+    ...(note === undefined ? {} : { note }),
+  };
+}
+
+function oversizedCosts(suffix: Record<string, unknown>): string {
+  // The leading member is deliberately larger than the retained suffix. Its
+  // string exercises braces, commas, quotes, escapes, and split UTF-8 bytes.
+  const padding = '"}, { [ ] \\ \\" 🦄,'.repeat(32_000);
+  return JSON.stringify({
+    ...validCosts,
+    tasks: { T1: costTask(1, padding), ...suffix },
+  });
 }
 
 describe("costs reader", () => {
@@ -189,22 +208,108 @@ describe("costs reader", () => {
     ).toBe("COSTS_TOO_MANY_MODELS");
   });
 
-  test("reads the fixed bounded target and reports missing or oversized files", async () => {
+  test("reads exactly 64KiB as a complete costs document", async () => {
     const present = fixture();
-    const missing = fixture();
-    const oversized = fixture();
-    await present.writeCosts(validCosts);
-    await oversized.writeCosts("x".repeat(MAX_COSTS_BYTES + 1));
+    const source = JSON.stringify(validCosts);
+    const sourceLength = new TextEncoder().encode(source).byteLength;
+    await present.writeCosts(
+      `${source}${" ".repeat(MAX_COSTS_BYTES - sourceLength)}`,
+    );
 
-    expect(await readFactoryCosts(present.root)).toMatchObject({
+    expect(await readFactoryCosts(present.root)).toEqual({
       status: "available",
-      data: { tasks: { T23: { usd: 1.23 } } },
+      data: validCosts,
+      warnings: [],
     });
+  });
+
+  test("returns deterministic complete entries from one-byte-over and canonical oversized documents", async () => {
+    const item = fixture();
+    const oneByteOver = JSON.stringify(validCosts);
+    const oneByteOverLength = new TextEncoder().encode(oneByteOver).byteLength;
+    await item.writeCosts(
+      `${oneByteOver}${" ".repeat(MAX_COSTS_BYTES + 1 - oneByteOverLength)}`,
+    );
+    expect(await readFactoryCosts(item.root)).toEqual({
+      status: "partial",
+      data: {
+        ...validCosts,
+        coverage: { kind: "recent-window", retainedTaskCount: 2 },
+      },
+      warnings: [
+        {
+          code: "COSTS_RECENT_WINDOW",
+          message:
+            "costs.json exceeded the complete-read limit; totals cover retained recent entries only",
+        },
+      ],
+    });
+
+    const source = oversizedCosts({
+      T2: costTask(2, 'recent }, { [ ] \\" escaped 🦄'),
+      T3: costTask(3, 'rightmost, } { \\\\ "quoted" 🦄'),
+    });
+    expect(encode(source).byteLength).toBeGreaterThan(MAX_COSTS_WINDOW_BYTES);
+    await item.writeCosts(source);
+
+    const first = await readFactoryCosts(item.root);
+    const second = await readFactoryCosts(item.root);
+    expect(first).toEqual(second);
+    expect(first).toEqual({
+      status: "partial",
+      data: {
+        schemaVersion: 1,
+        recordedAt: validCosts.recordedAt,
+        currency: "USD",
+        tasks: { T2: costTask(2), T3: costTask(3) },
+        coverage: { kind: "recent-window", retainedTaskCount: 2 },
+      },
+      warnings: [
+        {
+          code: "COSTS_RECENT_WINDOW",
+          message:
+            "costs.json exceeded the complete-read limit; totals cover retained recent entries only",
+        },
+      ],
+    });
+  });
+
+  test("fails closed for malformed or unsafe oversized costs files", async () => {
+    const malformed = fixture();
+    const unsafe = fixture();
+    await malformed.writeCosts(
+      `${oversizedCosts({ T2: costTask(2) }).slice(0, -2)}]}`,
+    );
+    await unsafe.writeCosts(oversizedCosts({ T2: costTask(2) }));
+    rmSync(join(malformed.factoryPath, "logs", "costs.json"));
+    symlinkSync(
+      join(unsafe.factoryPath, "logs", "costs.json"),
+      join(malformed.factoryPath, "logs", "costs.json"),
+    );
+
+    // The malformed source is checked before replacing it with an unsafe link.
+    const malformedSource = fixture();
+    await malformedSource.writeCosts(
+      `${oversizedCosts({ T2: costTask(2) }).slice(0, -2)}]}`,
+    );
+    expect((await readFactoryCosts(malformedSource.root)).status).toBe(
+      "unavailable",
+    );
+    expect(await readFactoryCosts(malformed.root)).toEqual({
+      status: "unavailable",
+      warnings: [
+        {
+          code: "COSTS_UNAVAILABLE",
+          message: "costs.json could not be read safely",
+        },
+      ],
+    });
+  });
+
+  test("reports missing costs files", async () => {
+    const missing = fixture();
     expect((await readFactoryCosts(missing.root)).warnings[0]?.code).toBe(
       "COSTS_MISSING",
-    );
-    expect((await readFactoryCosts(oversized.root)).warnings[0]?.code).toBe(
-      "COSTS_TOO_LARGE",
     );
   });
 

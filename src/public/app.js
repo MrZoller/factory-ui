@@ -593,6 +593,7 @@ function notionalLabel(notional) {
   const contributors = notional.contributors ?? 1;
   const repositories = notional.repositories ?? 1;
   const missingNames = notional.missingNames ?? [];
+  const partialNames = notional.partialNames ?? [];
   const coverage =
     contributors < repositories
       ? ` (${contributors} of ${repositories} repos)`
@@ -600,9 +601,12 @@ function notionalLabel(notional) {
   const missing = missingNames.length
     ? `; unavailable repositories: ${missingNames.join(", ")}`
     : "";
+  const windowed = partialNames.length
+    ? `; recent-window repositories: ${partialNames.join(", ")}`
+    : "";
   return {
     text: `~${formatUsd(notional.usd)} at list${notional.partial ? " (partial)" : ""}${coverage}`,
-    title: `notional${notional.partial ? " (partial)" : ""}: subscription lane priced at models.dev list price as of ${notional.pricesAsOf.join(", ")}; not billed${missing}`,
+    title: `notional${notional.partial ? " (partial)" : ""}: subscription lane priced at models.dev list price as of ${notional.pricesAsOf.join(", ")}; not billed${windowed}${missing}`,
   };
 }
 
@@ -722,7 +726,15 @@ function renderTaskReview(cell, task, metrics, oldestDigits) {
   }
 }
 
-function renderTask(tableBody, task, cost, routing, metrics, oldestDigits) {
+function renderTask(
+  tableBody,
+  task,
+  cost,
+  routing,
+  metrics,
+  oldestDigits,
+  costsPartial = false,
+) {
   const item = tableBody.ownerDocument.createElement("tr");
   item.className = "task";
   appendText(item, "td", task?.id ?? "?", "task-id");
@@ -770,6 +782,10 @@ function renderTask(tableBody, task, cost, routing, metrics, oldestDigits) {
     costCell.append(costGroup);
     appendText(costCell, "span", label.detail, "task-cost-detail");
     costCell.title = `${label.detail}${notional ? ` · ${notional.text}; ${notional.title}` : ""}`;
+  } else if (costsPartial) {
+    appendText(costCell, "span", "Partial", "task-cost cost-partial");
+    costCell.title =
+      "This task was not present in the bounded recent costs window.";
   }
   item.append(costCell);
   const reviewCell = appendText(item, "td", "", "task-review");
@@ -856,7 +872,9 @@ function completedTasks(repository, tasks) {
 
 function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
   const plan = readerData(repository.plan);
-  const costs = readerData(repository.costs)?.tasks;
+  const costsData = readerData(repository.costs);
+  const costs = costsData?.tasks;
+  const costsPartial = costsData?.coverage?.kind === "recent-window";
   const routing = readerData(repository.routing);
   const metrics = readerData(repository.metrics);
   const oldestDigits = oldestMetricTaskDigits(metrics);
@@ -903,6 +921,7 @@ function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
           routing,
           ["active", "review", "completed"].includes(key) ? metrics : undefined,
           oldestDigits,
+          costsPartial,
         ),
       );
       scroll.classList.toggle("task-list-scroll", expanded);
@@ -1822,6 +1841,8 @@ export const WARNING_EXPLANATIONS = Object.freeze({
   COSTS_INVALID_MODEL: "A model cost entry has an invalid value.",
   COSTS_MISSING: "The costs file is missing.",
   COSTS_TOO_LARGE: "The costs file exceeds the safe read limit.",
+  COSTS_RECENT_WINDOW:
+    "Costs are a bounded recent window; older task entries may be omitted.",
   COSTS_UNAVAILABLE: "The costs file could not be read safely.",
   METRICS_INVALID_UTF8: "A metrics line is not valid UTF-8 text.",
   METRICS_INVALID_JSON: "A metrics line is not valid JSON.",
@@ -2465,6 +2486,15 @@ function isCostsData(value) {
   ) {
     return false;
   }
+  if (
+    value.coverage !== undefined &&
+    (!isRecord(value.coverage) ||
+      value.coverage.kind !== "recent-window" ||
+      !Number.isSafeInteger(value.coverage.retainedTaskCount) ||
+      value.coverage.retainedTaskCount !== Object.keys(value.tasks).length)
+  ) {
+    return false;
+  }
   return Object.entries(value.tasks).every(([taskId, task]) => {
     if (
       (taskId !== "unattributed" && !/^T[1-9][0-9]*$/.test(taskId)) ||
@@ -2487,10 +2517,12 @@ function isCostsData(value) {
 }
 
 function isCostsResult(value) {
-  return (
-    isReaderResult(value) &&
-    (value.status === "unavailable" || isCostsData(value.data))
-  );
+  if (!isReaderResult(value)) return false;
+  if (value.status === "unavailable") return true;
+  if (!isCostsData(value.data)) return false;
+  return value.status === "partial"
+    ? value.data.coverage?.kind === "recent-window"
+    : value.data.coverage === undefined;
 }
 
 function isMetricCounter(value, positive = false) {
@@ -2765,7 +2797,7 @@ function unavailableSummary(name) {
 }
 
 function repositoryCostData(repository) {
-  return readerData(repository.costs)?.tasks;
+  return readerData(repository.costs);
 }
 
 function meteredTotal(repositories) {
@@ -2773,14 +2805,18 @@ function meteredTotal(repositories) {
   let total = 0;
   let contributors = 0;
   const missingNames = [];
+  const partialNames = [];
   for (const repository of repositories) {
-    const tasks = repositoryCostData(repository);
-    if (!tasks) {
+    const costs = repositoryCostData(repository);
+    if (!costs) {
       missingNames.push(repository.name ?? "Unknown repository");
       continue;
     }
     contributors += 1;
-    for (const counters of Object.values(tasks)) {
+    if (costs.coverage?.kind === "recent-window") {
+      partialNames.push(repository.name ?? "Unknown repository");
+    }
+    for (const counters of Object.values(costs.tasks)) {
       if (isCostCounters(counters)) {
         total += counters.usd;
         if (!Number.isFinite(total)) return { text: "Unavailable" };
@@ -2797,11 +2833,15 @@ function meteredTotal(repositories) {
     contributors < repositories.length
       ? ` (${contributors} of ${repositories.length} repos)`
       : "";
+  const partial = partialNames.length > 0 || missingNames.length > 0;
+  const reasons = [];
+  if (partialNames.length)
+    reasons.push(`recent-window repositories: ${partialNames.join(", ")}`);
+  if (missingNames.length)
+    reasons.push(`unavailable repositories: ${missingNames.join(", ")}`);
   return {
-    text: `${formatUsd(total)}${coverage}`,
-    title: missingNames.length
-      ? `Unavailable repositories: ${missingNames.join(", ")}`
-      : undefined,
+    text: `${formatUsd(total)}${partial ? " (partial)" : ""}${coverage}`,
+    title: reasons.length ? `Partial total; ${reasons.join("; ")}` : undefined,
   };
 }
 
@@ -2813,15 +2853,20 @@ function notionalTotal(repositories) {
   let priced = false;
   let contributors = 0;
   const missingNames = [];
+  const partialNames = [];
   for (const repository of repositories) {
-    const tasks = repositoryCostData(repository);
-    if (!tasks) {
+    const costs = repositoryCostData(repository);
+    if (!costs) {
       missingNames.push(repository.name ?? "Unknown repository");
       continue;
     }
     contributors += 1;
+    if (costs.coverage?.kind === "recent-window") {
+      partialNames.push(repository.name ?? "Unknown repository");
+      partial = true;
+    }
     const routing = readerData(repository.routing);
-    for (const counters of Object.values(tasks)) {
+    for (const counters of Object.values(costs.tasks)) {
       const notional = taskNotional(counters, routing);
       if (notional === undefined) return undefined;
       if (notional === null) continue;
@@ -2841,6 +2886,7 @@ function notionalTotal(repositories) {
         contributors,
         repositories: repositories.length,
         missingNames,
+        partialNames,
       }
     : null;
 }
@@ -3075,7 +3121,8 @@ function summarizeRepository(repository, now) {
   const state = readerData(repository.state);
   const questions = readerData(repository.questions)?.open;
   const costTasks = repositoryCostData(repository);
-  const unattributed = costLabel(costTasks?.unattributed);
+  const unattributed = costLabel(costTasks?.tasks?.unattributed);
+  const costsPartial = costTasks?.coverage?.kind === "recent-window";
   const notional = notionalLabel(notionalTotal([repository]));
   const cost = meteredTotal([repository]);
   return {
@@ -3114,10 +3161,15 @@ function summarizeRepository(repository, now) {
     costTitle: cost.title,
     notional,
     unattributed:
-      unattributed?.text ?? (costTasks ? "None recorded" : "Unavailable"),
+      unattributed?.text ??
+      (costsPartial ? "Partial" : costTasks ? "None recorded" : "Unavailable"),
     unattributedDetail: unattributed?.detail,
     unattributedKind: unattributed?.kind,
-    unattributedTitle: unattributed?.title,
+    unattributedTitle:
+      unattributed?.title ??
+      (costsPartial
+        ? "Factory overhead was not present in the bounded recent costs window."
+        : undefined),
   };
 }
 

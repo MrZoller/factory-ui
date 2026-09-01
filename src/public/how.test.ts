@@ -465,6 +465,55 @@ describe("how factory works page", () => {
     ).toBe("sub");
   });
 
+  test("labels retained and missing model usage as partial for a recent costs window", () => {
+    const base = fleet();
+    const repository = base.repositories[0]!;
+    const retained = {
+      ...repository,
+      costs: {
+        ...repository.costs,
+        status: "partial",
+        data: {
+          ...repository.costs.data,
+          coverage: { kind: "recent-window", retainedTaskCount: 1 },
+        },
+      },
+    };
+    const retainedDocument = howDocument();
+    renderHow(
+      [{ identity: "mini", fleet: fleet({ repositories: [retained] }) }],
+      retainedDocument,
+    );
+    expect(
+      retainedDocument.querySelector('[data-role="driver"] .agent-cost')
+        ?.textContent,
+    ).toBe("$1.25 metered · partial");
+
+    const missing = {
+      ...retained,
+      costs: {
+        ...retained.costs,
+        data: {
+          ...retained.costs.data,
+          tasks: { T24: { byModel: {} } },
+        },
+      },
+    };
+    const missingDocument = howDocument();
+    renderHow(
+      [{ identity: "mini", fleet: fleet({ repositories: [missing] }) }],
+      missingDocument,
+    );
+    expect(
+      missingDocument.querySelector('[data-role="driver"] .agent-cost')
+        ?.textContent,
+    ).toBe("Partial");
+    expect(
+      missingDocument.querySelector('[data-role="driver"] .agent-cost')
+        ?.classList,
+    ).toContain("cost-partial");
+  });
+
   test("preserves selected diagram scroll, tab focus, and Operators lane focus across rerenders", () => {
     const document = howDocument("#machine=remote");
     const machines = [

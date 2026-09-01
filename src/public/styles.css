@@ -913,6 +913,11 @@ p {
   font-style: italic;
 }
 
+.cost-partial {
+  color: var(--color-warn);
+  font-style: italic;
+}
+
 .task-cost-group {
   display: inline-flex;
   align-items: baseline;

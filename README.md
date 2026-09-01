@@ -153,8 +153,10 @@ not expose the port to a broader LAN or public network.
   a step cap from 0 through 1,000,000. JSONC line and block comments plus
   trailing commas are accepted without treating comment-like string content as
   syntax.
-- Task costs: `.factory/logs/costs.json` is capped at 64 KiB, 256 tasks, and 64
-  models per task. Cost strings are capped at 1,024 characters.
+- Task costs: files up to and including 64 KiB are read completely. A larger,
+  canonical schema-1 file is read through a 16 KiB header prefix and a 256 KiB
+  recent-task suffix, retaining at most 256 complete task entries and 64 models
+  per task. Cost strings are capped at 1,024 characters.
 - Review metrics: `.factory/metrics.jsonl` is capped at 256 KiB, 4,096 lines,
   and 8 KiB per line. Metric maps contain at most 64 entries and their keys
   are capped at 128 characters.
@@ -368,9 +370,14 @@ Costs use schema version 1:
 `recordedAt`, `firstAt`, and `lastAt` must be ISO-8601 UTC timestamps. Task
 keys must be `T1` or greater without leading zeroes, or `unattributed`; model
 keys are `provider/model` identifiers. Every counter is a finite,
-non-negative number. Unknown keys are ignored. A missing, oversized,
-malformed, unsupported-version, or otherwise invalid file is reported as
-costs `Unavailable` with a warning.
+non-negative number. Unknown keys are ignored. Files up to and including 64 KiB
+are read completely. For an oversized canonical schema-1 file, the reader uses
+only a bounded 16 KiB header prefix and 256 KiB recent-task suffix, retaining
+complete entries only, up to 256 tasks and 64 models per task. Such data is
+reported as `Partial`: omitted older tasks and omitted or unattributed entries
+are unknown, not zero. Repository, machine, fleet, and `/how` aggregates that
+include it are partial lower bounds. Missing, malformed, unsupported-version,
+unsafe, or otherwise unreadable input remains `Unavailable` with a warning.
 
 Review metrics are newline-delimited schema-version-1 JSON events. Each line
 has a `task` (`T1` or greater) and an `event`: `ship` records task size,

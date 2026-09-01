@@ -601,7 +601,26 @@ p {
   margin-bottom: var(--space-1);
 }
 
-.question-queue-entry-linked {
+.question-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.question-title-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.question-permalink {
+  flex: none;
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.question-queue-entry-linked,
+.question-detail-linked {
   outline: 2px solid var(--color-focus);
   outline-offset: 0.2rem;
 }

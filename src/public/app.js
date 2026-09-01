@@ -1392,6 +1392,25 @@ function renderQuestionBody(parent, question, interactiveOptions) {
 
 const questionIdentityHeadings = new WeakMap();
 
+function appendQuestionTitle(parent, tagName, text, identity, href, className) {
+  const heading = parent.ownerDocument.createElement(tagName);
+  heading.className = [className, "question-title"].filter(Boolean).join(" ");
+  appendText(heading, "span", text, "question-title-text");
+  if (href) {
+    const permalink = appendText(
+      heading,
+      "a",
+      "Permalink",
+      "question-permalink",
+    );
+    permalink.href = href;
+    permalink.setAttribute("aria-label", `Permalink to ${identity}`);
+    permalink.title = `Permalink to ${identity}`;
+  }
+  parent.append(heading);
+  return heading;
+}
+
 function renderQuestions(card, repository, machine, now) {
   const open = readerData(repository.questions)?.open;
   if (Array.isArray(open) && open.length === 0) {
@@ -1422,6 +1441,13 @@ function renderQuestions(card, repository, machine, now) {
     appendText(panel, "p", "Unavailable", "unavailable");
     return;
   }
+  const questionCounts = new Map();
+  for (const question of open) {
+    questionCounts.set(
+      question?.id,
+      (questionCounts.get(question?.id) ?? 0) + 1,
+    );
+  }
   for (const question of open) {
     const item = panel.ownerDocument.createElement("article");
     item.className = "text-entry question";
@@ -1436,11 +1462,17 @@ function renderQuestions(card, repository, machine, now) {
       repository: repository.name,
       question: question?.id ?? "?",
       suffix: question?.taskId ?? "?",
+      unambiguous: questionCounts.get(question?.id) === 1,
     });
-    appendText(
+    const displayIdentity = `${repository.name}/${question?.id ?? "?"}`;
+    appendQuestionTitle(
       item,
       "p",
       question?.title ?? "Untitled question",
+      displayIdentity,
+      questionCounts.get(question?.id) === 1
+        ? questionHash(machine, repository.name, question.id)
+        : undefined,
       "entry-title",
     );
     if (question?.filedAt !== undefined) {
@@ -3624,17 +3656,34 @@ function questionDisplayIdentity(
 }
 
 function updateQuestionDetailIdentities(documentRoot, duplicatedRepositories) {
+  const selection = hashSelection(documentRoot.defaultView);
   for (const heading of documentRoot.querySelectorAll(
     ".question-durable-identity",
   )) {
     const parts = questionIdentityHeadings.get(heading);
     if (!parts) continue;
-    heading.textContent = `${questionDisplayIdentity(
+    const displayIdentity = questionDisplayIdentity(
       parts.machine,
       parts.repository,
       parts.question,
       duplicatedRepositories,
-    )} · ${parts.suffix}`;
+    );
+    heading.textContent = `${displayIdentity} · ${parts.suffix}`;
+    const card = heading.closest(".question");
+    const permalink = card?.querySelector(".question-permalink");
+    if (permalink) {
+      permalink.setAttribute("aria-label", `Permalink to ${displayIdentity}`);
+      permalink.title = `Permalink to ${displayIdentity}`;
+    }
+    const linked =
+      parts.unambiguous &&
+      selection.machine === parts.machine &&
+      selection.repository === parts.repository &&
+      selection.question === parts.question;
+    card?.classList.toggle("question-detail-linked", linked);
+    if (linked) card.tabIndex = -1;
+    else if (card?.getAttribute("tabindex") === "-1")
+      card.removeAttribute("tabindex");
   }
 }
 
@@ -4469,16 +4518,16 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
         item.classList.add("question-queue-entry-linked");
         item.tabIndex = -1;
       }
-      const title = documentRoot.createElement("h3");
       const titleText = `${displayIdentity} · ${question.title}`;
-      if (hasUnambiguousLink) {
-        const link = textElement(documentRoot, "a", titleText);
-        link.href = questionHash(machine, repository.name, question.id);
-        title.append(link);
-      } else {
-        title.textContent = titleText;
-      }
-      item.append(title);
+      appendQuestionTitle(
+        item,
+        "h3",
+        titleText,
+        displayIdentity,
+        hasUnambiguousLink
+          ? questionHash(machine, repository.name, question.id)
+          : undefined,
+      );
       appendText(
         item,
         "p",

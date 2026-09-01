@@ -4707,7 +4707,7 @@ const GRAPH_STATE_LABELS = {
   done: "Done",
 };
 
-function renderDependencyTask(parent, machine, repository, task) {
+function renderDependencyTask(parent, machine, repository, task, localTasks) {
   const item = parent.ownerDocument.createElement("li");
   const state = graphTaskState(task, repository);
   item.className = `dependency-task dependency-state-${state}`;
@@ -4768,11 +4768,13 @@ function renderDependencyTask(parent, machine, repository, task) {
     const edges = parent.ownerDocument.createElement("div");
     edges.className = "dependency-edges";
     for (const dependency of dependencies.local) {
+      const prerequisite = localTasks.get(dependency);
+      const satisfied = prerequisite?.status === "completed";
       appendText(
         edges,
         "span",
-        `← ${dependency}`,
-        "dependency-edge dependency-edge-local",
+        satisfied ? `✓ ${dependency}` : `← ${dependency}`,
+        `dependency-edge dependency-edge-local${satisfied ? " dependency-edge-satisfied" : ""}`,
       );
     }
     for (const dependency of dependencies.cross) {
@@ -4796,85 +4798,202 @@ function renderDependencyTask(parent, machine, repository, task) {
 function renderDependencyGraph(documentRoot, views) {
   const graph = documentRoot.querySelector("#dependency-graph-list");
   if (!graph) return;
-  const groups = [];
-  let renderedTasks = 0;
-  let availableTasks = 0;
+  const repositories = [];
   for (const view of views) {
     if (!view.fleet) {
-      const group = documentRoot.createElement("article");
-      group.className = "dependency-repository dependency-machine-unavailable";
-      appendText(group, "p", view.identity, "eyebrow dependency-machine");
-      appendText(group, "h3", "Machine unavailable");
-      appendText(group, "p", "Dependency data unavailable", "unavailable");
-      groups.push(group);
+      repositories.push({
+        view,
+        unavailableMachine: true,
+      });
       continue;
     }
     for (const repository of view.fleet?.repositories ?? []) {
-      const group = documentRoot.createElement("article");
-      group.className = "dependency-repository";
-      appendText(group, "p", view.identity, "eyebrow dependency-machine");
-      appendText(group, "h3", repository.name);
       const plan = readerData(repository.plan);
       if (
         !Array.isArray(plan?.tasks) ||
         plan.tasks.length > MAX_DEPENDENCY_GRAPH_TASKS
       ) {
-        appendText(
-          group,
-          "p",
-          repository.plan?.status === "unavailable"
-            ? "Dependency data unavailable"
-            : "Some malformed task data was isolated",
-          "unavailable",
-        );
-        groups.push(group);
+        repositories.push({
+          view,
+          repository,
+          error:
+            repository.plan?.status === "unavailable"
+              ? "Dependency data unavailable"
+              : "Some malformed task data was isolated",
+        });
         continue;
       }
       const validTasks = plan.tasks.filter(validGraphTask);
-      availableTasks += validTasks.length;
-      if (validTasks.length !== plan.tasks.length) {
-        appendText(
-          group,
-          "p",
-          "Some malformed task data was isolated",
-          "unavailable",
-        );
-      }
-      const list = documentRoot.createElement("ol");
-      list.className = "dependency-tasks";
-      for (const task of validTasks) {
-        if (renderedTasks >= MAX_DEPENDENCY_GRAPH_TASKS) break;
-        renderDependencyTask(list, view.identity, repository, task);
-        renderedTasks += 1;
-      }
-      if (list.childElementCount === 0)
-        appendText(
-          group,
-          "p",
-          validTasks.length > 0 ? "Tasks omitted by graph limit" : "No tasks",
-          validTasks.length > 0 ? "unavailable" : "empty",
-        );
-      else group.append(list);
-      groups.push(group);
+      repositories.push({
+        view,
+        repository,
+        validTasks,
+        malformed: validTasks.length !== plan.tasks.length,
+        liveTasks: validTasks.filter((task) => {
+          if (["active", "review", "blocked"].includes(task.status))
+            return true;
+          if (task.status !== "todo") return false;
+          const dependencies = graphDependencies(task);
+          return dependencies.local.length > 0 || dependencies.cross.length > 0;
+        }),
+        completedTasks: validTasks.filter(
+          (task) => task.status === "completed",
+        ),
+      });
     }
   }
+
+  const groups = [];
+  const totalLive = repositories.reduce(
+    (total, entry) => total + (entry.liveTasks?.length ?? 0),
+    0,
+  );
+  let remainingLive = Math.min(totalLive, MAX_DEPENDENCY_GRAPH_TASKS);
+  const renderedLive = remainingLive;
+  for (const entry of repositories) {
+    const group = documentRoot.createElement("article");
+    group.className = `dependency-repository${entry.unavailableMachine ? " dependency-machine-unavailable" : ""}`;
+    appendText(group, "p", entry.view.identity, "eyebrow dependency-machine");
+    appendText(
+      group,
+      "h3",
+      entry.unavailableMachine ? "Machine unavailable" : entry.repository.name,
+    );
+    if (entry.unavailableMachine) {
+      appendText(group, "p", "Dependency data unavailable", "unavailable");
+      groups.push(group);
+      continue;
+    }
+    if (entry.error) {
+      appendText(group, "p", entry.error, "unavailable");
+      groups.push(group);
+      continue;
+    }
+    if (entry.malformed) {
+      appendText(
+        group,
+        "p",
+        "Some malformed task data was isolated",
+        "unavailable",
+      );
+    }
+    entry.localTasks = new Map(entry.validTasks.map((task) => [task.id, task]));
+    const liveList = documentRoot.createElement("ol");
+    liveList.className = "dependency-tasks";
+    const liveCount = Math.min(entry.liveTasks.length, remainingLive);
+    for (const task of entry.liveTasks.slice(0, liveCount)) {
+      renderDependencyTask(
+        liveList,
+        entry.view.identity,
+        entry.repository,
+        task,
+        entry.localTasks,
+      );
+    }
+    remainingLive -= liveCount;
+    if (liveList.childElementCount > 0) group.append(liveList);
+    else if (
+      entry.validTasks.length > 0 &&
+      entry.validTasks.every((task) => task.status === "completed")
+    ) {
+      appendText(
+        group,
+        "p",
+        `all ${entry.completedTasks.length} tasks done`,
+        "dependency-all-done",
+      );
+    } else if (entry.liveTasks.length > 0) {
+      appendText(group, "p", "Tasks omitted by graph limit", "unavailable");
+    } else {
+      appendText(group, "p", "No dependency-bearing live tasks", "empty");
+    }
+
+    if (entry.completedTasks.length > 0) {
+      entry.details = documentRoot.createElement("details");
+      entry.details.className = "dependency-completed";
+      appendText(
+        entry.details,
+        "summary",
+        `show completed (${entry.completedTasks.length})`,
+        "dependency-completed-summary",
+      );
+      entry.completedContent = documentRoot.createElement("div");
+      entry.completedContent.className = "dependency-completed-content";
+      entry.details.append(entry.completedContent);
+      group.append(entry.details);
+    }
+    groups.push(group);
+  }
+
   if (groups.length === 0) {
     graph.replaceChildren(
       textElement(documentRoot, "p", "No dependency data available", "empty"),
     );
     return;
   }
-  if (availableTasks > renderedTasks) {
-    const notice = textElement(
-      documentRoot,
-      "p",
-      `Showing ${renderedTasks} of ${availableTasks} tasks`,
-      "dependency-limit chip chip-warn",
+  graph.replaceChildren(...groups);
+
+  let limitNotice;
+  const updateCompleted = () => {
+    let remainingCompleted = Math.max(
+      0,
+      MAX_DEPENDENCY_GRAPH_TASKS - renderedLive,
     );
-    graph.replaceChildren(notice, ...groups);
-  } else {
-    graph.replaceChildren(...groups);
-  }
+    let renderedTasks = renderedLive;
+    let displayedTasks = totalLive;
+    for (const entry of repositories) {
+      if (!entry.details) continue;
+      entry.completedContent.replaceChildren();
+      if (!entry.details.open) continue;
+      displayedTasks += entry.completedTasks.length;
+      const completedCount = Math.min(
+        entry.completedTasks.length,
+        remainingCompleted,
+      );
+      const completedList = documentRoot.createElement("ol");
+      completedList.className = "dependency-tasks dependency-completed-tasks";
+      for (const task of entry.completedTasks.slice(0, completedCount)) {
+        renderDependencyTask(
+          completedList,
+          entry.view.identity,
+          entry.repository,
+          task,
+          entry.localTasks,
+        );
+      }
+      renderedTasks += completedCount;
+      remainingCompleted -= completedCount;
+      if (completedList.childElementCount > 0)
+        entry.completedContent.append(completedList);
+      if (completedCount < entry.completedTasks.length)
+        appendText(
+          entry.completedContent,
+          "p",
+          "Completed tasks omitted by graph limit",
+          "unavailable",
+        );
+    }
+
+    if (displayedTasks > renderedTasks) {
+      if (!limitNotice) {
+        limitNotice = textElement(
+          documentRoot,
+          "p",
+          "",
+          "dependency-limit chip chip-warn",
+        );
+        graph.insertBefore(limitNotice, graph.firstChild);
+      }
+      limitNotice.textContent = `Showing ${renderedTasks} of ${displayedTasks} tasks`;
+    } else if (limitNotice) {
+      limitNotice.remove();
+      limitNotice = undefined;
+    }
+  };
+
+  for (const entry of repositories)
+    entry.details?.addEventListener("toggle", updateCompleted);
+  updateCompleted();
 }
 
 function ensureFleetShell(documentRoot, repositories) {

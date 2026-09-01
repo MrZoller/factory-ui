@@ -7371,7 +7371,7 @@ describe("fleet dependency graph", () => {
     });
   }
 
-  test("renders grouped local and cross-repository edges with every task state and safe destinations", () => {
+  test("renders live dependency work by default with safe destinations", () => {
     const document = dashboardDocument();
     renderFleet(fleet("mini", [], [graphRepository()]), document, NOW);
 
@@ -7395,9 +7395,8 @@ describe("fleet dependency graph", () => {
     expect(graph?.querySelectorAll(".dependency-state-held")).not.toHaveLength(
       0,
     );
-    expect(graph?.querySelectorAll(".dependency-state-done")).not.toHaveLength(
-      0,
-    );
+    expect(graph?.querySelectorAll(".dependency-state-done")).toHaveLength(0);
+    expect(graph?.textContent).not.toContain("T5 · T5 task");
     const reviewDocument = dashboardDocument();
     renderFleet(
       fleet(
@@ -7430,6 +7429,82 @@ describe("fleet dependency graph", () => {
     expect(prLink?.rel).toBe("noopener noreferrer");
     expect(document.querySelectorAll("#dependency-graph img")).toHaveLength(0);
     expect((globalThis as Record<string, unknown>).graphPwned).toBeUndefined();
+  });
+
+  test("excludes dependency-free todos and renders completed local prerequisites as satisfied", () => {
+    const document = dashboardDocument();
+    const done = graphTask("T1", "completed", { runnable: false });
+    const waiting = graphTask("T2", "todo", {
+      runnable: false,
+      localDependencies: ["T1", "T3", "T99"],
+      crossRepoDependencies: ["acme/media#17"],
+    });
+    const incomplete = graphTask("T3", "active");
+    const dependencyFree = graphTask("T4", "todo");
+    const repository = graphRepository({
+      plan: {
+        status: "available",
+        data: { tasks: [done, waiting, incomplete, dependencyFree] },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+    const graph = document.querySelector("#dependency-graph")!;
+    expect(graph.textContent).not.toContain("T4 · T4 task");
+    expect(graph.querySelector(".dependency-edge-satisfied")?.textContent).toBe(
+      "✓ T1",
+    );
+    expect(graph.textContent).toContain("← T3");
+    expect(
+      graph.querySelector<HTMLAnchorElement>(
+        '.dependency-edge-cross a[href="https://github.com/acme/media/issues/17"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  test("collapses completed history, summarizes all-done repositories, and closes it on rerender", () => {
+    const document = dashboardDocument();
+    const repository = graphRepository({
+      plan: {
+        status: "available",
+        data: {
+          tasks: [
+            graphTask("T1", "completed", { runnable: false }),
+            graphTask("T2", "completed", { runnable: false }),
+          ],
+        },
+        warnings: [],
+      },
+    });
+    const snapshot = fleet("mini", [], [repository]);
+
+    renderFleet(snapshot, document, NOW);
+    expect(document.querySelector(".dependency-all-done")?.textContent).toBe(
+      "all 2 tasks done",
+    );
+    const details = document.querySelector<HTMLDetailsElement>(
+      ".dependency-completed",
+    )!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector("summary")?.textContent).toBe(
+      "show completed (2)",
+    );
+    expect(details.querySelectorAll(".dependency-task")).toHaveLength(0);
+
+    details.open = true;
+    details.dispatchEvent(new document.defaultView!.Event("toggle"));
+    expect(
+      document.querySelectorAll(".dependency-completed .dependency-task"),
+    ).toHaveLength(2);
+
+    renderFleet(snapshot, document, NOW);
+    expect(
+      document.querySelector<HTMLDetailsElement>(".dependency-completed")?.open,
+    ).toBe(false);
+    expect(
+      document.querySelectorAll(".dependency-completed .dependency-task"),
+    ).toHaveLength(0);
   });
 
   test("renders peer graph groups while isolating unavailable and malformed repository graph data", async () => {
@@ -7505,7 +7580,9 @@ describe("fleet dependency graph", () => {
   test("keeps unavailable peers as machine graph groups and labels nonempty budget omissions", () => {
     const document = dashboardDocument();
     const tasks = Array.from({ length: 256 }, (_, index) =>
-      graphTask(`T${index + 1}`, "todo"),
+      graphTask(`T${index + 1}`, "todo", {
+        crossRepoDependencies: ["acme/shared#1"],
+      }),
     );
     renderFleet(
       fleet(
@@ -7532,7 +7609,11 @@ describe("fleet dependency graph", () => {
             plan: {
               status: "available",
               data: {
-                tasks: [graphTask("T257", "todo")],
+                tasks: [
+                  graphTask("T257", "todo", {
+                    crossRepoDependencies: ["acme/shared#1"],
+                  }),
+                ],
                 active: [],
                 review: [],
                 nextRunnable: [],
@@ -7554,7 +7635,91 @@ describe("fleet dependency graph", () => {
       graph.querySelector(".dependency-machine-unavailable")?.textContent,
     ).toContain("offlineMachine unavailableDependency data unavailable");
     expect(graph.textContent).toContain("Tasks omitted by graph limit");
+    expect(graph.textContent).toContain("Showing 256 of 257 tasks");
     expect(graph.textContent).not.toContain("omittedNo tasks");
+  });
+
+  test("shares the remaining history budget across stable disclosures in repository order", () => {
+    const document = dashboardDocument();
+    const liveTasks = Array.from({ length: 254 }, (_, index) =>
+      graphTask(`T${index + 1}`, "todo", {
+        crossRepoDependencies: ["acme/shared#1"],
+      }),
+    );
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          graphRepository({
+            name: "live",
+            plan: {
+              status: "available",
+              data: { tasks: liveTasks },
+              warnings: [],
+            },
+          }),
+          graphRepository({
+            name: "first-history",
+            plan: {
+              status: "available",
+              data: {
+                tasks: [
+                  graphTask("T300", "completed", { runnable: false }),
+                  graphTask("T301", "completed", { runnable: false }),
+                ],
+              },
+              warnings: [],
+            },
+          }),
+          graphRepository({
+            name: "second-history",
+            plan: {
+              status: "available",
+              data: {
+                tasks: [
+                  graphTask("T400", "completed", { runnable: false }),
+                  graphTask("T401", "completed", { runnable: false }),
+                ],
+              },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const graph = document.querySelector("#dependency-graph")!;
+    expect(graph.querySelector(".dependency-limit")).toBeNull();
+    const [first, second] = Array.from(
+      graph.querySelectorAll<HTMLDetailsElement>(".dependency-completed"),
+    );
+    second!.open = true;
+    second!.dispatchEvent(new document.defaultView!.Event("toggle"));
+    expect(graph.querySelectorAll(".dependency-task")).toHaveLength(256);
+    expect(second!.textContent).toContain("T400 · T400 task");
+
+    first!.open = true;
+    first!.dispatchEvent(new document.defaultView!.Event("toggle"));
+    const disclosures = graph.querySelectorAll(".dependency-completed");
+    expect(disclosures[0]).toBe(first!);
+    expect(disclosures[1]).toBe(second!);
+    expect(first!.textContent).toContain("T300 · T300 task");
+    expect(first!.textContent).toContain("T301 · T301 task");
+    expect(second!.textContent).not.toContain("T400 · T400 task");
+    expect(second!.textContent).toContain(
+      "Completed tasks omitted by graph limit",
+    );
+    expect(graph.textContent).toContain("Showing 256 of 258 tasks");
+    expect(graph.textContent).toContain("T254 · T254 task");
+
+    first!.open = false;
+    first!.dispatchEvent(new document.defaultView!.Event("toggle"));
+    expect(graph.querySelector(".dependency-limit")).toBeNull();
+    expect(second!.textContent).toContain("T400 · T400 task");
+    expect(second!.textContent).toContain("T401 · T401 task");
   });
 
   test("isolates an over-limit peer task array before graph traversal", () => {

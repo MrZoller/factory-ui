@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T67",
-  "branch": "factory/t67-question-permalinks",
-  "pr": 96,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-09-01T04:57:03Z"
+  "updated": "2026-09-01T05:04:00Z"
 }

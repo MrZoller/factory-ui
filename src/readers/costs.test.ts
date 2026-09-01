@@ -44,10 +44,11 @@ function encode(value: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(value));
 }
 
-function costTask(usd: number, note?: string) {
+function costTask(usd: number, note?: string, lastAt?: string) {
   return {
     ...validCosts.tasks.T23,
     usd,
+    ...(lastAt === undefined ? {} : { lastAt }),
     ...(note === undefined ? {} : { note }),
   };
 }
@@ -272,6 +273,34 @@ describe("costs reader", () => {
             "costs.json exceeded the complete-read limit; totals cover retained recent entries only",
         },
       ],
+    });
+  });
+
+  test("retains newest complete tasks by lastAt rather than JSON member order", async () => {
+    const item = fixture();
+    const newest = "2026-08-16T06:00:00Z";
+    await item.writeCosts(
+      JSON.stringify({
+        ...validCosts,
+        tasks: {
+          T1: costTask(1, undefined, newest),
+          T2: costTask(
+            2,
+            "x".repeat(MAX_COSTS_WINDOW_BYTES),
+            "2026-08-16T05:00:00Z",
+          ),
+          T3: costTask(3, undefined, "2026-08-16T04:00:00Z"),
+        },
+      }),
+    );
+
+    const result = await readFactoryCosts(item.root);
+    expect(result).toMatchObject({
+      status: "partial",
+      data: {
+        tasks: { T1: costTask(1, undefined, newest) },
+        coverage: { kind: "recent-window", retainedTaskCount: 1 },
+      },
     });
   });
 

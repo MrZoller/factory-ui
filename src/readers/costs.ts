@@ -275,36 +275,48 @@ function parseFactoryCostsWindow(bytes: Uint8Array): ReaderResult<CostsData> {
       "costs.json currency must be USD",
     );
   }
-  const entries = Object.entries(value.tasks);
-  if (entries.length > MAX_COST_TASKS) {
+  const taskEntries = Object.entries(value.tasks);
+  if (taskEntries.length > MAX_COST_TASKS) {
     return unavailable(
       "COSTS_TOO_MANY_TASKS",
       "costs.json contains too many tasks",
     );
   }
-  const encoder = new TextEncoder();
-  const retained: Array<[string, CostTask]> = [];
-  let retainedBytes = 2;
-  let retaining = true;
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (!entry) continue;
-    const task = parseTask(entry[0], entry[1]);
+  const entries: Array<[string, unknown, CostTask]> = [];
+  for (const [taskId, taskValue] of taskEntries) {
+    const task = parseTask(taskId, taskValue);
     if (task === null) {
       return unavailable(
         "COSTS_INVALID_TASK",
         "costs.json contains an invalid task",
       );
     }
+    entries.push([taskId, taskValue, task]);
+  }
+  // costs.json member order is creation order, not an indication of which task
+  // was updated most recently. Keep the bounded window aligned with lastAt.
+  entries.sort(
+    ([leftId, , left], [rightId, , right]) =>
+      right.lastAt.localeCompare(left.lastAt) || leftId.localeCompare(rightId),
+  );
+
+  const encoder = new TextEncoder();
+  const retained: Array<[string, CostTask]> = [];
+  let retainedBytes = 2;
+  let retaining = true;
+  for (const [taskId, taskValue, task] of entries) {
     if (!retaining) continue;
-    const serialized = JSON.stringify({ [entry[0]]: entry[1] });
+    const serialized = JSON.stringify({ [taskId]: taskValue });
     const entryBytes = encoder.encode(serialized).byteLength - 2;
     const separatorBytes = retained.length === 0 ? 0 : 1;
     if (retainedBytes + entryBytes + separatorBytes > MAX_COSTS_WINDOW_BYTES) {
+      // An oversized newest entry cannot be represented at all, but it must
+      // not hide every later complete entry in the recent window.
+      if (retained.length === 0) continue;
       retaining = false;
       continue;
     }
-    retained.unshift([entry[0], task]);
+    retained.push([taskId, task]);
     retainedBytes += entryBytes + separatorBytes;
   }
   if (retained.length === 0 && entries.length > 0) {

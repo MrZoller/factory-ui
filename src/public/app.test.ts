@@ -495,11 +495,22 @@ describe("answer lifecycle queue", () => {
     );
   });
 
-  test("renders option, free text qualifier, review confirmation, and cancel without executing input", () => {
+  test("uses one stateful options block with a visible recommendation and no default choice", () => {
     const document = dashboardDocument();
     renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
-    expect(document.querySelector(".answer-label")?.textContent).toContain(
-      "Select an option",
+    let entry = document.querySelector(".question-queue-entry")!;
+    expect(entry.querySelectorAll(".question-options")).toHaveLength(1);
+    expect(
+      entry.querySelectorAll("fieldset.question-options-edit"),
+    ).toHaveLength(1);
+    expect(
+      Array.from(
+        entry.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+        (input) => input.checked,
+      ),
+    ).toEqual([false, false]);
+    expect(entry.querySelector(".question-recommended")?.textContent).toBe(
+      "(recommended)",
     );
     expect(document.querySelectorAll("img")).toHaveLength(0);
     const text = document.querySelector<HTMLInputElement>(
@@ -520,6 +531,10 @@ describe("answer lifecycle queue", () => {
     Array.from(document.querySelectorAll("button"))
       .find((button) => button.textContent === "Review answer")!
       .click();
+    entry = document.querySelector(".question-queue-entry")!;
+    expect(entry.querySelectorAll(".question-options")).toHaveLength(1);
+    expect(entry.querySelector("fieldset.question-options-edit")).toBeNull();
+    expect(entry.querySelectorAll('input[type="radio"]')).toHaveLength(0);
     expect(document.querySelector(".answer-form")?.textContent).toContain(
       "Review answer",
     );
@@ -529,9 +544,108 @@ describe("answer lifecycle queue", () => {
     Array.from(document.querySelectorAll("button"))
       .find((button) => button.textContent === "Cancel")!
       .click();
-    expect(document.querySelector(".answer-form")?.textContent).toContain(
-      "Select an option",
+    entry = document.querySelector(".question-queue-entry")!;
+    expect(
+      entry.querySelector("fieldset.question-options-edit"),
+    ).not.toBeNull();
+  });
+
+  test("keeps one static options block when intake is unavailable or lifecycle replaces editing", () => {
+    const unavailable = dashboardDocument();
+    renderFleet(
+      fleet("mini", [], [answerableRepository()], {
+        enabled: false,
+        authRequired: true,
+      }),
+      unavailable,
+      NOW,
     );
+    const unavailableEntry = unavailable.querySelector(
+      ".question-queue-entry",
+    )!;
+    expect(unavailableEntry.querySelectorAll(".question-options")).toHaveLength(
+      1,
+    );
+    expect(
+      unavailableEntry.querySelector("fieldset.question-options-edit"),
+    ).toBeNull();
+    expect(
+      unavailableEntry.querySelectorAll('input[type="radio"]'),
+    ).toHaveLength(0);
+    expect(
+      unavailableEntry.querySelector(".question-recommended")?.textContent,
+    ).toBe("(recommended)");
+    expect(unavailableEntry.querySelector(".answer-form")).toBeNull();
+
+    const lifecycle = dashboardDocument();
+    lifecycle.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: "Q9",
+          id: "123e4567-e89b-42d3-a456-426614174000",
+          status: "accepted",
+          actor: "Verified Actor",
+        },
+      ]),
+    );
+    renderFleet(fleet("mini", [], [answerableRepository()]), lifecycle, NOW);
+    const lifecycleEntry = lifecycle.querySelector(".question-queue-entry")!;
+    expect(lifecycleEntry.querySelectorAll(".question-options")).toHaveLength(
+      1,
+    );
+    expect(
+      lifecycleEntry.querySelector("fieldset.question-options-edit"),
+    ).toBeNull();
+    expect(lifecycleEntry.querySelectorAll('input[type="radio"]')).toHaveLength(
+      0,
+    );
+    expect(lifecycleEntry.querySelector(".answer-status")?.textContent).toBe(
+      "applied/consumed",
+    );
+  });
+
+  test("renders hostile option text as inert text in the stateful options block", () => {
+    const document = dashboardDocument();
+    const hostile = '<img src=x onerror="globalThis.optionPwned=1">';
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          answerableRepository({
+            questions: {
+              status: "available",
+              data: {
+                open: [
+                  {
+                    id: "Q9",
+                    taskId: "T8",
+                    title: "Choose safely",
+                    text: "raw",
+                    context: "Context",
+                    options: [{ label: "A", text: hostile, recommended: true }],
+                  },
+                ],
+              },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const entry = document.querySelector(".question-queue-entry")!;
+    expect(entry.querySelector(".question-options")?.textContent).toContain(
+      hostile,
+    );
+    expect(entry.querySelectorAll("img, [onerror]")).toHaveLength(0);
+    expect((globalThis as Record<string, unknown>).optionPwned).toBeUndefined();
   });
 
   test("qualifies duplicate-repository question identities", async () => {
@@ -2003,7 +2117,7 @@ accept unbounded input.
     ).toBeUndefined();
   });
 
-  test("renders prose-only structured questions without assuming labelled answer options", () => {
+  test("keeps the free-text-only fallback when structured options have no labels", () => {
     const document = dashboardDocument();
     const repository = richRepository({
       questions: {
@@ -2030,6 +2144,10 @@ accept unbounded input.
     const queueEntry = document.querySelector(".question-queue-entry");
     expect(queueEntry?.textContent).toContain("Keep the current format");
     expect(queueEntry?.textContent).toContain("Migrate now");
+    expect(queueEntry?.querySelectorAll(".question-options")).toHaveLength(1);
+    expect(
+      queueEntry?.querySelector("fieldset.question-options-edit"),
+    ).toBeNull();
     expect(queueEntry?.querySelectorAll('input[type="radio"]')).toHaveLength(0);
     expect(queueEntry?.querySelector('input[type="text"]')).not.toBeNull();
   });

@@ -3813,11 +3813,27 @@ function answerRuntime(documentRoot) {
     fetcher: globalThis.fetch.bind(globalThis),
     setTimeout: globalThis.setTimeout.bind(globalThis),
     clearTimeout: globalThis.clearTimeout.bind(globalThis),
-    randomUUID: () => globalThis.crypto.randomUUID(),
+    randomUUID: browserRandomUUID,
     stopped: false,
   };
   answerRuntimes.set(documentRoot, runtime);
   return runtime;
+}
+
+function browserRandomUUID() {
+  const crypto = globalThis.crypto;
+  if (typeof crypto?.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
+  return [
+    hex.slice(0, 4).join(""),
+    hex.slice(4, 6).join(""),
+    hex.slice(6, 8).join(""),
+    hex.slice(8, 10).join(""),
+    hex.slice(10).join(""),
+  ].join("-");
 }
 
 function answerEndpoint(view, repository, id) {
@@ -4011,16 +4027,16 @@ async function submitAnswerFromQueue(documentRoot, view, state) {
   const runtime = answerRuntime(documentRoot);
   state.sending = true;
   state.error = undefined;
-  if (!state.idempotencyKey) state.idempotencyKey = runtime.randomUUID();
-  state.status = "uncertain";
-  if (!persistAnswerStore(documentRoot, state)) {
-    state.sending = false;
-    state.error = "Browser storage unavailable; submission not sent";
-    rerenderQuestionQueue(documentRoot);
-    return;
-  }
-  rerenderQuestionQueue(documentRoot);
   try {
+    if (!state.idempotencyKey) state.idempotencyKey = runtime.randomUUID();
+    state.status = "uncertain";
+    if (!persistAnswerStore(documentRoot, state)) {
+      state.sending = false;
+      state.error = "Browser storage unavailable; submission not sent";
+      rerenderQuestionQueue(documentRoot);
+      return;
+    }
+    rerenderQuestionQueue(documentRoot);
     const response = await fetchAnswerWithTimeout(
       runtime,
       answerEndpoint(view, state.repository),
@@ -5156,8 +5172,7 @@ export function startDashboard(
       dependencyOverrides.clearInterval ??
       globalThis.clearInterval.bind(globalThis),
     now: dependencyOverrides.now ?? (() => new Date()),
-    randomUUID:
-      dependencyOverrides.randomUUID ?? (() => globalThis.crypto.randomUUID()),
+    randomUUID: dependencyOverrides.randomUUID ?? browserRandomUUID,
   };
   answerRuntimes.set(documentRoot, {
     fetcher,

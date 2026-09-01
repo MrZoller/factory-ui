@@ -1144,6 +1144,60 @@ describe("answer lifecycle queue", () => {
     controller.cleanup();
   });
 
+  test("recovers from idempotency key generation failure and permits retry", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    const randomUUID = vi
+      .fn<() => string>()
+      .mockImplementationOnce(() => {
+        throw new Error("UUID unavailable");
+      })
+      .mockReturnValue(answerId);
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === "/api/fleet"
+        ? jsonResponse(fleet("mini", [], [answerableRepository()]))
+        : jsonResponse({ status: "pending", id: answerId }, 202),
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, { randomUUID, now: () => NOW }),
+    );
+    await flushPromises();
+    const view = document.defaultView!;
+    const option = document.querySelector<HTMLInputElement>(
+      ".answer-option input",
+    )!;
+    option.checked = true;
+    option.dispatchEvent(new view.Event("change"));
+    const secret = document.querySelector<HTMLInputElement>(
+      ".answer-form input[type=password]",
+    )!;
+    secret.value = "shared";
+    secret.dispatchEvent(new view.Event("input"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Review answer")!
+      .click();
+    const confirm = () =>
+      Array.from(document.querySelectorAll("button")).find(
+        (button) => button.textContent === "Confirm submission",
+      )!;
+    confirm().click();
+    await flushPromises();
+    expect(document.querySelector(".answer-error")?.textContent).toBe(
+      "UUID unavailable",
+    );
+    expect(confirm().disabled).toBe(false);
+    confirm().click();
+    await flushPromises();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(document.querySelector(".answer-status")?.textContent).toBe(
+      "pending application",
+    );
+    controller.cleanup();
+  });
+
   test("bounds a stalled answer outcome poll and clears tracking", async () => {
     const document = dashboardDocument();
     const timers = fakeTimers();

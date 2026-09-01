@@ -24,7 +24,10 @@ MagicDNS.
   limits. The owner-approved answer-intake exception may invoke only the fixed
   `factory-answers` helper when enabled by `answerActor` plus
   `FACTORY_ANSWER_SECRET`; configuration omission keeps it disabled, and the
-  service never edits `questions.md` directly.
+  service never edits `questions.md` directly. Browser answer auth defaults to
+  the shared secret; only explicit `answerAuth: "tailnet-open"` removes it,
+  while the helper secret remains mandatory. Answer routes never emit CORS
+  allow-origin headers, so peer questions link to their owning dashboard.
 - Treat every repository-derived string as untrusted and render it as text,
   never HTML.
 - Use Bun's test runner; linting means Prettier check plus strict TypeScript

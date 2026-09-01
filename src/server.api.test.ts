@@ -122,7 +122,7 @@ describe("answer delivery API", () => {
     developmentOrigins: ["http://localhost:3000"],
     bind: "127.0.0.1",
     port: 7777,
-    answerIntake: { actor: "Verified Actor", secret },
+    answerIntake: { actor: "Verified Actor", secret, authRequired: true },
   };
   function request(path = "/api/repo/owned/answers", init: RequestInit = {}) {
     return new Request(`http://localhost${path}`, init);
@@ -221,7 +221,57 @@ describe("answer delivery API", () => {
     );
   });
 
-  test("serves outcomes, CORS preflight, no-store, and generic errors without secret or path disclosure", async () => {
+  test("allows tailnet-open requests without bearer auth but passes the private helper secret", async () => {
+    const submit = vi.fn(async () => ({
+      status: "pending" as const,
+      id: answerId,
+    }));
+    const handler = createRequestHandler(
+      {
+        ...source,
+        answerIntake: { ...source.answerIntake, authRequired: false },
+      },
+      {
+        submitAnswer: submit,
+        answerIdempotencyStore: new TestAnswerIdempotencyStore(),
+      },
+    );
+    const fleetResponse = await handler(request("/api/fleet"));
+    const fleetBody = await fleetResponse.json();
+    expect(fleetBody.answerIntake).toEqual({
+      enabled: true,
+      authRequired: false,
+    });
+    expect(JSON.stringify(fleetBody)).not.toContain("Verified Actor");
+    expect(JSON.stringify(fleetBody)).not.toContain(secret);
+    const response = await handler(
+      request(undefined, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": answerId,
+        },
+        body: JSON.stringify({ question: "Q1", option: "A" }),
+      }),
+    );
+    expect(response.status).toBe(202);
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ secret, actor: "Verified Actor" }),
+    );
+
+    const preflight = await handler(
+      request(undefined, {
+        method: "OPTIONS",
+        headers: { Origin: source.peers[0]!.origin },
+      }),
+    );
+    expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+    expect(preflight.headers.get("access-control-allow-headers")).toBe(
+      "Content-Type, Idempotency-Key",
+    );
+  });
+
+  test("serves outcomes without answer-route CORS and returns mode-specific preflight headers", async () => {
     const handler = createRequestHandler(source, {
       answerOutcome: async () => ({
         schemaVersion: 1,
@@ -246,9 +296,7 @@ describe("answer delivery API", () => {
     );
     expect(outcome.status).toBe(200);
     expect(outcome.headers.get("cache-control")).toBe("no-store");
-    expect(outcome.headers.get("access-control-allow-origin")).toBe(
-      "http://100.100.0.2:7777",
-    );
+    expect(outcome.headers.get("access-control-allow-origin")).toBeNull();
     const denied = await handler(
       request(undefined, {
         method: "OPTIONS",
@@ -259,6 +307,9 @@ describe("answer delivery API", () => {
     expect(denied.headers.get("access-control-allow-origin")).toBeNull();
     expect(denied.headers.get("access-control-allow-headers")).toContain(
       "Idempotency-Key",
+    );
+    expect(denied.headers.get("access-control-allow-headers")).toContain(
+      "Authorization",
     );
   });
 
@@ -408,7 +459,7 @@ describe("answer delivery API", () => {
       {
         ...config([]),
         codeRoots: [codeRoot],
-        answerIntake: { actor: "operator", secret },
+        answerIntake: { actor: "operator", secret, authRequired: true },
       },
       {
         discovery: async () => discovered,
@@ -461,7 +512,7 @@ describe("answer delivery API", () => {
       {
         ...config([]),
         codeRoots: [codeRoot],
-        answerIntake: { actor: "operator", secret },
+        answerIntake: { actor: "operator", secret, authRequired: true },
       },
       {
         discovery: discover,
@@ -486,7 +537,7 @@ describe("answer delivery API", () => {
       {
         ...config([]),
         codeRoots: [codeRoot],
-        answerIntake: { actor: "operator", secret },
+        answerIntake: { actor: "operator", secret, authRequired: true },
       },
       {
         discovery: discover,
@@ -546,12 +597,62 @@ function config(
 }
 
 describe("versioned read-only API", () => {
+  test("rejects hostile simple open-mode submissions before discovery and never grants answer CORS", async () => {
+    const discovery = vi.fn(async () => ({ repositories: [], warnings: [] }));
+    const handler = createRequestHandler(
+      {
+        ...config([{ name: "owned", path: "/owned" }]),
+        answerIntake: {
+          actor: "operator",
+          secret: "private-helper-secret",
+          authRequired: false,
+        },
+      },
+      { discovery },
+    );
+    const responses = await Promise.all([
+      handler(
+        new Request("http://localhost/api/repo/owned/answers", {
+          method: "POST",
+          headers: {
+            Origin: "https://evil.test",
+            "Content-Type": "text/plain",
+            "Idempotency-Key": "123e4567-e89b-42d3-a456-426614174000",
+          },
+          body: '{"question":"Q1","option":"A"}',
+        }),
+      ),
+      handler(
+        new Request("http://localhost/api/repo/owned/answers", {
+          method: "POST",
+          headers: {
+            Origin: "http://100.100.0.2:7777",
+            "Content-Type": "application/json",
+          },
+          body: '{"question":"Q1","option":"A"}',
+        }),
+      ),
+    ]);
+    expect(responses.map(({ status }) => status)).toEqual([400, 400]);
+    expect(
+      responses.every(
+        (response) =>
+          response.headers.get("access-control-allow-origin") === null,
+      ),
+    ).toBe(true);
+    expect(discovery).not.toHaveBeenCalled();
+  });
+
   test("rejects cheap invalid API routes, methods, and answer authentication before discovery", async () => {
     const discovery = vi.fn(async () => ({ repositories: [], warnings: [] }));
     const handler = createRequestHandler(
       {
         ...config([{ name: "owned", path: "/owned" }]),
-        answerIntake: { actor: "operator", secret: "secret" },
+        answerIntake: {
+          actor: "operator",
+          secret: "secret",
+          authRequired: true,
+        },
       },
       { discovery },
     );
@@ -692,6 +793,7 @@ describe("versioned read-only API", () => {
       hostname: source.machine,
       repositories: source.repositories.map(({ name }) => unavailable(name)),
       peers: source.peers,
+      answerIntake: { enabled: false, authRequired: true },
       currentRouting: {
         status: "unavailable" as const,
         warnings: [
@@ -758,7 +860,10 @@ describe("versioned read-only API", () => {
       id: "123e4567-e89b-42d3-a456-426614174000",
     }));
     const handler = createRequestHandler(
-      { ...config([]), answerIntake: { actor: "operator", secret } },
+      {
+        ...config([]),
+        answerIntake: { actor: "operator", secret, authRequired: true },
+      },
       {
         discovery,
         submitAnswer: submit,

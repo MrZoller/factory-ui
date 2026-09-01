@@ -20,6 +20,12 @@ export interface PeerConfig {
 export interface AnswerIntakeConfig {
   actor: string;
   secret: string;
+  authRequired: boolean;
+}
+
+export interface AnswerIntakeDescriptor {
+  enabled: boolean;
+  authRequired: boolean;
 }
 
 export interface AnswerRequest {
@@ -64,6 +70,7 @@ export interface AppConfigSource {
   bind?: string;
   developmentOrigins?: string[];
   answerActor?: string;
+  answerAuth?: "tailnet-open";
   answerIntake?: AnswerIntakeConfig;
   opencodeConfigPath?: string;
 }
@@ -102,6 +109,7 @@ export interface FleetSnapshot {
   hostname: string;
   repositories: RepositorySnapshot[];
   peers: PeerConfig[];
+  answerIntake: AnswerIntakeDescriptor;
 }
 
 export const TASK_SIZES = ["trivial", "standard", "major"] as const;
@@ -401,6 +409,7 @@ export interface FactoryFleetData {
   hostname: string;
   repositories: RepositoryFactorySnapshot[];
   peers: PeerConfig[];
+  answerIntake: AnswerIntakeDescriptor;
   currentRouting: ReaderResult<CurrentRoutingData>;
   warnings?: ReaderWarning[];
 }

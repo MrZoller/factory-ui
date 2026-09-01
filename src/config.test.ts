@@ -1305,6 +1305,24 @@ describe("config", () => {
       }
     });
 
+    test("accepts only tailnet-open answer auth and requires an answer actor", () => {
+      expect(
+        parseConfig({
+          ...baseInput,
+          answerActor: "Chris",
+          answerAuth: "tailnet-open",
+        }).answerAuth,
+      ).toBe("tailnet-open");
+      for (const answerAuth of ["secret", "open", "TAILNET-OPEN", null]) {
+        expect(() =>
+          parseConfig({ ...baseInput, answerActor: "Chris", answerAuth }),
+        ).toThrow('answerAuth must be "tailnet-open"');
+      }
+      expect(() =>
+        parseConfig({ ...baseInput, answerAuth: "tailnet-open" }),
+      ).toThrow("answerAuth requires answerActor");
+    });
+
     test("keeps answer intake disabled when no actor is configured and never parses a secret", () => {
       const parsed = parseConfig({
         ...baseInput,
@@ -1502,12 +1520,44 @@ describe("config", () => {
         expect(loaded.answerIntake).toEqual({
           actor: "Chris",
           secret: "runtime-secret",
+          authRequired: true,
         });
         expect(
           JSON.stringify(
             parseConfig(JSON.parse(await Bun.file(tempFile).text())),
           ),
         ).not.toContain("runtime-secret");
+      } finally {
+        if (previous === undefined) delete process.env.FACTORY_ANSWER_SECRET;
+        else process.env.FACTORY_ANSWER_SECRET = previous;
+      }
+    });
+
+    test("keeps the helper secret private while disabling browser auth in tailnet-open mode", async () => {
+      await Bun.write(
+        tempFile,
+        JSON.stringify({
+          machine: "test-machine",
+          repositories: [
+            {
+              name: "repo1",
+              path: tempDir,
+              githubUrl: "https://github.com/test/repo",
+            },
+          ],
+          peers: [],
+          answerActor: "Chris",
+          answerAuth: "tailnet-open",
+        }),
+      );
+      const previous = process.env.FACTORY_ANSWER_SECRET;
+      process.env.FACTORY_ANSWER_SECRET = "private-helper-secret";
+      try {
+        expect((await loadConfig(tempFile)).answerIntake).toEqual({
+          actor: "Chris",
+          secret: "private-helper-secret",
+          authRequired: false,
+        });
       } finally {
         if (previous === undefined) delete process.env.FACTORY_ANSWER_SECRET;
         else process.env.FACTORY_ANSWER_SECRET = previous;

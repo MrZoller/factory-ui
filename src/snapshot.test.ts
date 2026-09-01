@@ -1110,6 +1110,7 @@ Options considered: A — Continue (recommended because it preserves compatibili
           },
         ],
         peers: [{ name: "peer1", origin: "http://localhost:8080" }],
+        answerIntake: { enabled: false, authRequired: true },
       });
     });
 

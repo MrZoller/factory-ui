@@ -319,6 +319,7 @@ function fleet(
   hostname: string,
   peers: Array<{ name: string; origin: string }> = [],
   repositories: unknown[] = [],
+  answerIntake = { enabled: true, authRequired: true },
 ) {
   return {
     schemaVersion: 1,
@@ -326,6 +327,7 @@ function fleet(
     generatedAt: "2026-08-16T12:00:00.000Z",
     repositories,
     peers,
+    answerIntake,
   };
 }
 
@@ -944,6 +946,145 @@ describe("answer lifecycle queue", () => {
     controller.cleanup();
   });
 
+  test("submits and polls local tailnet-open answers without secret UI or authorization", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/fleet") {
+          return jsonResponse(
+            fleet("mini", [], [answerableRepository()], {
+              enabled: true,
+              authRequired: false,
+            }),
+          );
+        }
+        if (init?.method === "POST") {
+          return jsonResponse({ status: "pending", id: answerId }, 202);
+        }
+        return jsonResponse({
+          schemaVersion: 1,
+          id: answerId,
+          status: "accepted",
+          question: "Q9",
+          option: "A",
+          actor: "Verified",
+          source: "factory-ui",
+          submittedAt: "2026-08-30T12:00:00.000Z",
+          settledAt: "2026-08-30T12:00:02.000Z",
+        });
+      },
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, {
+        randomUUID: () => answerId,
+        now: () => NOW,
+      }),
+    );
+    await flushPromises();
+    expect(document.body.textContent).not.toContain("Shared secret");
+    expect(
+      document.querySelector('.answer-form input[type="password"]'),
+    ).toBeNull();
+    const option = document.querySelector<HTMLInputElement>(
+      ".answer-option input",
+    )!;
+    option.checked = true;
+    option.dispatchEvent(new document.defaultView!.Event("change"));
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Review answer")!
+      .click();
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Confirm submission")!
+      .click();
+    await flushPromises();
+    timers.callbacksAt(5_000).forEach(({ callback }) => callback());
+    await flushPromises();
+    const answerCalls = fetcher.mock.calls.slice(1);
+    expect(answerCalls).toHaveLength(2);
+    expect(
+      answerCalls.map(([, init]) =>
+        new Headers(init?.headers).has("authorization"),
+      ),
+    ).toEqual([false, false]);
+    expect(document.querySelector(".answer-status")?.textContent).toBe(
+      "applied/consumed",
+    );
+    controller.cleanup();
+  });
+
+  test("resumes a persisted local tailnet-open outcome without prompting for a secret", async () => {
+    const document = dashboardDocument();
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: "Q9",
+          id: answerId,
+          status: "pending",
+        },
+      ]),
+    );
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, _init?: RequestInit) =>
+        String(input) === "/api/fleet"
+          ? jsonResponse(
+              fleet("mini", [], [answerableRepository()], {
+                enabled: true,
+                authRequired: false,
+              }),
+            )
+          : jsonResponse({
+              schemaVersion: 1,
+              id: answerId,
+              status: "accepted",
+              question: "Q9",
+              option: "A",
+              actor: "Verified",
+              source: "factory-ui",
+              submittedAt: "2026-08-30T12:00:00.000Z",
+              settledAt: "2026-08-30T12:00:02.000Z",
+            }),
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(fakeTimers(), { now: () => NOW }),
+    );
+    await flushPromises();
+    expect(document.body.textContent).not.toContain("Shared secret");
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Resume tracking")!
+      .click();
+    await flushPromises();
+    expect(
+      new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).has("authorization"),
+    ).toBe(false);
+    expect(document.querySelector(".answer-status")?.textContent).toBe(
+      "applied/consumed",
+    );
+    controller.cleanup();
+  });
+
+  test("treats a legacy fleet response with no answer descriptor as disabled", () => {
+    const document = dashboardDocument();
+    const { answerIntake: _answerIntake, ...legacy } = fleet(
+      "mini",
+      [],
+      [answerableRepository()],
+    );
+    renderFleet(legacy, document, NOW);
+    expect(document.querySelector(".answer-form")).toBeNull();
+    expect(document.querySelector(".question-body")).not.toBeNull();
+  });
+
   test("bounds a stalled answer submission and re-enables the form", async () => {
     const document = dashboardDocument();
     const timers = fakeTimers();
@@ -1384,96 +1525,40 @@ describe("answer lifecycle queue", () => {
     controller.cleanup();
   });
 
-  test("posts peer answers to the owner and polls pending through inflight to accepted", async () => {
+  test("links peer questions to the owning dashboard without cross-origin answer fetches", async () => {
     const document = dashboardDocument();
     const timers = fakeTimers();
-    const answerId = "123e4567-e89b-42d3-a456-426614174000";
-    let polls = 0;
     const peer = "https://legion.tailnet:7777";
-    const fetcher = vi.fn(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        if (url === "/api/fleet")
-          return jsonResponse(
-            fleet("mini", [{ name: "legion", origin: peer }], []),
-          );
-        if (url === `${peer}/api/fleet`)
-          return jsonResponse(fleet("legion", [], [answerableRepository()]));
-        if (init?.method === "POST")
-          return jsonResponse({ status: "pending", id: answerId }, 202);
-        polls += 1;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/fleet")
         return jsonResponse(
-          polls === 1
-            ? {
-                schemaVersion: 1,
-                id: answerId,
-                status: "inflight",
-                question: "Q9",
-                option: "A",
-                actor: "Verified",
-                source: "factory-ui",
-                submittedAt: "2026-08-30T12:00:00.000Z",
-                preparedAt: "2026-08-30T12:00:01.000Z",
-              }
-            : {
-                schemaVersion: 1,
-                id: answerId,
-                status: "accepted",
-                question: "Q9",
-                option: "A",
-                actor: "Verified",
-                source: "factory-ui",
-                submittedAt: "2026-08-30T12:00:00.000Z",
-                preparedAt: "2026-08-30T12:00:01.000Z",
-                settledAt: "2026-08-30T12:00:02.000Z",
-              },
+          fleet("mini", [{ name: "legion", origin: peer }], []),
         );
-      },
-    );
+      if (url === `${peer}/api/fleet`)
+        return jsonResponse(fleet("legion", [], [answerableRepository()]));
+      throw new Error(`unexpected answer request: ${url}`);
+    });
     const controller = startDashboard(
       document,
       fetcher,
       dashboardDependencies(timers, {
-        randomUUID: () => answerId,
         now: () => NOW,
       }),
     );
     await flushPromises();
-    const view = document.defaultView!;
-    const option = document.querySelector<HTMLInputElement>(
-      ".answer-option input",
-    )!;
-    option.checked = true;
-    option.dispatchEvent(new view.Event("change"));
-    const secret = document.querySelector<HTMLInputElement>(
-      ".answer-form input[type=password]",
-    )!;
-    secret.value = "shared";
-    secret.dispatchEvent(new view.Event("input"));
-    Array.from(document.querySelectorAll("button"))
-      .find((button) => button.textContent === "Review answer")!
-      .click();
-    Array.from(document.querySelectorAll("button"))
-      .find((button) => button.textContent === "Confirm submission")!
-      .click();
-    await flushPromises();
-    expect(fetcher).toHaveBeenCalledWith(
-      `${peer}/api/repo/factory-ui/answers`,
-      expect.objectContaining({ method: "POST" }),
+    expect(document.querySelector(".answer-form")).toBeNull();
+    const link = document.querySelector<HTMLAnchorElement>(
+      ".answer-owning-dashboard a",
     );
-    timers.callbacksAt(5_000).forEach(({ callback }) => callback());
-    await flushPromises();
-    expect(document.querySelector(".answer-status")?.textContent).toBe(
-      "pending application",
+    expect(link?.textContent).toBe("Open legion");
+    expect(link?.href).toBe(
+      `${peer}/#machine=legion&repo=factory-ui&question=Q9`,
     );
-    timers.callbacksAt(5_000).forEach(({ callback }) => callback());
-    await flushPromises();
-    expect(document.querySelector(".answer-status")?.textContent).toBe(
-      "applied/consumed",
-    );
-    expect(document.querySelector(".answer-attribution")?.textContent).toBe(
-      "factory-ui/Q9 · Answered by Verified via factory-ui",
-    );
+    expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
+      "/api/fleet",
+      `${peer}/api/fleet`,
+    ]);
     controller.cleanup();
   });
 

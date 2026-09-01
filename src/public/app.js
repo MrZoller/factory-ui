@@ -2582,6 +2582,14 @@ function isPeer(value) {
   }
 }
 
+function isAnswerIntakeDescriptor(value) {
+  return (
+    isRecord(value) &&
+    typeof value.enabled === "boolean" &&
+    typeof value.authRequired === "boolean"
+  );
+}
+
 function isRepository(value) {
   return (
     isRecord(value) &&
@@ -2619,7 +2627,9 @@ function validateFleet(value) {
     (value.warnings !== undefined && !isWarnings(value.warnings)) ||
     !Array.isArray(value.peers) ||
     value.peers.length > MAX_PEERS ||
-    !value.peers.every(isPeer)
+    !value.peers.every(isPeer) ||
+    (value.answerIntake !== undefined &&
+      !isAnswerIntakeDescriptor(value.answerIntake))
   ) {
     throw new Error("Invalid fleet response");
   }
@@ -3815,6 +3825,10 @@ function answerEndpoint(view, repository, id) {
   return view.origin === undefined ? path : new URL(path, view.origin).href;
 }
 
+function answerAuthHeaders(state) {
+  return state.authRequired ? { Authorization: `Bearer ${state.secret}` } : {};
+}
+
 async function readAnswerResponse(response, allowNotFound = false) {
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_ANSWER_RESPONSE_BYTES) {
@@ -3932,7 +3946,8 @@ function scheduleAnswerPoll(documentRoot, view, state) {
   if (
     runtime.stopped ||
     state.polling ||
-    !state.secret ||
+    state.resumed ||
+    (state.authRequired && !state.secret) ||
     !ANSWER_UUID.test(String(state.id)) ||
     ["accepted", "rejected"].includes(state.status)
   ) {
@@ -3946,7 +3961,8 @@ function scheduleAnswerPoll(documentRoot, view, state) {
 
 async function pollAnswer(documentRoot, view, state) {
   const runtime = answerRuntime(documentRoot);
-  if (state.polling || runtime.stopped || !state.secret) return;
+  if (state.polling || runtime.stopped || (state.authRequired && !state.secret))
+    return;
   state.polling = true;
   state.error = undefined;
   rerenderQuestionQueue(documentRoot);
@@ -3954,7 +3970,7 @@ async function pollAnswer(documentRoot, view, state) {
     const response = await fetchAnswerWithTimeout(
       runtime,
       answerEndpoint(view, state.repository, state.id),
-      { headers: { Authorization: `Bearer ${state.secret}` } },
+      { headers: answerAuthHeaders(state) },
     );
     const value = await readAnswerResponse(response, true);
     if (isRecord(value) && value.status === "unknown-record") {
@@ -4011,7 +4027,7 @@ async function submitAnswerFromQueue(documentRoot, view, state) {
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${state.secret}`,
+          ...answerAuthHeaders(state),
           "Content-Type": "application/json",
           "Idempotency-Key": state.idempotencyKey,
         },
@@ -4040,7 +4056,14 @@ async function submitAnswerFromQueue(documentRoot, view, state) {
   }
 }
 
-function renderAnswerLifecycle(parent, documentRoot, view, state, identity) {
+function renderAnswerLifecycle(
+  parent,
+  documentRoot,
+  view,
+  state,
+  identity,
+  allowResume = true,
+) {
   const lifecycle = documentRoot.createElement("section");
   lifecycle.className = "answer-lifecycle";
   if (state.status === "accepted") {
@@ -4074,7 +4097,7 @@ function renderAnswerLifecycle(parent, documentRoot, view, state, identity) {
     );
     appendText(lifecycle, "p", identity, "answer-identity");
     if (state.error) appendText(lifecycle, "p", state.error, "answer-error");
-    if (state.resumed || !state.secret) {
+    if (allowResume && state.authRequired && (state.resumed || !state.secret)) {
       const resume = documentRoot.createElement("div");
       resume.className = "answer-resume";
       const label = appendText(resume, "label", "Shared secret");
@@ -4105,6 +4128,22 @@ function renderAnswerLifecycle(parent, documentRoot, view, state, identity) {
         void pollAnswer(documentRoot, view, state);
       });
       resume.append(button);
+      lifecycle.append(resume);
+    } else if (allowResume && !state.authRequired && state.resumed) {
+      const resume = documentRoot.createElement("div");
+      resume.className = "answer-resume";
+      const button = appendText(
+        resume,
+        "button",
+        state.polling ? "Tracking…" : "Resume tracking",
+        "button button-secondary",
+      );
+      button.type = "button";
+      button.disabled = state.polling;
+      button.addEventListener("click", () => {
+        state.resumed = false;
+        void pollAnswer(documentRoot, view, state);
+      });
       lifecycle.append(resume);
     }
   }
@@ -4142,7 +4181,7 @@ function renderAnswerForm(
         `Text: ${state.payload.text}`,
         "answer-review-value",
       );
-    if (state.idempotencyKey) {
+    if (state.idempotencyKey && state.authRequired) {
       const secretLabel = appendText(
         form,
         "label",
@@ -4234,20 +4273,23 @@ function renderAnswerForm(
     state.text = text.value;
   });
   textLabel.append(text);
-  const secretLabel = appendText(
-    form,
-    "label",
-    "Shared secret",
-    "answer-label",
-  );
-  const secret = documentRoot.createElement("input");
-  secret.type = "password";
-  secret.autocomplete = "current-password";
-  secret.value = state.secret ?? "";
-  secret.addEventListener("input", () => {
-    state.secret = secret.value;
-  });
-  secretLabel.append(secret);
+  let secret;
+  if (state.authRequired) {
+    const secretLabel = appendText(
+      form,
+      "label",
+      "Shared secret",
+      "answer-label",
+    );
+    secret = documentRoot.createElement("input");
+    secret.type = "password";
+    secret.autocomplete = "current-password";
+    secret.value = state.secret ?? "";
+    secret.addEventListener("input", () => {
+      state.secret = secret.value;
+    });
+    secretLabel.append(secret);
+  }
   if (state.error) appendText(form, "p", state.error, "answer-error");
   const review = appendText(
     form,
@@ -4259,12 +4301,12 @@ function renderAnswerForm(
   review.addEventListener("click", () => {
     const answerText = text.value.trim();
     state.text = text.value;
-    state.secret = secret.value;
+    state.secret = secret?.value ?? "";
     if (!state.option && !answerText) {
       state.error = "Select an option or enter answer text";
     } else if (answerText && ASCII_CONTROL.test(text.value)) {
       state.error = "Answer text cannot contain ASCII control characters";
-    } else if (!state.secret) {
+    } else if (state.authRequired && !state.secret) {
       state.error = "Shared secret is required";
     } else {
       state.error = undefined;
@@ -4278,6 +4320,30 @@ function renderAnswerForm(
     rerenderQuestionQueue(documentRoot);
   });
   parent.append(form);
+}
+
+function renderOwningDashboardLink(
+  parent,
+  view,
+  machine,
+  repository,
+  question,
+) {
+  const message = parent.ownerDocument.createElement("p");
+  message.className = "answer-owning-dashboard";
+  message.append(
+    parent.ownerDocument.createTextNode(
+      "Answers are available only on the owning dashboard. ",
+    ),
+  );
+  const link = textElement(parent.ownerDocument, "a", `Open ${machine}`);
+  link.href = new URL(
+    questionHash(machine, repository, question),
+    view.origin,
+  ).href;
+  link.rel = "noopener noreferrer";
+  message.append(link);
+  parent.append(message);
 }
 
 function renderQuestionQueue(documentRoot, views, now = new Date()) {
@@ -4398,8 +4464,45 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
         );
       }
       let answerState = answerStore.get(key);
+      const intake = view.fleet?.answerIntake;
+      const intakeEnabled = intake?.enabled === true;
+      const authRequired = intake?.authRequired !== false;
+      if (answerState) answerState.authRequired = authRequired;
       if (lifecycleOnly) {
-        if (answerState?.status === "uncertain") {
+        if (view.origin !== undefined) {
+          if (answerState) {
+            renderAnswerLifecycle(
+              item,
+              documentRoot,
+              view,
+              answerState,
+              displayIdentity,
+              false,
+            );
+          }
+          if (intakeEnabled) {
+            renderOwningDashboardLink(
+              item,
+              view,
+              machine,
+              repository.name,
+              question.id,
+            );
+          }
+        } else if (!intakeEnabled) {
+          if (
+            answerState &&
+            ["accepted", "rejected"].includes(answerState.status)
+          ) {
+            renderAnswerLifecycle(
+              item,
+              documentRoot,
+              view,
+              answerState,
+              displayIdentity,
+            );
+          }
+        } else if (answerState?.status === "uncertain") {
           renderAnswerForm(
             item,
             documentRoot,
@@ -4416,6 +4519,13 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
             answerState,
             displayIdentity,
           );
+          if (
+            answerState.id &&
+            (!authRequired || answerState.secret) &&
+            ["pending", "inflight"].includes(answerState.status)
+          ) {
+            scheduleAnswerPoll(documentRoot, view, answerState);
+          }
         }
         return item;
       }
@@ -4445,7 +4555,31 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
       });
       if (references.length > 0) item.append(refs);
       const structured = renderQuestionBody(item, question);
+      if (view.origin !== undefined) {
+        if (answerState) {
+          renderAnswerLifecycle(
+            item,
+            documentRoot,
+            view,
+            answerState,
+            displayIdentity,
+            false,
+          );
+        }
+        if (structured && intakeEnabled) {
+          renderOwningDashboardLink(
+            item,
+            view,
+            machine,
+            repository.name,
+            question.id,
+          );
+        }
+        return item;
+      }
+      if (!intakeEnabled) return item;
       if (answerState?.id) {
+        answerState.authRequired = authRequired;
         renderAnswerLifecycle(
           item,
           documentRoot,
@@ -4454,7 +4588,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
           displayIdentity,
         );
         if (
-          answerState.secret &&
+          (!authRequired || answerState.secret) &&
           ["pending", "inflight"].includes(answerState.status)
         ) {
           scheduleAnswerPoll(documentRoot, view, answerState);
@@ -4468,9 +4602,11 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
             stage: "edit",
             text: "",
             secret: "",
+            authRequired,
           };
           answerStore.set(key, answerState);
         }
+        answerState.authRequired = authRequired;
         renderAnswerForm(
           item,
           documentRoot,

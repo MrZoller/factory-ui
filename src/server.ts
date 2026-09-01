@@ -88,13 +88,16 @@ function jsonError(status: number, message: string): Response {
   return Response.json({ error: message }, { status });
 }
 
-function answerPreflight(allowedMethod: string): Response {
+function answerPreflight(
+  allowedMethod: string,
+  authRequired: boolean,
+): Response {
   const response = new Response(null, { status: 204 });
   response.headers.set("allow", allowedMethod);
   response.headers.set("access-control-allow-methods", allowedMethod);
   response.headers.set(
     "access-control-allow-headers",
-    "Authorization, Content-Type, Idempotency-Key",
+    `${authRequired ? "Authorization, " : ""}Content-Type, Idempotency-Key`,
   );
   return response;
 }
@@ -201,6 +204,16 @@ async function readAnswerBody(request: Request): Promise<unknown> {
   }
 }
 
+function hasJsonContentType(request: Request): boolean {
+  return (
+    request.headers
+      .get("content-type")
+      ?.split(";", 1)[0]
+      ?.trim()
+      .toLowerCase() === "application/json"
+  );
+}
+
 export function createRequestHandler(
   config: AppConfigSource,
   dependencies: HandlerDependencies = {},
@@ -256,6 +269,12 @@ export function createRequestHandler(
   return async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
     const isApi = pathname === "/api/fleet" || pathname.startsWith("/api/");
+    const answerPathSegments = pathname.startsWith("/api/repo/")
+      ? pathname.slice("/api/repo/".length).split("/")
+      : [];
+    const isAnswerPath =
+      (answerPathSegments.length === 2 || answerPathSegments.length === 3) &&
+      answerPathSegments[1] === "answers";
     let response: Response | undefined;
     let discovery: DiscoveryResult | undefined;
 
@@ -263,7 +282,7 @@ export function createRequestHandler(
       if (pathname === "/api/fleet" && request.method !== "GET") {
         response = methodNotAllowed();
       } else if (pathname.startsWith("/api/repo/")) {
-        const answerSecret = config.answerIntake?.secret;
+        const answerIntakeConfig = config.answerIntake;
         const suffix = pathname.slice("/api/repo/".length);
         const segments = suffix.split("/");
         const answerKind =
@@ -277,7 +296,7 @@ export function createRequestHandler(
         const repositoryDetail =
           suffix.length > 0 && !suffix.includes("/") && !suffix.includes("\\");
         if (answerKind !== undefined) {
-          if (answerSecret === undefined) {
+          if (answerIntakeConfig === undefined) {
             response = textResponse(404, "Not Found");
           } else {
             const allowedMethod =
@@ -301,16 +320,31 @@ export function createRequestHandler(
                 // Malformed names remain ordinary not-found routes below.
               }
               if (explicitlyConfigured && request.method === "OPTIONS") {
-                response = answerPreflight(allowedMethod);
+                response = answerPreflight(
+                  allowedMethod,
+                  answerIntakeConfig.authRequired,
+                );
               } else if (
                 request.method !== "OPTIONS" &&
+                answerIntakeConfig.authRequired &&
                 !authenticated(
                   request.headers.get("authorization"),
-                  answerSecret,
+                  answerIntakeConfig.secret,
                 )
               ) {
                 response = explicitlyConfigured
                   ? jsonError(401, "Unauthorized")
+                  : textResponse(404, "Not Found");
+              } else if (
+                answerKind === "submit" &&
+                request.method === "POST" &&
+                (!hasJsonContentType(request) ||
+                  !ANSWER_UUID.test(
+                    request.headers.get("idempotency-key") ?? "",
+                  ))
+              ) {
+                response = explicitlyConfigured
+                  ? jsonError(400, "Invalid request")
                   : textResponse(404, "Not Found");
               }
             }
@@ -348,6 +382,10 @@ export function createRequestHandler(
             schemaVersion: API_SCHEMA_VERSION,
             generatedAt: now().toISOString(),
             ...(await snapshot(requestConfig)),
+            answerIntake: {
+              enabled: config.answerIntake !== undefined,
+              authRequired: config.answerIntake?.authRequired ?? true,
+            },
             ...(discovery !== undefined && discovery.warnings.length > 0
               ? { warnings: discovery.warnings }
               : {}),
@@ -360,12 +398,16 @@ export function createRequestHandler(
           const allowedMethod =
             intakeRoute.kind === "submit" ? "POST, OPTIONS" : "GET, OPTIONS";
           if (request.method === "OPTIONS") {
-            response = answerPreflight(allowedMethod);
+            response = answerPreflight(
+              allowedMethod,
+              answerIntake.authRequired,
+            );
           } else if (
             request.method !== (intakeRoute.kind === "submit" ? "POST" : "GET")
           ) {
             response = methodNotAllowed(allowedMethod);
           } else if (
+            answerIntake.authRequired &&
             !authenticated(
               request.headers.get("authorization"),
               answerIntake.secret,
@@ -596,7 +638,7 @@ export function createRequestHandler(
     response.headers.set("content-security-policy", csp);
     if (isApi) response.headers.set("cache-control", "no-store");
     const origin = request.headers.get("origin");
-    if (origin !== null && allowedOrigins.has(origin)) {
+    if (!isAnswerPath && origin !== null && allowedOrigins.has(origin)) {
       response.headers.set("access-control-allow-origin", origin);
     }
     try {

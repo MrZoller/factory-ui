@@ -315,6 +315,10 @@ export async function createFactoryFleetData(
     hostname: config.machine,
     repositories,
     peers: config.peers,
+    answerIntake: {
+      enabled: config.answerIntake !== undefined,
+      authRequired: config.answerIntake?.authRequired ?? true,
+    },
     currentRouting,
   };
 }
@@ -399,5 +403,9 @@ export async function createFleetSnapshot(
       ),
     ),
     peers: config.peers,
+    answerIntake: {
+      enabled: config.answerIntake !== undefined,
+      authRequired: config.answerIntake?.authRequired ?? true,
+    },
   };
 }

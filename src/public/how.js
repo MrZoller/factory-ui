@@ -68,7 +68,7 @@ function element(documentRoot, tag, text, className) {
 }
 
 function availableData(result) {
-  return result?.status === "available" ? result.data : undefined;
+  return result?.status !== "unavailable" ? result?.data : undefined;
 }
 
 function routingFor(fleet) {
@@ -112,9 +112,15 @@ function modelUsage(fleet, modelId) {
   let total = 0;
   let tokens = 0;
   let found = false;
+  let partial = false;
+  let incomplete = false;
   for (const repository of fleet.repositories) {
     const costs = availableData(repository.costs);
-    if (!costs || costs.currency !== "USD") return undefined;
+    if (!costs || costs.currency !== "USD") {
+      incomplete = true;
+      continue;
+    }
+    partial ||= costs.coverage?.kind === "recent-window";
     for (const task of Object.values(costs.tasks ?? {})) {
       const counters = task?.byModel?.[modelId];
       const usd = counters?.usd;
@@ -131,7 +137,9 @@ function modelUsage(fleet, modelId) {
       }
     }
   }
-  return found ? { usd: total, tokens } : undefined;
+  return found || partial || incomplete
+    ? { usd: total, tokens, found, partial, incomplete }
+    : undefined;
 }
 
 function formatTokenLimit(value) {
@@ -213,14 +221,26 @@ function renderRole(documentRoot, role, routing, fleet) {
   }
   const usage = modelUsage(fleet, `${route.provider}/${route.model}`);
   if (usage !== undefined) {
+    const base = usage.found
+      ? usage.usd === 0 && usage.tokens > 0
+        ? "sub"
+        : `$${usage.usd.toFixed(2)} metered`
+      : usage.partial
+        ? "Partial"
+        : "Unavailable";
+    const qualifier = usage.found
+      ? usage.partial
+        ? " · partial"
+        : usage.incomplete
+          ? " · incomplete"
+          : ""
+      : "";
     item.append(
       element(
         documentRoot,
         "p",
-        usage.usd === 0 && usage.tokens > 0
-          ? "sub"
-          : `$${usage.usd.toFixed(2)} metered`,
-        "agent-cost",
+        `${base}${qualifier}`,
+        `agent-cost${usage.partial ? " cost-partial" : usage.incomplete ? " unavailable" : ""}`,
       ),
     );
   }

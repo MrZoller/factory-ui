@@ -30,7 +30,7 @@ Options considered: A — retain the reservation on every ambiguous helper failu
 For A, confirm that manual inspection and cleanup of a rare stranded reservation is acceptable.
 **A:** A — retain the idempotency reservation on every ambiguous helper failure and require operator verification before cleanup; fail closed, at-most-once. Manual inspection and cleanup of a rare stranded reservation is acceptable (Chris, 2026-08-30).
 
-## Q5 (task T68, open, filed-at 2026-09-01T05:56:28Z) — Should T68 receive another fix-and-review round after exhausting its panel budget?
+## Q5 (task T68, consumed, filed-at 2026-09-01T05:56:28Z) — Should T68 receive another fix-and-review round after exhausting its panel budget?
 Context:
 Observable failure: An active repository's cost history can contain an invalid older task, but the dashboard currently labels the retained newer totals as Partial instead of warning that the source is unavailable. The required initial panel and one re-panel each found a blocking validation defect, so the factory protocol now requires the task to stop rather than silently taking another review round. Parked branch: `factory/t68-bounded-cost-window`.
 Engine detail: The bounded reader fully parses up to 4 MiB, but validates only task entries retained by the 256 KiB recent window; a malformed older entry outside that window is therefore masked.

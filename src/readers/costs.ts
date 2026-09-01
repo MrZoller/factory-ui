@@ -5,9 +5,11 @@ import {
   type CostTokens,
   type ReaderResult,
 } from "../contracts";
-import { readFactoryFile } from "./file";
+import { readFactoryFileWindow } from "./file";
 
 export const MAX_COSTS_BYTES = 64 * 1024;
+export const MAX_COSTS_WINDOW_BYTES = 256 * 1024;
+export const MAX_COSTS_SOURCE_BYTES = 4 * 1024 * 1024;
 export const MAX_COST_TASKS = 256;
 export const MAX_COST_MODELS_PER_TASK = 64;
 export const MAX_COST_STRING_LENGTH = 1024;
@@ -25,6 +27,7 @@ export const COSTS_WARNING_CODES = [
   "COSTS_INVALID_MODEL",
   "COSTS_MISSING",
   "COSTS_TOO_LARGE",
+  "COSTS_RECENT_WINDOW",
   "COSTS_UNAVAILABLE",
 ] as const;
 
@@ -108,6 +111,34 @@ function unavailable(code: string, message: string): ReaderResult<CostsData> {
   return { status: "unavailable", warnings: [{ code, message }] };
 }
 
+function parseTask(taskId: string, taskValue: unknown): CostTask | null {
+  if (
+    (taskId !== "unattributed" && !TASK_ID.test(taskId)) ||
+    !isRecord(taskValue) ||
+    !isUtcTimestamp(taskValue.firstAt) ||
+    !isUtcTimestamp(taskValue.lastAt) ||
+    !isRecord(taskValue.byModel)
+  ) {
+    return null;
+  }
+  const counters = parseCounters(taskValue);
+  if (counters === null) return null;
+  const modelEntries = Object.entries(taskValue.byModel);
+  if (modelEntries.length > MAX_COST_MODELS_PER_TASK) return null;
+  const byModel: Record<string, CostCounters> = Object.create(null);
+  for (const [modelId, modelValue] of modelEntries) {
+    const modelCounters = parseCounters(modelValue);
+    if (!isModelId(modelId) || modelCounters === null) return null;
+    byModel[modelId] = modelCounters;
+  }
+  return {
+    ...counters,
+    byModel,
+    firstAt: taskValue.firstAt,
+    lastAt: taskValue.lastAt,
+  };
+}
+
 export function parseFactoryCosts(bytes: Uint8Array): ReaderResult<CostsData> {
   let text: string;
   try {
@@ -161,51 +192,34 @@ export function parseFactoryCosts(bytes: Uint8Array): ReaderResult<CostsData> {
 
   const tasks: Record<string, CostTask> = Object.create(null);
   for (const [taskId, taskValue] of taskEntries) {
-    if (
-      (taskId !== "unattributed" && !TASK_ID.test(taskId)) ||
-      !isRecord(taskValue) ||
-      !isUtcTimestamp(taskValue.firstAt) ||
-      !isUtcTimestamp(taskValue.lastAt) ||
-      !isRecord(taskValue.byModel)
-    ) {
-      return unavailable(
-        "COSTS_INVALID_TASK",
-        "costs.json contains an invalid task",
-      );
-    }
-    const counters = parseCounters(taskValue);
-    if (counters === null) {
-      return unavailable(
-        "COSTS_INVALID_TASK",
-        "costs.json contains an invalid task",
-      );
-    }
-
-    const modelEntries = Object.entries(taskValue.byModel);
-    if (modelEntries.length > MAX_COST_MODELS_PER_TASK) {
-      return unavailable(
-        "COSTS_TOO_MANY_MODELS",
-        "costs.json contains too many models for a task",
-      );
-    }
-    const byModel: Record<string, CostCounters> = Object.create(null);
-    for (const [modelId, modelValue] of modelEntries) {
-      const modelCounters = parseCounters(modelValue);
-      if (!isModelId(modelId) || modelCounters === null) {
+    if (isRecord(taskValue) && isRecord(taskValue.byModel)) {
+      const modelEntries = Object.entries(taskValue.byModel);
+      if (modelEntries.length > MAX_COST_MODELS_PER_TASK) {
+        return unavailable(
+          "COSTS_TOO_MANY_MODELS",
+          "costs.json contains too many models for a task",
+        );
+      }
+      if (
+        modelEntries.some(
+          ([modelId, modelValue]) =>
+            !isModelId(modelId) || parseCounters(modelValue) === null,
+        )
+      ) {
         return unavailable(
           "COSTS_INVALID_MODEL",
           "costs.json contains an invalid model entry",
         );
       }
-      byModel[modelId] = modelCounters;
     }
-
-    tasks[taskId] = {
-      ...counters,
-      byModel,
-      firstAt: taskValue.firstAt,
-      lastAt: taskValue.lastAt,
-    };
+    const task = parseTask(taskId, taskValue);
+    if (task === null) {
+      return unavailable(
+        "COSTS_INVALID_TASK",
+        "costs.json contains an invalid task",
+      );
+    }
+    tasks[taskId] = task;
   }
 
   return {
@@ -220,26 +234,158 @@ export function parseFactoryCosts(bytes: Uint8Array): ReaderResult<CostsData> {
   };
 }
 
+function parseFactoryCostsWindow(bytes: Uint8Array): ReaderResult<CostsData> {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return unavailable("COSTS_INVALID_UTF8", "costs.json is not valid UTF-8");
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return unavailable("COSTS_INVALID_JSON", "costs.json is not valid JSON");
+  }
+  if (!isRecord(value)) {
+    return unavailable(
+      "COSTS_INVALID_ROOT",
+      "costs.json must contain an object",
+    );
+  }
+  if (value.schemaVersion !== 1) {
+    return unavailable(
+      "COSTS_UNSUPPORTED_SCHEMA",
+      "costs.json schemaVersion must be 1",
+    );
+  }
+  if (
+    !isUtcTimestamp(value.recordedAt) ||
+    !isBoundedString(value.currency) ||
+    !isRecord(value.tasks)
+  ) {
+    return unavailable(
+      "COSTS_INVALID_FIELD",
+      "costs.json contains a missing or invalid field",
+    );
+  }
+  if (value.currency !== "USD") {
+    return unavailable(
+      "COSTS_UNSUPPORTED_CURRENCY",
+      "costs.json currency must be USD",
+    );
+  }
+  const taskEntries = Object.entries(value.tasks);
+  if (taskEntries.length > MAX_COST_TASKS) {
+    return unavailable(
+      "COSTS_TOO_MANY_TASKS",
+      "costs.json contains too many tasks",
+    );
+  }
+  const entries: Array<[string, unknown, CostTask]> = [];
+  for (const [taskId, taskValue] of taskEntries) {
+    const task = parseTask(taskId, taskValue);
+    if (task === null) {
+      return unavailable(
+        "COSTS_INVALID_TASK",
+        "costs.json contains an invalid task",
+      );
+    }
+    entries.push([taskId, taskValue, task]);
+  }
+  // costs.json member order is creation order, not an indication of which task
+  // was updated most recently. Keep the bounded window aligned with lastAt.
+  entries.sort(
+    ([leftId, , left], [rightId, , right]) =>
+      Date.parse(right.lastAt) - Date.parse(left.lastAt) ||
+      leftId.localeCompare(rightId),
+  );
+
+  const encoder = new TextEncoder();
+  const retained: Array<[string, CostTask]> = [];
+  let retainedBytes = 2;
+  let retaining = true;
+  for (const [taskId, taskValue, task] of entries) {
+    if (!retaining) continue;
+    let serialized: string;
+    try {
+      serialized = JSON.stringify({ [taskId]: taskValue });
+    } catch {
+      return unavailable(
+        "COSTS_INVALID_TASK",
+        "costs.json contains a task that cannot be safely measured",
+      );
+    }
+    const entryBytes = encoder.encode(serialized).byteLength - 2;
+    const separatorBytes = retained.length === 0 ? 0 : 1;
+    if (retainedBytes + entryBytes + separatorBytes > MAX_COSTS_WINDOW_BYTES) {
+      // An oversized newest entry cannot be represented at all, but it must
+      // not hide every later complete entry in the recent window.
+      if (retained.length === 0) continue;
+      retaining = false;
+      continue;
+    }
+    retained.push([taskId, task]);
+    retainedBytes += entryBytes + separatorBytes;
+  }
+  if (retained.length === 0 && entries.length > 0) {
+    return unavailable(
+      "COSTS_INVALID_TASK",
+      "costs.json has no complete task within the recent window",
+    );
+  }
+  const tasks: Record<string, CostTask> = Object.create(null);
+  for (const [taskId, task] of retained) {
+    tasks[taskId] = task;
+  }
+  return {
+    status: "partial",
+    data: {
+      schemaVersion: 1,
+      recordedAt: value.recordedAt,
+      currency: "USD",
+      tasks,
+      coverage: {
+        kind: "recent-window",
+        retainedTaskCount: Object.keys(tasks).length,
+      },
+    },
+    warnings: [
+      {
+        code: "COSTS_RECENT_WINDOW",
+        message:
+          "costs.json exceeded the complete-read limit; totals cover retained recent entries only",
+      },
+    ],
+  };
+}
+
 export async function readFactoryCosts(
   repositoryPath: string,
 ): Promise<ReaderResult<CostsData>> {
-  const result = await readFactoryFile(
+  const result = await readFactoryFileWindow(
     repositoryPath,
     "costs",
-    MAX_COSTS_BYTES,
+    MAX_COSTS_SOURCE_BYTES,
+    0,
+    0,
   );
-  if (result.status === "available") return parseFactoryCosts(result.bytes);
+  if (result.status === "available") {
+    return result.bytes.byteLength <= MAX_COSTS_BYTES
+      ? parseFactoryCosts(result.bytes)
+      : parseFactoryCostsWindow(result.bytes);
+  }
   const code =
     result.status === "missing"
       ? "COSTS_MISSING"
-      : result.status === "too-large"
+      : result.status === "window"
         ? "COSTS_TOO_LARGE"
         : "COSTS_UNAVAILABLE";
   const message =
     result.status === "missing"
       ? "costs.json is missing"
-      : result.status === "too-large"
-        ? "costs.json is too large"
+      : result.status === "window"
+        ? "costs.json exceeds the bounded source limit"
         : "costs.json could not be read safely";
   return unavailable(code, message);
 }

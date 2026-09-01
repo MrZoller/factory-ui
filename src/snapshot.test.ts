@@ -540,6 +540,57 @@ Options considered: A — Continue (recommended because it preserves compatibili
     }
   });
 
+  test("propagates retained recent costs coverage through the repository snapshot", async () => {
+    const fixture = createFactoryFixture();
+    try {
+      const counters = {
+        usd: 1,
+        messages: 1,
+        sessions: 1,
+        tokens: {
+          input: 1,
+          output: 0,
+          reasoning: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+      };
+      const task = (usd: number) => ({
+        ...counters,
+        usd,
+        byModel: { "openai/gpt-5.6": counters },
+        firstAt: "2026-08-16T00:00:00Z",
+        lastAt: "2026-08-16T00:00:00Z",
+      });
+      await fixture.writeCosts(
+        JSON.stringify({
+          schemaVersion: 1,
+          recordedAt: "2026-08-16T00:00:00Z",
+          currency: "USD",
+          tasks: {
+            T1: { ...task(1), padding: "x".repeat(300_000) },
+            T2: task(2),
+          },
+        }),
+      );
+
+      const result = await readRepositoryFactoryData({
+        name: "factory-ui",
+        path: fixture.root,
+      });
+      expect(result.costs).toMatchObject({
+        status: "partial",
+        data: {
+          tasks: { T2: { usd: 2 } },
+          coverage: { kind: "recent-window", retainedTaskCount: 1 },
+        },
+        warnings: [{ code: "COSTS_RECENT_WINDOW" }],
+      });
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   test("carries a reader warning line excerpt through the repository snapshot", async () => {
     const root = mkdtempSync(
       join(process.cwd(), "tmp-factory-warning-excerpt-"),

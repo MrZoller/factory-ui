@@ -2715,6 +2715,51 @@ accept unbounded input.
     expect(unavailable.classList).not.toContain("cost-prepaid");
   });
 
+  test("labels absent tasks and unattributed usage as partial in a retained recent costs window", () => {
+    const document = dashboardDocument();
+    const complete = costs({ T8: costCounters(1.23, 123) });
+    const repository = richRepository({
+      costs: {
+        ...complete,
+        status: "partial",
+        data: {
+          ...complete.data,
+          coverage: { kind: "recent-window", retainedTaskCount: 1 },
+        },
+        warnings: [
+          {
+            code: "COSTS_RECENT_WINDOW",
+            message: "older task entries omitted",
+          },
+        ],
+      },
+    });
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const absentTask = document.querySelector<HTMLElement>(
+      ".review-work .task-cost-cell",
+    )!;
+    expect(absentTask.textContent).toBe("Partial");
+    expect(absentTask.title).toBe(
+      "This task was not present in the bounded recent costs window.",
+    );
+    const overhead = document.querySelector<HTMLElement>(
+      ".repository-summary .cost-unattributed",
+    )!;
+    expect(overhead.textContent).toBe("Partial");
+    expect(overhead.title).toBe(
+      "Factory overhead was not present in the bounded recent costs window.",
+    );
+    expect(
+      document.querySelector(".repository-summary .cost-total")?.textContent,
+    ).toBe("$1.23 (partial) metered");
+    const machine = summaryRow(document, "mini")!.querySelector<HTMLElement>(
+      ".cost-total",
+    )!;
+    expect(machine.textContent).toBe("$1.23 (partial) metered");
+    expect(machine.title).toContain("recent-window repositories: factory-ui");
+  });
+
   test("styles prepaid, metered, and absent cost states distinctly while keeping token detail visible", async () => {
     const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
 
@@ -3074,7 +3119,7 @@ accept unbounded input.
       ".cost-total",
     )!;
     expect(total.childNodes[0]?.textContent).toBe(
-      "$3.00 (2 of 3 repos) metered",
+      "$3.00 (partial) (2 of 3 repos) metered",
     );
     expect(total.title).toContain("beta");
     const notional = total.querySelector<HTMLElement>(".notional-total")!;
@@ -6917,6 +6962,56 @@ describe("browser peer fan-out", () => {
       "—",
       "$1.23 metered",
     ]);
+  });
+
+  test("accepts only a structurally valid partial recent-costs peer contract", async () => {
+    const document = dashboardDocument();
+    const peers = [
+      { name: "valid-window", origin: "http://100.64.0.11:7777" },
+      { name: "missing-coverage", origin: "http://100.64.0.12:7777" },
+      { name: "wrong-count", origin: "http://100.64.0.13:7777" },
+    ];
+    let request = 0;
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === "/api/fleet")
+        return Promise.resolve(jsonResponse(fleet("mini", peers)));
+      request += 1;
+      const complete = costs({ T8: validCostTask() });
+      const coverage = {
+        kind: "recent-window",
+        retainedTaskCount: request === 3 ? 2 : 1,
+      };
+      return Promise.resolve(
+        jsonResponse(
+          fleet(
+            peers[request - 1]!.name,
+            [],
+            [
+              richRepository({
+                costs: {
+                  ...complete,
+                  status: "partial",
+                  data:
+                    request === 2
+                      ? complete.data
+                      : { ...complete.data, coverage },
+                  warnings: [],
+                },
+              }),
+            ],
+          ),
+        ),
+      );
+    });
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    expect(
+      summaryRow(document, "valid-window")?.querySelector(".unreachable"),
+    ).toBeNull();
+    expect(
+      document.querySelectorAll(".peer-machine .unreachable"),
+    ).toHaveLength(2);
   });
 
   test("marks peers with invalid costs unreachable", async () => {

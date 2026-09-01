@@ -44,4 +44,4 @@ Owner: dashboard product owner.
 Day-to-day consequence: operators lose cost visibility again as active histories grow.
 Cost or risk: T68's stated acceptance and Fixes #89 outcome are not delivered and would require replanning.
 Recommendation rationale: A fixes the confirmed fail-closed gap without weakening the approved bounded-window acceptance criteria.
-**A:**
+**A:** A — the factory owner authorizes one additional fix-and-review round: validate every bounded-source task entry before retention, keep the approved recent-window behavior, full suite plus one final panel (Chris, 2026-09-01).

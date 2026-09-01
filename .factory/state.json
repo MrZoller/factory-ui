@@ -1,11 +1,11 @@
 {
   "project": "factory-ui",
-  "phase": "build",
+  "phase": "idle",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T69",
-  "branch": "factory/t69-header-navigation",
-  "pr": 97,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-09-01T06:16:46Z"
+  "updated": "2026-09-01T06:21:02Z"
 }

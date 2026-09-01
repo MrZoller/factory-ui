@@ -156,6 +156,16 @@ function parseOrigin(
   return url.origin;
 }
 
+function parseAnswerOrigin(value: unknown, field: string): string {
+  const origin = parseOrigin(value, field, false);
+  if (!origin.startsWith("http://")) {
+    throw new Error(
+      `${field} must use HTTP because factory-ui does not terminate TLS`,
+    );
+  }
+  return origin;
+}
+
 export function parseGithubUrl(value: unknown, field = "githubUrl"): string {
   const input = readString(value, field, MAX_URL_LENGTH);
   const match = /^https:\/\/github\.com\/([^/?#]+)\/([^/?#]+)\/?$/i.exec(input);
@@ -313,6 +323,23 @@ export function parseConfig(value: unknown): AppConfig {
   if (value.answerAuth !== undefined && answerActor === undefined) {
     throw new Error("answerAuth requires answerActor");
   }
+  if (
+    value.answerOrigins !== undefined &&
+    (!Array.isArray(value.answerOrigins) ||
+      value.answerOrigins.length > MAX_PEERS)
+  ) {
+    throw new Error("answerOrigins must be an array with at most 32 entries");
+  }
+  if (value.answerAuth === "tailnet-open") {
+    if (
+      !Array.isArray(value.answerOrigins) ||
+      value.answerOrigins.length === 0
+    ) {
+      throw new Error("tailnet-open answerAuth requires answerOrigins");
+    }
+  } else if (value.answerOrigins !== undefined) {
+    throw new Error("answerOrigins requires tailnet-open answerAuth");
+  }
   const opencodeConfigPath =
     value.opencodeConfigPath === undefined
       ? undefined
@@ -327,6 +354,9 @@ export function parseConfig(value: unknown): AppConfig {
   const developmentOrigins = (developmentValues as unknown[]).map(
     (origin, index) =>
       parseOrigin(origin, `developmentOrigins[${index}]`, true),
+  );
+  const answerOrigins = ((value.answerOrigins ?? []) as unknown[]).map(
+    (origin, index) => parseAnswerOrigin(origin, `answerOrigins[${index}]`),
   );
   requireUnique(
     repositories.map(({ name }) => name),
@@ -346,6 +376,7 @@ export function parseConfig(value: unknown): AppConfig {
     "peer origins must be unique",
   );
   requireUnique(developmentOrigins, "development origins must be unique");
+  requireUnique(answerOrigins, "answer origins must be unique");
   requireUnique(
     [...peers.map(({ origin }) => origin), ...developmentOrigins],
     "configured origins must be unique",
@@ -363,6 +394,7 @@ export function parseConfig(value: unknown): AppConfig {
     ...(value.answerAuth === undefined
       ? {}
       : { answerAuth: value.answerAuth as "tailnet-open" }),
+    ...(answerOrigins.length === 0 ? {} : { answerOrigins }),
     ...(opencodeConfigPath === undefined ? {} : { opencodeConfigPath }),
   };
 }
@@ -401,6 +433,9 @@ export async function loadConfig(path: string): Promise<AppConfig> {
             actor: config.answerActor,
             secret,
             authRequired: config.answerAuth !== "tailnet-open",
+            ...(config.answerOrigins === undefined
+              ? {}
+              : { allowedOrigins: config.answerOrigins }),
           };
         })();
   const repositories = await Promise.all(

@@ -229,7 +229,11 @@ describe("answer delivery API", () => {
     const handler = createRequestHandler(
       {
         ...source,
-        answerIntake: { ...source.answerIntake, authRequired: false },
+        answerIntake: {
+          ...source.answerIntake,
+          authRequired: false,
+          allowedOrigins: ["http://localhost"],
+        },
       },
       {
         submitAnswer: submit,
@@ -267,8 +271,151 @@ describe("answer delivery API", () => {
     );
     expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
     expect(preflight.headers.get("access-control-allow-headers")).toBe(
-      "Content-Type, Idempotency-Key",
+      "Content-Type, Idempotency-Key, X-Factory-UI-Answer",
     );
+  });
+
+  test("requires the exact open-mode outcome marker before discovery or helper work", async () => {
+    const discovery = vi.fn(async () => ({
+      repositories: source.repositories,
+      warnings: [],
+    }));
+    const answerOutcome = vi.fn(async () => ({
+      schemaVersion: 1 as const,
+      id: answerId,
+      status: "pending" as const,
+      question: "Q1",
+      option: "A",
+      actor: "Verified Actor",
+      source: "factory-ui" as const,
+      submittedAt: "2026-08-30T12:00:00.000Z",
+    }));
+    const handler = createRequestHandler(
+      {
+        ...source,
+        answerIntake: {
+          ...source.answerIntake,
+          authRequired: false,
+          allowedOrigins: ["http://localhost"],
+        },
+      },
+      { discovery, answerOutcome },
+    );
+    const path = `/api/repo/owned/answers/${answerId}`;
+
+    for (const requestHeaders of [undefined, { "X-Factory-UI-Answer": "0" }]) {
+      const response = await handler(
+        request(path, { headers: requestHeaders }),
+      );
+      expect(response.status).toBe(400);
+      expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    }
+    expect(discovery).not.toHaveBeenCalled();
+    expect(answerOutcome).not.toHaveBeenCalled();
+
+    const accepted = await handler(
+      request(path, { headers: { "X-Factory-UI-Answer": "1" } }),
+    );
+    expect(accepted.status).toBe(200);
+    expect(discovery).toHaveBeenCalledTimes(1);
+    expect(answerOutcome).toHaveBeenCalledTimes(1);
+  });
+
+  test("requires an exact configured open-mode request authority before answer work", async () => {
+    const discovery = vi.fn(async () => ({
+      repositories: source.repositories,
+      warnings: [],
+    }));
+    const submitAnswer = vi.fn(async () => ({
+      status: "pending" as const,
+      id: answerId,
+    }));
+    const answerOutcome = vi.fn(async () => ({
+      status: "unknown-record" as const,
+    }));
+    const handler = createRequestHandler(
+      {
+        ...source,
+        answerIntake: {
+          ...source.answerIntake,
+          authRequired: false,
+          allowedOrigins: [
+            "http://mini.tailnet:7777",
+            "http://[fd7a:115c:a1e0::1]:7777",
+          ],
+        },
+      },
+      {
+        discovery,
+        submitAnswer,
+        answerOutcome,
+        answerIdempotencyStore: new TestAnswerIdempotencyStore(),
+      },
+    );
+    const path = "/api/repo/owned/answers";
+    const badOrigins = [
+      "http://mini.tailnet",
+      "https://mini.tailnet:7777",
+      "http://mini.tailnet.evil:7777",
+      "http://localhost:7777",
+    ];
+    for (const origin of badOrigins) {
+      const response = await handler(
+        new Request(`${origin}${path}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": answerId,
+            Forwarded: "host=mini.tailnet:7777;proto=http",
+            "X-Forwarded-Host": "mini.tailnet:7777",
+          },
+          body: JSON.stringify({ question: "Q1", option: "A" }),
+        }),
+      );
+      expect(response.status).toBe(400);
+    }
+    const wrongOutcome = await handler(
+      new Request(`http://mini.tailnet.evil:7777${path}/${answerId}`, {
+        headers: {
+          "X-Factory-UI-Answer": "1",
+          "X-Forwarded-Host": "mini.tailnet:7777",
+        },
+      }),
+    );
+    expect(wrongOutcome.status).toBe(400);
+    expect(discovery).not.toHaveBeenCalled();
+    expect(submitAnswer).not.toHaveBeenCalled();
+    expect(answerOutcome).not.toHaveBeenCalled();
+
+    const submission = await handler(
+      new Request(`http://mini.tailnet:7777${path}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": answerId,
+        },
+        body: JSON.stringify({ question: "Q1", option: "A" }),
+      }),
+    );
+    const outcome = await handler(
+      new Request(`http://[fd7a:115c:a1e0::1]:7777${path}/${answerId}`, {
+        headers: { "X-Factory-UI-Answer": "1" },
+      }),
+    );
+    expect(submission.status).toBe(202);
+    expect(outcome.status).toBe(404);
+    expect(discovery).toHaveBeenCalledTimes(2);
+    expect(submitAnswer).toHaveBeenCalledTimes(1);
+    expect(answerOutcome).toHaveBeenCalledTimes(1);
+
+    const preflight = await handler(
+      new Request("http://lookalike.invalid/api/repo/unknown/answers", {
+        method: "OPTIONS",
+      }),
+    );
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+    expect(discovery).toHaveBeenCalledTimes(2);
   });
 
   test("serves outcomes without answer-route CORS and returns mode-specific preflight headers", async () => {
@@ -298,7 +445,7 @@ describe("answer delivery API", () => {
     expect(outcome.headers.get("cache-control")).toBe("no-store");
     expect(outcome.headers.get("access-control-allow-origin")).toBeNull();
     const denied = await handler(
-      request(undefined, {
+      request(`/api/repo/owned/answers/${answerId}`, {
         method: "OPTIONS",
         headers: { Origin: "https://evil.test" },
       }),
@@ -310,6 +457,9 @@ describe("answer delivery API", () => {
     );
     expect(denied.headers.get("access-control-allow-headers")).toContain(
       "Authorization",
+    );
+    expect(denied.headers.get("access-control-allow-headers")).toContain(
+      "X-Factory-UI-Answer",
     );
   });
 
@@ -606,6 +756,7 @@ describe("versioned read-only API", () => {
           actor: "operator",
           secret: "private-helper-secret",
           authRequired: false,
+          allowedOrigins: ["http://localhost"],
         },
       },
       { discovery },

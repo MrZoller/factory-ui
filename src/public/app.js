@@ -30,8 +30,12 @@ const MAX_QUESTION_FILED_AT_LENGTH = 64;
 const MAX_ANSWER_TEXT_LENGTH = 10_000;
 const MAX_ANSWER_RESPONSE_BYTES = 64 * 1024;
 const MAX_STORED_ANSWER_LIFECYCLES = 128;
+const MAX_ANSWER_MIGRATION_FRAGMENT_LENGTH = 128 * 1024;
+const MAX_ANSWER_MIGRATION_ENVELOPE_LENGTH = 16 * 1024;
 export const ANSWER_POLL_INTERVAL_MS = 5_000;
 const ANSWER_STORAGE_KEY = "factory-ui.answer-lifecycle.v1";
+const ANSWER_MIGRATION_FIELD = "answerLifecycle";
+const ANSWER_OUTCOME_HEADER = "X-Factory-UI-Answer";
 const ANSWER_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ASCII_CONTROL = /[\u0000-\u001f\u007f]/;
@@ -3863,6 +3867,82 @@ function validateStoredLifecycle(value) {
   };
 }
 
+function serializeStoredLifecycle(state) {
+  if (state.status === "uncertain") {
+    if (
+      !ANSWER_UUID.test(String(state.idempotencyKey)) ||
+      state.payload === undefined
+    ) {
+      return null;
+    }
+    return {
+      version: 1,
+      machine: state.machine,
+      repository: state.repository,
+      question: state.question,
+      status: state.status,
+      payload: state.payload,
+      idempotencyKey: state.idempotencyKey,
+    };
+  }
+  if (!ANSWER_UUID.test(String(state.id))) return null;
+  return {
+    version: 1,
+    machine: state.machine,
+    repository: state.repository,
+    question: state.question,
+    id: state.id,
+    status: state.status,
+    ...(state.actor === undefined ? {} : { actor: state.actor }),
+    ...(state.reason === undefined ? {} : { reason: state.reason }),
+  };
+}
+
+function importLifecycleMigration(documentRoot, views) {
+  const windowRoot = documentRoot.defaultView;
+  const fragment = windowRoot?.location?.hash?.slice(1) ?? "";
+  if (!fragment || fragment.length > MAX_ANSWER_MIGRATION_FRAGMENT_LENGTH)
+    return;
+  const values = new URLSearchParams(fragment);
+  const envelope = values.get(ANSWER_MIGRATION_FIELD);
+  if (envelope === null) return;
+
+  values.delete(ANSWER_MIGRATION_FIELD);
+  windowRoot.history?.replaceState(
+    null,
+    "",
+    `${windowRoot.location.pathname}${windowRoot.location.search}${values.size > 0 ? `#${values.toString()}` : ""}`,
+  );
+  if (envelope.length > MAX_ANSWER_MIGRATION_ENVELOPE_LENGTH) return;
+
+  let lifecycle;
+  try {
+    lifecycle = validateStoredLifecycle(JSON.parse(envelope));
+  } catch {
+    return;
+  }
+  const localView = views.find((view) => view.origin === undefined);
+  if (!lifecycle || lifecycle.machine !== localView?.identity) return;
+  const repository = localView.fleet?.repositories?.find(
+    (candidate) => candidate.name === lifecycle.repository,
+  );
+  const visible = (readerData(repository?.questions)?.open ?? []).some(
+    (question) => question.id === lifecycle.question,
+  );
+  if (!visible) return;
+
+  const store = getAnswerStore(documentRoot);
+  const key = answerKey(
+    lifecycle.machine,
+    lifecycle.repository,
+    lifecycle.question,
+  );
+  const existing = store.get(key);
+  if (existing !== undefined) return;
+  store.set(key, lifecycle);
+  if (!persistAnswerStore(documentRoot, lifecycle)) store.delete(key);
+}
+
 function getAnswerStore(documentRoot) {
   let store = answerStores.get(documentRoot);
   if (store) return store;
@@ -3911,28 +3991,10 @@ function persistAnswerStore(documentRoot, requiredState) {
       states.push(requiredState);
     }
   }
-  const records = states.slice(-MAX_STORED_ANSWER_LIFECYCLES).map((state) =>
-    state.status === "uncertain"
-      ? {
-          version: 1,
-          machine: state.machine,
-          repository: state.repository,
-          question: state.question,
-          status: state.status,
-          payload: state.payload,
-          idempotencyKey: state.idempotencyKey,
-        }
-      : {
-          version: 1,
-          machine: state.machine,
-          repository: state.repository,
-          question: state.question,
-          id: state.id,
-          status: state.status,
-          ...(state.actor === undefined ? {} : { actor: state.actor }),
-          ...(state.reason === undefined ? {} : { reason: state.reason }),
-        },
-  );
+  const records = states
+    .slice(-MAX_STORED_ANSWER_LIFECYCLES)
+    .map(serializeStoredLifecycle)
+    .filter(Boolean);
   try {
     const storage = documentRoot.defaultView?.localStorage;
     if (!storage) return false;
@@ -4123,7 +4185,12 @@ async function pollAnswer(documentRoot, view, state) {
     const response = await fetchAnswerWithTimeout(
       runtime,
       answerEndpoint(view, state.repository, state.id),
-      { headers: answerAuthHeaders(state) },
+      {
+        headers: {
+          ...answerAuthHeaders(state),
+          [ANSWER_OUTCOME_HEADER]: "1",
+        },
+      },
     );
     const value = await readAnswerResponse(response, true);
     if (isRecord(value) && value.status === "unknown-record") {
@@ -4459,6 +4526,7 @@ function renderOwningDashboardLink(
   machine,
   repository,
   question,
+  answerState,
 ) {
   const message = parent.ownerDocument.createElement("p");
   message.className = "answer-owning-dashboard";
@@ -4468,10 +4536,19 @@ function renderOwningDashboardLink(
     ),
   );
   const link = textElement(parent.ownerDocument, "a", `Open ${machine}`);
-  link.href = new URL(
-    questionHash(machine, repository, question),
-    view.origin,
-  ).href;
+  const hash = new URLSearchParams(
+    questionHash(machine, repository, question).slice(1),
+  );
+  const record = answerState && serializeStoredLifecycle(answerState);
+  if (record) {
+    const envelope = JSON.stringify(record);
+    if (envelope.length <= MAX_ANSWER_MIGRATION_ENVELOPE_LENGTH) {
+      hash.set(ANSWER_MIGRATION_FIELD, envelope);
+    }
+  }
+  const target = new URL(view.origin);
+  target.hash = hash.toString();
+  link.href = target.href;
   link.rel = "noopener noreferrer";
   message.append(link);
   parent.append(message);
@@ -4618,6 +4695,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
               machine,
               repository.name,
               question.id,
+              answerState,
             );
           }
         } else if (!intakeEnabled) {
@@ -4736,6 +4814,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
             machine,
             repository.name,
             question.id,
+            answerState,
           );
         }
         return item;
@@ -5214,6 +5293,7 @@ export function renderFleet(fleet, documentRoot = document, now = new Date()) {
   summaryBody.replaceChildren(...views.map((view) => view.row));
   tabs.replaceChildren(...views.map((view) => view.tab));
   repositories.replaceChildren(...views.map((view) => view.panel));
+  importLifecycleMigration(documentRoot, views);
   renderQuestionQueue(documentRoot, views, now);
   renderDependencyGraph(documentRoot, views);
   installTabs(documentRoot, views);

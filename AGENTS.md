@@ -25,7 +25,8 @@ MagicDNS.
   `factory-answers` helper when enabled by `answerActor` plus
   `FACTORY_ANSWER_SECRET`; configuration omission keeps it disabled, and the
   service never edits `questions.md` directly. Browser answer auth defaults to
-  the shared secret; only explicit `answerAuth: "tailnet-open"` removes it,
+  the shared secret; only explicit `answerAuth: "tailnet-open"` with bounded
+  exact `answerOrigins` removes it,
   while the helper secret remains mandatory. Answer routes never emit CORS
   allow-origin headers, so peer questions link to their owning dashboard.
 - Treat every repository-derived string as untrusted and render it as text,

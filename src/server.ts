@@ -11,6 +11,9 @@ import {
   MAX_ANSWER_IDEMPOTENCY_RECORDS,
   type AnswerIdempotencyStore,
 } from "./answer-idempotency";
+
+const ANSWER_OUTCOME_HEADER = "x-factory-ui-answer";
+const ANSWER_OUTCOME_HEADER_VALUE = "1";
 import type {
   AnswerOutcome,
   AnswerRequest,
@@ -97,7 +100,7 @@ function answerPreflight(
   response.headers.set("access-control-allow-methods", allowedMethod);
   response.headers.set(
     "access-control-allow-headers",
-    `${authRequired ? "Authorization, " : ""}Content-Type, Idempotency-Key`,
+    `${authRequired ? "Authorization, " : ""}Content-Type, Idempotency-Key, X-Factory-UI-Answer`,
   );
   return response;
 }
@@ -159,6 +162,24 @@ function authenticated(header: string | null, expected: string): boolean {
   const left = createHash("sha256").update(expected).digest();
   const right = createHash("sha256").update(supplied).digest();
   return timingSafeEqual(left, right);
+}
+
+function hasAllowedAnswerOrigin(
+  request: Request,
+  allowedOrigins: string[] | undefined,
+): boolean {
+  if (allowedOrigins === undefined || allowedOrigins.length === 0) return false;
+  try {
+    const url = new URL(request.url);
+    return (
+      url.protocol === "http:" &&
+      url.username === "" &&
+      url.password === "" &&
+      allowedOrigins.includes(url.origin)
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function readAnswerBody(request: Request): Promise<unknown> {
@@ -319,13 +340,12 @@ export function createRequestHandler(
               } catch {
                 // Malformed names remain ordinary not-found routes below.
               }
-              if (explicitlyConfigured && request.method === "OPTIONS") {
+              if (request.method === "OPTIONS") {
                 response = answerPreflight(
                   allowedMethod,
                   answerIntakeConfig.authRequired,
                 );
               } else if (
-                request.method !== "OPTIONS" &&
                 answerIntakeConfig.authRequired &&
                 !authenticated(
                   request.headers.get("authorization"),
@@ -335,6 +355,21 @@ export function createRequestHandler(
                 response = explicitlyConfigured
                   ? jsonError(401, "Unauthorized")
                   : textResponse(404, "Not Found");
+              } else if (
+                !answerIntakeConfig.authRequired &&
+                !hasAllowedAnswerOrigin(
+                  request,
+                  answerIntakeConfig.allowedOrigins,
+                )
+              ) {
+                response = jsonError(400, "Invalid request");
+              } else if (
+                answerKind === "outcome" &&
+                !answerIntakeConfig.authRequired &&
+                request.headers.get(ANSWER_OUTCOME_HEADER) !==
+                  ANSWER_OUTCOME_HEADER_VALUE
+              ) {
+                response = jsonError(400, "Invalid request");
               } else if (
                 answerKind === "submit" &&
                 request.method === "POST" &&

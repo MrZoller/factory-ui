@@ -21,6 +21,7 @@ export interface AnswerIntakeConfig {
   actor: string;
   secret: string;
   authRequired: boolean;
+  allowedOrigins?: string[];
 }
 
 export interface AnswerIntakeDescriptor {
@@ -71,6 +72,7 @@ export interface AppConfigSource {
   developmentOrigins?: string[];
   answerActor?: string;
   answerAuth?: "tailnet-open";
+  answerOrigins?: string[];
   answerIntake?: AnswerIntakeConfig;
   opencodeConfigPath?: string;
 }

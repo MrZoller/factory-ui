@@ -70,13 +70,19 @@ factory-ui.
 
 Secret-authenticated browser requests are the default. An installation that
 deliberately treats every client able to reach the dashboard port as an answer
-operator may add `"answerAuth": "tailnet-open"` alongside `answerActor`. This
-is the only accepted `answerAuth` value, and it is rejected without
-`answerActor`. Open mode removes the browser's shared-secret prompt and Bearer
-header, but the server process must still have a non-empty
+operator may add `"answerAuth": "tailnet-open"` alongside `answerActor` and a
+non-empty `answerOrigins` list. Each entry is an exact HTTP origin, including
+the port when non-default, from which that dashboard is intentionally served,
+for example `"http://mini:7777"` and `"http://100.64.0.10:7777"`. List every
+MagicDNS alias or literal-IP origin operators actually use; lookalike hosts,
+wrong ports, and unlisted aliases are rejected. `answerOrigins` is accepted only
+in open mode, is bounded to 32 unique entries, and uses the same strict origin
+grammar as peer origins; HTTPS is rejected because factory-ui does not terminate
+TLS. Open mode removes the browser's shared-secret prompt
+and Bearer header, but the server process must still have a non-empty
 `FACTORY_ANSWER_SECRET`; the fixed `factory-answers` helper receives that
 private secret exactly as it does in the default mode. The committed example
-does not enable this riskier mode.
+shows open mode and must be tailored to the deployment's actual authorities.
 
 For three-machine operation, give every machine its own file:
 
@@ -94,8 +100,9 @@ errors and preflights. A peer question therefore links to its validated owning
 dashboard and can be answered only after opening that same-origin page; it is
 never proxied or submitted cross-origin. `developmentOrigins` is optional and
 accepts only explicit localhost or loopback origins. Answer preflight metadata
-lists `Content-Type` and `Idempotency-Key`, plus `Authorization` only in the
-default secret-authenticated mode, but intentionally grants no origin.
+lists `Content-Type`, `Idempotency-Key`, and `X-Factory-UI-Answer`, plus
+`Authorization` only in the default secret-authenticated mode, but intentionally
+grants no origin.
 
 ### Bind and access boundary
 
@@ -205,7 +212,25 @@ requires an explicit review followed by confirm, sends a UUID idempotency key,
 and reuses that key if delivery must be retried. Only repositories owned by the
 dashboard's same origin expose answer controls. Peer repositories show a link
 to the validated owning dashboard and never trigger a cross-origin answer
-fetch.
+fetch. That link may carry a bounded, secret-free version-1 lifecycle record
+in its URL fragment so records created before owner-link routing can be resumed
+on the owner. Fragments are not sent to the server. The owner imports only a
+validated record for its own visible repository and question, never replaces a
+different existing record, removes the migration field from browser history,
+and still requires the explicit Resume or operator-confirmed retry action.
+
+In `tailnet-open` mode, the server compares the non-OPTIONS request URL's exact
+normalized origin with `answerOrigins` before repository discovery, body reads,
+idempotency work, or helper invocation. This is the DNS-rebinding boundary: a
+rebound attacker hostname remains same-origin to the browser and therefore is
+not stopped by CORS, but its authority is not an allowed answer origin. The
+server uses the direct request authority and never trusts `Forwarded` or
+`X-Forwarded-*` headers. Browser submissions remain non-simple JSON requests
+with an idempotency header, and outcome polls retain the fixed non-simple
+`X-Factory-UI-Answer: 1` marker as defense in depth. Their preflights allow the
+required headers but return no `Access-Control-Allow-Origin`; answer responses
+also never receive an allow-origin header. Secret-authenticated mode remains
+Bearer-protected and does not require `answerOrigins`.
 
 The engine owns application. `pending` and `inflight` records display as
 `pending application`; an accepted outcome displays `applied/consumed` and the
@@ -214,11 +239,11 @@ race or other engine refusal displays `rejected` with the engine reason and is
 never presented as success. Pending and terminal metadata remains visible if
 the open question disappears or the page reloads. Because the credential is
 not persisted, reloaded pending records in the default mode require the
-password and **Resume tracking**. Open-mode records resume polling without a
-browser credential. A legacy fleet response that omits the answer-intake
-descriptor is treated as disabled, rather than guessing that an unadvertised
-write route is safe. Factory-ui submits only to the intake spool and polls
-outcomes; it never writes, rewrites, or removes entries in
+password and **Resume tracking**. Open-mode records require the explicit Resume
+action but no browser credential. A legacy fleet response that omits the
+answer-intake descriptor is treated as disabled, rather than guessing that an
+unadvertised write route is safe. Factory-ui submits only to the intake spool
+and polls outcomes; it never writes, rewrites, or removes entries in
 `.factory/questions.md`.
 
 The server reserves each idempotency key durably before invoking

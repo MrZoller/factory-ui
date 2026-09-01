@@ -7507,6 +7507,46 @@ describe("fleet dependency graph", () => {
     ).toHaveLength(0);
   });
 
+  test("does not claim ambiguous or malformed dependency data is satisfied", () => {
+    const document = dashboardDocument();
+    const malformed = graphRepository({
+      name: "malformed",
+      plan: {
+        status: "available",
+        data: {
+          tasks: [
+            graphTask("T1", "completed", { runnable: false }),
+            { ...graphTask("T2", "active"), runnable: undefined },
+          ],
+        },
+        warnings: [],
+      },
+    });
+    const duplicates = graphRepository({
+      name: "duplicates",
+      plan: {
+        status: "available",
+        data: {
+          tasks: [
+            graphTask("T3", "todo", { localDependencies: ["T4"] }),
+            graphTask("T4", "active"),
+            graphTask("T4", "completed", { runnable: false }),
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [malformed, duplicates]), document, NOW);
+    const graph = document.querySelector("#dependency-graph")!;
+    expect(graph.textContent).toContain(
+      "Some malformed task data was isolated",
+    );
+    expect(graph.textContent).not.toContain("all 1 tasks done");
+    expect(graph.textContent).toContain("← T4");
+    expect(graph.textContent).not.toContain("✓ T4");
+  });
+
   test("renders peer graph groups while isolating unavailable and malformed repository graph data", async () => {
     const document = dashboardDocument();
     const peer = { name: "legion", origin: "https://legion.tailnet:7777" };

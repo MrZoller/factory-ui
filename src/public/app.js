@@ -4877,7 +4877,14 @@ function renderDependencyGraph(documentRoot, views) {
         "unavailable",
       );
     }
-    entry.localTasks = new Map(entry.validTasks.map((task) => [task.id, task]));
+    const localTaskCounts = new Map();
+    for (const task of entry.validTasks)
+      localTaskCounts.set(task.id, (localTaskCounts.get(task.id) ?? 0) + 1);
+    entry.localTasks = new Map(
+      entry.validTasks
+        .filter((task) => localTaskCounts.get(task.id) === 1)
+        .map((task) => [task.id, task]),
+    );
     const liveList = documentRoot.createElement("ol");
     liveList.className = "dependency-tasks";
     const liveCount = Math.min(entry.liveTasks.length, remainingLive);
@@ -4893,6 +4900,7 @@ function renderDependencyGraph(documentRoot, views) {
     remainingLive -= liveCount;
     if (liveList.childElementCount > 0) group.append(liveList);
     else if (
+      !entry.malformed &&
       entry.validTasks.length > 0 &&
       entry.validTasks.every((task) => task.status === "completed")
     ) {

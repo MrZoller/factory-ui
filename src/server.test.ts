@@ -450,6 +450,7 @@ describe("server", () => {
             },
           ],
           peers: [{ name: "peer1", origin: "http://localhost:8080" }],
+          answerIntake: { enabled: false, authRequired: true },
         }),
       );
 
@@ -485,6 +486,7 @@ describe("server", () => {
           },
         ],
         peers: [{ name: "peer1", origin: "http://localhost:8080" }],
+        answerIntake: { enabled: false, authRequired: true },
       });
       expect(mockSnapshot).toHaveBeenCalled();
     });
@@ -505,6 +507,7 @@ describe("server", () => {
             },
           ],
           peers: [],
+          answerIntake: { enabled: false, authRequired: true },
         }),
       );
 
@@ -538,6 +541,7 @@ describe("server", () => {
         hostname: "custom-hostname",
         repositories: [],
         peers: [],
+        answerIntake: { enabled: false, authRequired: true },
       }));
 
       const handler = createRequestHandler(

@@ -68,6 +68,16 @@ must match the clone's engine answer-intake credential. It is entered in the
 browser for submission and lifecycle tracking but is never logged or stored by
 factory-ui.
 
+Secret-authenticated browser requests are the default. An installation that
+deliberately treats every client able to reach the dashboard port as an answer
+operator may add `"answerAuth": "tailnet-open"` alongside `answerActor`. This
+is the only accepted `answerAuth` value, and it is rejected without
+`answerActor`. Open mode removes the browser's shared-secret prompt and Bearer
+header, but the server process must still have a non-empty
+`FACTORY_ANSWER_SECRET`; the fixed `factory-answers` helper receives that
+private secret exactly as it does in the default mode. The committed example
+does not enable this riskier mode.
+
 For three-machine operation, give every machine its own file:
 
 | Machine | `machine` | `bind`                         | Example clone root               | `peers`         |
@@ -77,13 +87,15 @@ For three-machine operation, give every machine its own file:
 | legion  | `legion`  | legion's literal Tailscale IP  | `/home/factory/code/factory-ui`  | mini, macbook   |
 
 Use MagicDNS names in peer origins, for example `http://mini:7777`, but use a
-literal IP in `bind`. Every machine must list the other dashboard origins: this
-symmetry lets browsers opened on any dashboard pass CORS when they fan out and
-when they send answers directly to the repository-owning peer. Peer answers
-are never proxied through the dashboard initially opened. `developmentOrigins`
-is optional and accepts only explicit localhost or loopback origins. Peer CORS
-preflights allow the answer route's `Authorization`, `Content-Type`, and
-`Idempotency-Key` headers only for configured dashboard/development origins.
+literal IP in `bind`. Every machine must list the other dashboard origins so
+browsers opened on any dashboard can fan out over CORS for read-only fleet
+data. Answer routes never emit `Access-Control-Allow-Origin`, including on
+errors and preflights. A peer question therefore links to its validated owning
+dashboard and can be answered only after opening that same-origin page; it is
+never proxied or submitted cross-origin. `developmentOrigins` is optional and
+accepts only explicit localhost or loopback origins. Answer preflight metadata
+lists `Content-Type` and `Idempotency-Key`, plus `Authorization` only in the
+default secret-authenticated mode, but intentionally grants no origin.
 
 ### Bind and access boundary
 
@@ -92,8 +104,8 @@ loopback addresses and literal Tailscale-range addresses (`100.64.0.0/10` or
 `fd7a:115c:a1e0::/48`). Hostnames, wildcard addresses, public addresses,
 mapped/bracketed addresses, and zone-qualified IPv6 are rejected.
 
-Tailnet membership and Tailscale ACLs protect dashboard reachability, while a
-shared answer credential protects the write channel.
+Tailnet membership and Tailscale ACLs protect dashboard reachability. By
+default, a shared answer credential separately protects the write channel.
 Allow the selected machines and users to reach TCP port 7777, and confirm
 MagicDNS resolves each peer name. Access to this dashboard is
 repository-equivalent trust: factory state, questions, worklogs, and narration
@@ -105,6 +117,11 @@ per-person cryptographic identity: anyone with the credential can submit as
 that server's actor. Give the credential only to repository-equivalent trusted
 operators and configure an actor name that accurately describes that group or
 machine.
+
+In `tailnet-open` mode, anyone who can reach the dashboard port can answer as
+the configured actor without knowing the helper secret. Use it only when the
+tailnet ACL and every reachable client are an acceptable write boundary; do
+not expose the port to a broader LAN or public network.
 
 ## Fixed safety limits
 
@@ -182,9 +199,10 @@ factory-ui does not accept a configurable executable or helper arguments.
 The question queue accepts structured open questions. A submission contains a
 selected option and/or non-empty single-line text, never an actor. The browser
 requires an explicit review followed by confirm, sends a UUID idempotency key,
-and reuses that key if delivery must be retried. Local repositories use the
-relative owning endpoint; peer repositories use the peer's configured origin
-directly.
+and reuses that key if delivery must be retried. Only repositories owned by the
+dashboard's same origin expose answer controls. Peer repositories show a link
+to the validated owning dashboard and never trigger a cross-origin answer
+fetch.
 
 The engine owns application. `pending` and `inflight` records display as
 `pending application`; an accepted outcome displays `applied/consumed` and the
@@ -192,9 +210,13 @@ verified `Answered by <actor> via factory-ui` attribution. A terminal-question
 race or other engine refusal displays `rejected` with the engine reason and is
 never presented as success. Pending and terminal metadata remains visible if
 the open question disappears or the page reloads. Because the credential is
-not persisted, reloaded pending records require the password and **Resume
-tracking**. Factory-ui submits only to the intake spool and polls outcomes; it
-never writes, rewrites, or removes entries in `.factory/questions.md`.
+not persisted, reloaded pending records in the default mode require the
+password and **Resume tracking**. Open-mode records resume polling without a
+browser credential. A legacy fleet response that omits the answer-intake
+descriptor is treated as disabled, rather than guessing that an unadvertised
+write route is safe. Factory-ui submits only to the intake spool and polls
+outcomes; it never writes, rewrites, or removes entries in
+`.factory/questions.md`.
 
 The server reserves each idempotency key durably before invoking
 `factory-answers`. A completed same-key, same-payload retry, including after a

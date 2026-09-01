@@ -307,6 +307,12 @@ export function parseConfig(value: unknown): AppConfig {
     value.answerActor === undefined
       ? undefined
       : readString(value.answerActor, "answerActor", MAX_ANSWER_ACTOR_LENGTH);
+  if (value.answerAuth !== undefined && value.answerAuth !== "tailnet-open") {
+    throw new Error('answerAuth must be "tailnet-open"');
+  }
+  if (value.answerAuth !== undefined && answerActor === undefined) {
+    throw new Error("answerAuth requires answerActor");
+  }
   const opencodeConfigPath =
     value.opencodeConfigPath === undefined
       ? undefined
@@ -354,6 +360,9 @@ export function parseConfig(value: unknown): AppConfig {
     bind: parseBind(value.bind),
     developmentOrigins,
     ...(answerActor === undefined ? {} : { answerActor }),
+    ...(value.answerAuth === undefined
+      ? {}
+      : { answerAuth: value.answerAuth as "tailnet-open" }),
     ...(opencodeConfigPath === undefined ? {} : { opencodeConfigPath }),
   };
 }
@@ -388,7 +397,11 @@ export async function loadConfig(path: string): Promise<AppConfig> {
               "FACTORY_ANSWER_SECRET must be non-empty when answerActor is configured",
             );
           }
-          return { actor: config.answerActor, secret };
+          return {
+            actor: config.answerActor,
+            secret,
+            authRequired: config.answerAuth !== "tailnet-open",
+          };
         })();
   const repositories = await Promise.all(
     config.repositories.map(async (repository) => {

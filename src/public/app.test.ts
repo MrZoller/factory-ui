@@ -714,7 +714,9 @@ describe("answer lifecycle queue", () => {
 
     expect(
       Array.from(
-        document.querySelectorAll(".question-queue-entry h3"),
+        document.querySelectorAll(
+          ".question-queue-entry h3 .question-title-text",
+        ),
         (heading) => heading.textContent,
       ),
     ).toEqual([
@@ -726,27 +728,15 @@ describe("answer lifecycle queue", () => {
     expect(
       Array.from(
         document.querySelectorAll<HTMLAnchorElement>(
-          ".question-queue-entry h3 a",
+          ".question-queue-entry h3 .question-permalink",
         ),
         (link) => [link.textContent, link.getAttribute("href")],
       ),
     ).toEqual([
-      [
-        "mini/factory-ui/Q9 · Choose <img src=x onerror=1>",
-        "#machine=mini&repo=factory-ui&question=Q9",
-      ],
-      [
-        "macbook/factory-ui/Q10 · Peer question",
-        "#machine=macbook&repo=factory-ui&question=Q10",
-      ],
-      [
-        "macbook/factory-ui/Q11 · Answer lifecycle",
-        "#machine=macbook&repo=factory-ui&question=Q11",
-      ],
-      [
-        "macbook/factory-ui/Q12 · Answer lifecycle",
-        "#machine=macbook&repo=factory-ui&question=Q12",
-      ],
+      ["Permalink", "#machine=mini&repo=factory-ui&question=Q9"],
+      ["Permalink", "#machine=macbook&repo=factory-ui&question=Q10"],
+      ["Permalink", "#machine=macbook&repo=factory-ui&question=Q11"],
+      ["Permalink", "#machine=macbook&repo=factory-ui&question=Q12"],
     ]);
     expect(
       Array.from(
@@ -805,7 +795,8 @@ describe("answer lifecycle queue", () => {
     renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
 
     expect(
-      document.querySelector(".question-queue-entry h3")?.textContent,
+      document.querySelector(".question-queue-entry h3 .question-title-text")
+        ?.textContent,
     ).toBe("factory-ui/Q9 · Choose <img src=x onerror=1>");
     expect(
       document.querySelector(".questions-panel article.question h5")
@@ -908,7 +899,8 @@ describe("answer lifecycle queue", () => {
       NOW,
     );
     expect(
-      document.querySelector(".question-queue-entry h3")?.textContent,
+      document.querySelector(".question-queue-entry h3 .question-title-text")
+        ?.textContent,
     ).toBe("factory-ui/Q9 · Choose <img src=x onerror=1>");
 
     const qualifiedDocument = dashboardDocument();
@@ -935,7 +927,9 @@ describe("answer lifecycle queue", () => {
       NOW,
     );
     expect(
-      qualifiedDocument.querySelector(".question-queue-entry h3")?.textContent,
+      qualifiedDocument.querySelector(
+        ".question-queue-entry h3 .question-title-text",
+      )?.textContent,
     ).toBe("mini/factory-ui/Q9 · Choose <img src=x onerror=1>");
 
     const uncertainDocument = dashboardDocument();
@@ -963,7 +957,9 @@ describe("answer lifecycle queue", () => {
       NOW,
     );
     expect(
-      uncertainDocument.querySelector(".question-queue-entry h3")?.textContent,
+      uncertainDocument.querySelector(
+        ".question-queue-entry h3 .question-title-text",
+      )?.textContent,
     ).toBe("mini/factory-ui/Q9 · Choose <img src=x onerror=1>");
   });
 
@@ -2012,7 +2008,9 @@ describe("local dashboard rendering", () => {
     );
     expect(
       Array.from(
-        document.querySelectorAll(".question-queue-entry h3"),
+        document.querySelectorAll(
+          ".question-queue-entry h3 .question-title-text",
+        ),
         (node) => node.textContent,
       ),
     ).toEqual([`alpha/Q2 · ${hostile}`, "alpha/Q10 · Later", "zeta/Q1 · Last"]);
@@ -2205,7 +2203,9 @@ accept unbounded input.
     );
     expect(
       Array.from(
-        document.querySelectorAll(".question-queue-entry h3"),
+        document.querySelectorAll(
+          ".question-queue-entry h3 .question-title-text",
+        ),
         (node) => node.textContent,
       ),
     ).toEqual([
@@ -6401,7 +6401,7 @@ describe("repository strips and sub-tabs", () => {
 });
 
 describe("browser peer fan-out", () => {
-  test("aggregates local and valid peer questions, and deep-links to a peer repository", async () => {
+  test("renders inert question titles with accessible permalinks that select and highlight their destination", async () => {
     const document = dashboardDocument();
     const peer = { name: "macbook", origin: "https://macbook.example" };
     const local = richRepository({
@@ -6419,7 +6419,14 @@ describe("browser peer fan-out", () => {
       questions: {
         status: "available",
         data: {
-          open: [{ id: "Q2", taskId: "T2", title: "Peer", text: "raw" }],
+          open: [
+            {
+              id: "Q2",
+              taskId: "T2",
+              title: '<img src=x onerror="globalThis.questionPwned=1"> Peer',
+              text: "raw",
+            },
+          ],
         },
         warnings: [],
       },
@@ -6437,13 +6444,47 @@ describe("browser peer fan-out", () => {
     expect(document.querySelector("#question-queue-heading")?.textContent).toBe(
       "Question queue · 2",
     );
-    const peerLink = Array.from(
-      document.querySelectorAll<HTMLAnchorElement>(".question-queue-entry a"),
-    ).find((link) => link.textContent === "alpha/Q2 · Peer");
-    expect(peerLink?.getAttribute("href")).toBe(
-      "#machine=macbook&repo=alpha&question=Q2",
+    const hostileTitle =
+      '<img src=x onerror="globalThis.questionPwned=1"> Peer';
+    const queueTitle = document.querySelector(".question-queue-entry h3")!;
+    const detailTitle = document.querySelector(
+      ".peer-machine .questions-panel .entry-title",
+    )!;
+    const expectedHash = "#machine=macbook&repo=alpha&question=Q2";
+    expect(
+      [queueTitle, detailTitle].map(
+        (title) => title.querySelector(".question-title-text")?.textContent,
+      ),
+    ).toEqual([`alpha/Q2 · ${hostileTitle}`, hostileTitle]);
+    expect(
+      [queueTitle, detailTitle].map(
+        (title) => title.querySelectorAll(".question-title-text a").length,
+      ),
+    ).toEqual([0, 0]);
+    const peerPermalinks = [queueTitle, detailTitle].map((title) =>
+      title.querySelector<HTMLAnchorElement>("a.question-permalink")!,
     );
-    document.defaultView!.location.hash = peerLink!.getAttribute("href")!;
+    expect(
+      peerPermalinks.map((link) => [
+        link.textContent,
+        link.getAttribute("href"),
+        link.getAttribute("aria-label"),
+      ]),
+    ).toEqual([
+      ["Permalink", expectedHash, "Permalink to alpha/Q2"],
+      ["Permalink", expectedHash, "Permalink to alpha/Q2"],
+    ]);
+    expect(document.querySelectorAll("img, [onerror]")).toHaveLength(0);
+    expect(
+      (globalThis as Record<string, unknown>).questionPwned,
+    ).toBeUndefined();
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+    expect(css).toMatch(
+      /\.question-permalink\s*\{[^}]*font-size:\s*var\(--text-xs\)/,
+    );
+
+    peerPermalinks[0]!.click();
+    expect(document.defaultView!.location.hash).toBe(expectedHash);
     document.defaultView!.dispatchEvent(
       new document.defaultView!.Event("hashchange"),
     );
@@ -6453,8 +6494,13 @@ describe("browser peer fan-out", () => {
         ?.textContent,
     ).toContain("macbook");
     expect(
-      document.querySelector(".question-queue-entry-linked")?.textContent,
-    ).toContain("alpha/Q2 · Peer");
+      document.querySelector('.peer-machine [role="tab"][aria-selected="true"]')
+        ?.textContent,
+    ).toContain("alpha");
+    expect(
+      document.querySelector(".question-queue-entry-linked"),
+    ).not.toBeNull();
+    expect(document.querySelector(".question-detail-linked")).not.toBeNull();
   });
 
   test("omits ambiguous duplicate question deep links and highlights no duplicate card", () => {
@@ -6480,11 +6526,19 @@ describe("browser peer fan-out", () => {
       document.querySelectorAll(".question-queue-entry h3 a"),
     ).toHaveLength(0);
     expect(
-      document.querySelectorAll(".question-queue-entry-linked"),
+      document.querySelectorAll(".questions-panel .entry-title a"),
     ).toHaveLength(0);
     expect(
+      document.querySelectorAll(".question-queue-entry-linked"),
+    ).toHaveLength(0);
+    expect(document.querySelectorAll(".question-detail-linked")).toHaveLength(
+      0,
+    );
+    expect(
       Array.from(
-        document.querySelectorAll(".question-queue-entry h3"),
+        document.querySelectorAll(
+          ".question-queue-entry h3 .question-title-text",
+        ),
         (heading) => heading.textContent,
       ),
     ).toEqual(["factory-ui/Q7 · First", "factory-ui/Q7 · Second"]);
@@ -6568,7 +6622,9 @@ describe("browser peer fan-out", () => {
     );
     expect(
       Array.from(
-        document.querySelectorAll(".question-queue-entry h3"),
+        document.querySelectorAll(
+          ".question-queue-entry h3 .question-title-text",
+        ),
         (node) => node.textContent,
       ),
     ).toEqual(["good-project/Q3 · Valid peer", "local-project/Q1 · Local"]);

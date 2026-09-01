@@ -278,7 +278,7 @@ describe("costs reader", () => {
 
   test("retains newest complete tasks by lastAt rather than JSON member order", async () => {
     const item = fixture();
-    const newest = "2026-08-16T06:00:00Z";
+    const newest = "2026-08-16T06:00:00.900Z";
     await item.writeCosts(
       JSON.stringify({
         ...validCosts,
@@ -287,7 +287,7 @@ describe("costs reader", () => {
           T2: costTask(
             2,
             "x".repeat(MAX_COSTS_WINDOW_BYTES),
-            "2026-08-16T05:00:00Z",
+            "2026-08-16T06:00:00Z",
           ),
           T3: costTask(3, undefined, "2026-08-16T04:00:00Z"),
         },
@@ -301,6 +301,27 @@ describe("costs reader", () => {
         tasks: { T1: costTask(1, undefined, newest) },
         coverage: { kind: "recent-window", retainedTaskCount: 1 },
       },
+    });
+  });
+
+  test("fails closed when an oversized task cannot be safely measured", async () => {
+    const item = fixture();
+    const depth = 40_000;
+    const deeplyNestedUnknown = `${'{"a":'.repeat(depth)}0${"}".repeat(depth)}`;
+    const task = JSON.stringify(costTask(1));
+    const source = `{"schemaVersion":1,"recordedAt":"${validCosts.recordedAt}","currency":"USD","tasks":{"T1":${task.slice(0, -1)},"deep":${deeplyNestedUnknown}}}}`;
+    expect(encode(source).byteLength).toBeLessThan(MAX_COSTS_SOURCE_BYTES);
+    expect(encode(source).byteLength).toBeGreaterThan(MAX_COSTS_BYTES);
+    await item.writeCosts(source);
+
+    await expect(readFactoryCosts(item.root)).resolves.toEqual({
+      status: "unavailable",
+      warnings: [
+        {
+          code: "COSTS_INVALID_TASK",
+          message: "costs.json contains a task that cannot be safely measured",
+        },
+      ],
     });
   });
 

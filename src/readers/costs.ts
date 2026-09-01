@@ -297,7 +297,8 @@ function parseFactoryCostsWindow(bytes: Uint8Array): ReaderResult<CostsData> {
   // was updated most recently. Keep the bounded window aligned with lastAt.
   entries.sort(
     ([leftId, , left], [rightId, , right]) =>
-      right.lastAt.localeCompare(left.lastAt) || leftId.localeCompare(rightId),
+      Date.parse(right.lastAt) - Date.parse(left.lastAt) ||
+      leftId.localeCompare(rightId),
   );
 
   const encoder = new TextEncoder();
@@ -306,7 +307,15 @@ function parseFactoryCostsWindow(bytes: Uint8Array): ReaderResult<CostsData> {
   let retaining = true;
   for (const [taskId, taskValue, task] of entries) {
     if (!retaining) continue;
-    const serialized = JSON.stringify({ [taskId]: taskValue });
+    let serialized: string;
+    try {
+      serialized = JSON.stringify({ [taskId]: taskValue });
+    } catch {
+      return unavailable(
+        "COSTS_INVALID_TASK",
+        "costs.json contains a task that cannot be safely measured",
+      );
+    }
     const entryBytes = encoder.encode(serialized).byteLength - 2;
     const separatorBytes = retained.length === 0 ? 0 : 1;
     if (retainedBytes + entryBytes + separatorBytes > MAX_COSTS_WINDOW_BYTES) {

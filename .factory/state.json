@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T65",
-  "branch": "factory/t65-live-dependency-graph",
-  "pr": 94,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-09-01T04:00:10Z"
+  "updated": "2026-09-01T04:07:18Z"
 }

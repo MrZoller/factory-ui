@@ -275,6 +275,30 @@ describe("costs reader", () => {
     });
   });
 
+  test("rejects an invalid older task outside the retained recent window", async () => {
+    const item = fixture();
+    const padding = "x".repeat(MAX_COSTS_WINDOW_BYTES);
+    await item.writeCosts(
+      JSON.stringify({
+        ...validCosts,
+        tasks: {
+          T1: { ...costTask(-1), note: padding },
+          T2: costTask(2),
+        },
+      }),
+    );
+
+    expect(await readFactoryCosts(item.root)).toEqual({
+      status: "unavailable",
+      warnings: [
+        {
+          code: "COSTS_INVALID_TASK",
+          message: "costs.json contains an invalid task",
+        },
+      ],
+    });
+  });
+
   test("ignores task-shaped unknown root properties after tasks in an oversized costs source", async () => {
     const item = fixture();
     await item.writeCosts(

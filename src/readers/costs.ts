@@ -283,18 +283,28 @@ function parseFactoryCostsWindow(bytes: Uint8Array): ReaderResult<CostsData> {
     );
   }
   const encoder = new TextEncoder();
-  const retained: Array<[string, unknown]> = [];
+  const retained: Array<[string, CostTask]> = [];
   let retainedBytes = 2;
+  let retaining = true;
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (!entry) continue;
+    const task = parseTask(entry[0], entry[1]);
+    if (task === null) {
+      return unavailable(
+        "COSTS_INVALID_TASK",
+        "costs.json contains an invalid task",
+      );
+    }
+    if (!retaining) continue;
     const serialized = JSON.stringify({ [entry[0]]: entry[1] });
     const entryBytes = encoder.encode(serialized).byteLength - 2;
     const separatorBytes = retained.length === 0 ? 0 : 1;
     if (retainedBytes + entryBytes + separatorBytes > MAX_COSTS_WINDOW_BYTES) {
-      break;
+      retaining = false;
+      continue;
     }
-    retained.unshift(entry);
+    retained.unshift([entry[0], task]);
     retainedBytes += entryBytes + separatorBytes;
   }
   if (retained.length === 0 && entries.length > 0) {
@@ -304,14 +314,7 @@ function parseFactoryCostsWindow(bytes: Uint8Array): ReaderResult<CostsData> {
     );
   }
   const tasks: Record<string, CostTask> = Object.create(null);
-  for (const [taskId, taskValue] of retained) {
-    const task = parseTask(taskId, taskValue);
-    if (task === null) {
-      return unavailable(
-        "COSTS_INVALID_TASK",
-        "costs.json contains an invalid task",
-      );
-    }
+  for (const [taskId, task] of retained) {
     tasks[taskId] = task;
   }
   return {

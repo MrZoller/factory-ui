@@ -1306,13 +1306,17 @@ describe("config", () => {
     });
 
     test("accepts only tailnet-open answer auth and requires an answer actor", () => {
-      expect(
-        parseConfig({
-          ...baseInput,
-          answerActor: "Chris",
-          answerAuth: "tailnet-open",
-        }).answerAuth,
-      ).toBe("tailnet-open");
+      const parsed = parseConfig({
+        ...baseInput,
+        answerActor: "Chris",
+        answerAuth: "tailnet-open",
+        answerOrigins: ["http://MINI:80", "https://[fd7a:115c:a1e0::1]:8443"],
+      });
+      expect(parsed.answerAuth).toBe("tailnet-open");
+      expect(parsed.answerOrigins).toEqual([
+        "http://mini",
+        "https://[fd7a:115c:a1e0::1]:8443",
+      ]);
       for (const answerAuth of ["secret", "open", "TAILNET-OPEN", null]) {
         expect(() =>
           parseConfig({ ...baseInput, answerActor: "Chris", answerAuth }),
@@ -1321,6 +1325,38 @@ describe("config", () => {
       expect(() =>
         parseConfig({ ...baseInput, answerAuth: "tailnet-open" }),
       ).toThrow("answerAuth requires answerActor");
+      expect(() =>
+        parseConfig({
+          ...baseInput,
+          answerActor: "Chris",
+          answerAuth: "tailnet-open",
+        }),
+      ).toThrow("tailnet-open answerAuth requires answerOrigins");
+    });
+
+    test("rejects meaningless, malformed, duplicate, empty, and oversized answer origins", () => {
+      expect(() =>
+        parseConfig({
+          ...baseInput,
+          answerActor: "Chris",
+          answerOrigins: ["http://mini:7777"],
+        }),
+      ).toThrow("answerOrigins requires tailnet-open answerAuth");
+      for (const answerOrigins of [
+        [],
+        ["http://mini:7777/path"],
+        ["http://mini:80", "http://MINI"],
+        Array.from({ length: 33 }, (_, index) => `http://mini:${8000 + index}`),
+      ]) {
+        expect(() =>
+          parseConfig({
+            ...baseInput,
+            answerActor: "Chris",
+            answerAuth: "tailnet-open",
+            answerOrigins,
+          }),
+        ).toThrow();
+      }
     });
 
     test("keeps answer intake disabled when no actor is configured and never parses a secret", () => {
@@ -1548,6 +1584,7 @@ describe("config", () => {
           peers: [],
           answerActor: "Chris",
           answerAuth: "tailnet-open",
+          answerOrigins: ["https://dashboard.tailnet:7777"],
         }),
       );
       const previous = process.env.FACTORY_ANSWER_SECRET;
@@ -1557,6 +1594,7 @@ describe("config", () => {
           actor: "Chris",
           secret: "private-helper-secret",
           authRequired: false,
+          allowedOrigins: ["https://dashboard.tailnet:7777"],
         });
       } finally {
         if (previous === undefined) delete process.env.FACTORY_ANSWER_SECRET;

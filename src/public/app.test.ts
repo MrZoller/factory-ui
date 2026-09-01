@@ -1153,6 +1153,11 @@ describe("answer lifecycle queue", () => {
         new Headers(init?.headers).has("authorization"),
       ),
     ).toEqual([false, false]);
+    expect(
+      answerCalls.map(([, init]) =>
+        new Headers(init?.headers).get("x-factory-ui-answer"),
+      ),
+    ).toEqual([null, "1"]);
     expect(document.querySelector(".answer-status")?.textContent).toBe(
       "applied/consumed",
     );
@@ -1722,10 +1727,23 @@ describe("answer lifecycle queue", () => {
     controller.cleanup();
   });
 
-  test("links peer questions to the owning dashboard without cross-origin answer fetches", async () => {
+  test("links peer lifecycle to the owner in a secret-free fragment without cross-origin answer fetches", async () => {
     const document = dashboardDocument();
     const timers = fakeTimers();
     const peer = "https://legion.tailnet:7777";
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "legion",
+          repository: "factory-ui",
+          question: "Q9",
+          id: "123e4567-e89b-42d3-a456-426614174000",
+          status: "pending",
+        },
+      ]),
+    );
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === "/api/fleet")
@@ -1749,14 +1767,184 @@ describe("answer lifecycle queue", () => {
       ".answer-owning-dashboard a",
     );
     expect(link?.textContent).toBe("Open legion");
-    expect(link?.href).toBe(
-      `${peer}/#machine=legion&repo=factory-ui&question=Q9`,
-    );
+    const target = new URL(link!.href);
+    const fragment = new URLSearchParams(target.hash.slice(1));
+    expect(target.origin + target.pathname).toBe(`${peer}/`);
+    expect(target.search).toBe("");
+    expect(fragment.get("machine")).toBe("legion");
+    expect(fragment.get("repo")).toBe("factory-ui");
+    expect(fragment.get("question")).toBe("Q9");
+    expect(JSON.parse(fragment.get("answerLifecycle")!)).toEqual({
+      version: 1,
+      machine: "legion",
+      repository: "factory-ui",
+      question: "Q9",
+      id: "123e4567-e89b-42d3-a456-426614174000",
+      status: "pending",
+    });
+    expect(link?.href).not.toContain("secret");
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
       "/api/fleet",
       `${peer}/api/fleet`,
     ]);
     controller.cleanup();
+  });
+
+  test("imports pending lifecycle, cleans the fragment, and waits for Resume", async () => {
+    const document = dashboardDocument();
+    const migration = {
+      version: 1,
+      machine: "mini",
+      repository: "factory-ui",
+      question: "Q9",
+      id: "123e4567-e89b-42d3-a456-426614174000",
+      status: "pending",
+    };
+    document.defaultView!.location.hash = new URLSearchParams({
+      machine: "mini",
+      repo: "factory-ui",
+      question: "Q9",
+      answerLifecycle: JSON.stringify(migration),
+    }).toString();
+    const fetcher = vi.fn(async () =>
+      jsonResponse(
+        fleet("mini", [], [answerableRepository()], {
+          enabled: true,
+          authRequired: false,
+        }),
+      ),
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(fakeTimers(), { now: () => NOW }),
+    );
+    await flushPromises();
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(document.defaultView!.location.hash).toBe(
+      "#machine=mini&repo=factory-ui&question=Q9",
+    );
+    expect(
+      JSON.parse(
+        document.defaultView!.localStorage.getItem(
+          "factory-ui.answer-lifecycle.v1",
+        )!,
+      ),
+    ).toEqual([migration]);
+    expect(document.querySelector(".answer-resume")?.textContent).toContain(
+      "Resume tracking",
+    );
+    controller.cleanup();
+  });
+
+  test("ignores malformed, mismatched, and conflicting lifecycle migrations", () => {
+    const answerId = "123e4567-e89b-42d3-a456-426614174000";
+    const cases = [
+      "{not-json",
+      JSON.stringify({
+        version: 1,
+        machine: "legion",
+        repository: "factory-ui",
+        question: "Q9",
+        id: answerId,
+        status: "pending",
+      }),
+      JSON.stringify({
+        version: 1,
+        machine: "mini",
+        repository: "missing",
+        question: "Q9",
+        id: answerId,
+        status: "pending",
+      }),
+    ];
+    for (const envelope of cases) {
+      const document = dashboardDocument();
+      document.defaultView!.location.hash = new URLSearchParams({
+        machine: "mini",
+        repo: "factory-ui",
+        question: "Q9",
+        answerLifecycle: envelope,
+      }).toString();
+      renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
+      expect(
+        document.defaultView!.localStorage.getItem(
+          "factory-ui.answer-lifecycle.v1",
+        ),
+      ).toBeNull();
+      expect(document.defaultView!.location.hash).toBe(
+        "#machine=mini&repo=factory-ui&question=Q9",
+      );
+    }
+
+    const conflict = dashboardDocument();
+    const existing = {
+      version: 1,
+      machine: "mini",
+      repository: "factory-ui",
+      question: "Q9",
+      id: answerId,
+      status: "pending",
+    };
+    conflict.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([existing]),
+    );
+    conflict.defaultView!.location.hash = new URLSearchParams({
+      machine: "mini",
+      repo: "factory-ui",
+      question: "Q9",
+      answerLifecycle: JSON.stringify({
+        ...existing,
+        id: "223e4567-e89b-42d3-a456-426614174000",
+      }),
+    }).toString();
+    renderFleet(fleet("mini", [], [answerableRepository()]), conflict, NOW);
+    expect(
+      JSON.parse(
+        conflict.defaultView!.localStorage.getItem(
+          "factory-ui.answer-lifecycle.v1",
+        )!,
+      ),
+    ).toEqual([existing]);
+  });
+
+  test("imports uncertain payload and idempotency as an explicit retry", () => {
+    const document = dashboardDocument();
+    const migration = {
+      version: 1,
+      machine: "mini",
+      repository: "factory-ui",
+      question: "Q9",
+      status: "uncertain",
+      payload: { question: "Q9", option: "A", text: "because" },
+      idempotencyKey: "123e4567-e89b-42d3-a456-426614174000",
+    };
+    document.defaultView!.location.hash = new URLSearchParams({
+      machine: "mini",
+      repo: "factory-ui",
+      question: "Q9",
+      answerLifecycle: JSON.stringify(migration),
+    }).toString();
+    renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
+
+    expect(
+      JSON.parse(
+        document.defaultView!.localStorage.getItem(
+          "factory-ui.answer-lifecycle.v1",
+        )!,
+      ),
+    ).toEqual([migration]);
+    expect(document.querySelector(".answer-form")?.textContent).toContain(
+      "Option: A",
+    );
+    expect(document.querySelector(".answer-form")?.textContent).toContain(
+      "Text: because",
+    );
+    expect(document.querySelector(".answer-form")?.textContent).toContain(
+      "Check submission status",
+    );
   });
 
   test("renders terminal rejection exactly and resumes persisted pending records without mislabeling unknown outcomes", async () => {

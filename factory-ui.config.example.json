@@ -2,6 +2,8 @@
   "machine": "mini",
   "bind": "100.64.0.10",
   "answerActor": "factory-operator",
+  "answerAuth": "tailnet-open",
+  "answerOrigins": ["http://mini:7777", "http://100.64.0.10:7777"],
   "opencodeConfigPath": "/Users/factory/.config/opencode/opencode.jsonc",
   "codeRoots": ["/Users/factory/code"],
   "repositories": [

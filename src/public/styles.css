@@ -518,6 +518,12 @@ p {
   color: var(--color-info);
 }
 
+.dependency-edge-satisfied {
+  border-color: var(--color-good);
+  background: color-mix(in srgb, var(--color-good) 10%, transparent);
+  color: var(--color-good);
+}
+
 .dependency-edge-cross {
   border: 1px dashed var(--color-accent);
   color: var(--color-accent);
@@ -548,6 +554,26 @@ p {
 .dependency-state-held {
   border-left-color: var(--color-danger);
   color: var(--color-danger);
+}
+
+.dependency-all-done {
+  margin-top: var(--space-3);
+  color: var(--color-good);
+  font-weight: 700;
+}
+
+.dependency-completed {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: var(--space-3);
+}
+
+.dependency-completed-summary {
+  width: fit-content;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 700;
 }
 
 .dependency-task-header > :first-child,

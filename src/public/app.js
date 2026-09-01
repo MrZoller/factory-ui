@@ -3662,13 +3662,19 @@ function updateQuestionDetailIdentities(documentRoot, duplicatedRepositories) {
   )) {
     const parts = questionIdentityHeadings.get(heading);
     if (!parts) continue;
-    heading.textContent = `${questionDisplayIdentity(
+    const displayIdentity = questionDisplayIdentity(
       parts.machine,
       parts.repository,
       parts.question,
       duplicatedRepositories,
-    )} · ${parts.suffix}`;
+    );
+    heading.textContent = `${displayIdentity} · ${parts.suffix}`;
     const card = heading.closest(".question");
+    const permalink = card?.querySelector(".question-permalink");
+    if (permalink) {
+      permalink.setAttribute("aria-label", `Permalink to ${displayIdentity}`);
+      permalink.title = `Permalink to ${displayIdentity}`;
+    }
     const linked =
       parts.unambiguous &&
       selection.machine === parts.machine &&

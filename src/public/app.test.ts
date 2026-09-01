@@ -931,6 +931,11 @@ describe("answer lifecycle queue", () => {
         ".question-queue-entry h3 .question-title-text",
       )?.textContent,
     ).toBe("mini/factory-ui/Q9 · Choose <img src=x onerror=1>");
+    expect(
+      qualifiedDocument
+        .querySelector(".questions-panel .question-permalink")
+        ?.getAttribute("aria-label"),
+    ).toBe("Permalink to mini/factory-ui/Q9");
 
     const uncertainDocument = dashboardDocument();
     uncertainDocument.defaultView!.localStorage.setItem(
@@ -6451,6 +6456,8 @@ describe("browser peer fan-out", () => {
       ".peer-machine .questions-panel .entry-title",
     )!;
     const expectedHash = "#machine=macbook&repo=alpha&question=Q2";
+    const scrollIntoView = vi.fn();
+    document.defaultView!.HTMLElement.prototype.scrollIntoView = scrollIntoView;
     expect(
       [queueTitle, detailTitle].map(
         (title) => title.querySelector(".question-title-text")?.textContent,
@@ -6482,6 +6489,9 @@ describe("browser peer fan-out", () => {
     expect(css).toMatch(
       /\.question-permalink\s*\{[^}]*font-size:\s*var\(--text-xs\)/,
     );
+    expect(css).toMatch(
+      /\.question-queue-entry-linked,\s*\.question-detail-linked\s*\{[^}]*outline:\s*2px solid/,
+    );
 
     peerPermalinks[0]!.click();
     expect(document.defaultView!.location.hash).toBe(expectedHash);
@@ -6501,6 +6511,7 @@ describe("browser peer fan-out", () => {
       document.querySelector(".question-queue-entry-linked"),
     ).not.toBeNull();
     expect(document.querySelector(".question-detail-linked")).not.toBeNull();
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
   });
 
   test("omits ambiguous duplicate question deep links and highlights no duplicate card", () => {

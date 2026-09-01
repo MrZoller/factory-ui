@@ -156,6 +156,16 @@ function parseOrigin(
   return url.origin;
 }
 
+function parseAnswerOrigin(value: unknown, field: string): string {
+  const origin = parseOrigin(value, field, false);
+  if (!origin.startsWith("http://")) {
+    throw new Error(
+      `${field} must use HTTP because factory-ui does not terminate TLS`,
+    );
+  }
+  return origin;
+}
+
 export function parseGithubUrl(value: unknown, field = "githubUrl"): string {
   const input = readString(value, field, MAX_URL_LENGTH);
   const match = /^https:\/\/github\.com\/([^/?#]+)\/([^/?#]+)\/?$/i.exec(input);
@@ -346,7 +356,7 @@ export function parseConfig(value: unknown): AppConfig {
       parseOrigin(origin, `developmentOrigins[${index}]`, true),
   );
   const answerOrigins = ((value.answerOrigins ?? []) as unknown[]).map(
-    (origin, index) => parseOrigin(origin, `answerOrigins[${index}]`, false),
+    (origin, index) => parseAnswerOrigin(origin, `answerOrigins[${index}]`),
   );
   requireUnique(
     repositories.map(({ name }) => name),

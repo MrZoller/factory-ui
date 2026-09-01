@@ -1310,12 +1310,12 @@ describe("config", () => {
         ...baseInput,
         answerActor: "Chris",
         answerAuth: "tailnet-open",
-        answerOrigins: ["http://MINI:80", "https://[fd7a:115c:a1e0::1]:8443"],
+        answerOrigins: ["http://MINI:80", "http://[fd7a:115c:a1e0::1]:8443"],
       });
       expect(parsed.answerAuth).toBe("tailnet-open");
       expect(parsed.answerOrigins).toEqual([
         "http://mini",
-        "https://[fd7a:115c:a1e0::1]:8443",
+        "http://[fd7a:115c:a1e0::1]:8443",
       ]);
       for (const answerAuth of ["secret", "open", "TAILNET-OPEN", null]) {
         expect(() =>
@@ -1345,6 +1345,7 @@ describe("config", () => {
       for (const answerOrigins of [
         [],
         ["http://mini:7777/path"],
+        ["https://mini:7777"],
         ["http://mini:80", "http://MINI"],
         Array.from({ length: 33 }, (_, index) => `http://mini:${8000 + index}`),
       ]) {
@@ -1584,7 +1585,7 @@ describe("config", () => {
           peers: [],
           answerActor: "Chris",
           answerAuth: "tailnet-open",
-          answerOrigins: ["https://dashboard.tailnet:7777"],
+          answerOrigins: ["http://dashboard.tailnet:7777"],
         }),
       );
       const previous = process.env.FACTORY_ANSWER_SECRET;
@@ -1594,7 +1595,7 @@ describe("config", () => {
           actor: "Chris",
           secret: "private-helper-secret",
           authRequired: false,
-          allowedOrigins: ["https://dashboard.tailnet:7777"],
+          allowedOrigins: ["http://dashboard.tailnet:7777"],
         });
       } finally {
         if (previous === undefined) delete process.env.FACTORY_ANSWER_SECRET;

@@ -71,13 +71,14 @@ factory-ui.
 Secret-authenticated browser requests are the default. An installation that
 deliberately treats every client able to reach the dashboard port as an answer
 operator may add `"answerAuth": "tailnet-open"` alongside `answerActor` and a
-non-empty `answerOrigins` list. Each entry is an exact HTTP(S) origin, including
+non-empty `answerOrigins` list. Each entry is an exact HTTP origin, including
 the port when non-default, from which that dashboard is intentionally served,
 for example `"http://mini:7777"` and `"http://100.64.0.10:7777"`. List every
 MagicDNS alias or literal-IP origin operators actually use; lookalike hosts,
 wrong ports, and unlisted aliases are rejected. `answerOrigins` is accepted only
 in open mode, is bounded to 32 unique entries, and uses the same strict origin
-grammar as peer origins. Open mode removes the browser's shared-secret prompt
+grammar as peer origins; HTTPS is rejected because factory-ui does not terminate
+TLS. Open mode removes the browser's shared-secret prompt
 and Bearer header, but the server process must still have a non-empty
 `FACTORY_ANSWER_SECRET`; the fixed `factory-answers` helper receives that
 private secret exactly as it does in the default mode. The committed example

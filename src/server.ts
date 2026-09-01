@@ -172,7 +172,7 @@ function hasAllowedAnswerOrigin(
   try {
     const url = new URL(request.url);
     return (
-      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.protocol === "http:" &&
       url.username === "" &&
       url.password === "" &&
       allowedOrigins.includes(url.origin)

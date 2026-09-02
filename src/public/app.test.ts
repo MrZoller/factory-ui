@@ -1089,6 +1089,95 @@ describe("answer lifecycle queue", () => {
     controller.cleanup();
   });
 
+  test.each(["option", "free text"] as const)(
+    "uses receiver-safe default fetch wiring for %s submissions",
+    async (kind) => {
+      const document = dashboardDocument();
+      const timers = fakeTimers();
+      const repository =
+        kind === "option"
+          ? answerableRepository()
+          : richRepository({
+              questions: {
+                status: "available",
+                data: {
+                  open: [
+                    {
+                      id: "Q9",
+                      taskId: "T8",
+                      title: "Explain the decision",
+                      text: "raw",
+                      context: "Provide the reason.",
+                      proseOptions: ["Describe another approach"],
+                    },
+                  ],
+                },
+                warnings: [],
+              },
+            });
+      const requests: Array<[string, RequestInit | undefined]> = [];
+      const fetcher = async function (
+        this: unknown,
+        input: RequestInfo | URL,
+        init?: RequestInit,
+      ): Promise<Response> {
+        if (this !== globalThis) {
+          throw new TypeError("fetch receiver must be globalThis");
+        }
+        requests.push([String(input), init]);
+        return String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [], [repository]))
+          : jsonResponse(
+              {
+                status: "pending",
+                id: "123e4567-e89b-42d3-a456-426614174000",
+              },
+              202,
+            );
+      };
+      const restore = await bootDashboard(document, fetcher, timers);
+      try {
+        const view = document.defaultView!;
+        if (kind === "option") {
+          const option = document.querySelector<HTMLInputElement>(
+            ".answer-option input",
+          )!;
+          option.checked = true;
+          option.dispatchEvent(new view.Event("change"));
+        } else {
+          const text = document.querySelector<HTMLInputElement>(
+            '.answer-form input[type="text"]',
+          )!;
+          text.value = "The deployment owner approved it.";
+          text.dispatchEvent(new view.Event("input"));
+        }
+        const secret = document.querySelector<HTMLInputElement>(
+          '.answer-form input[type="password"]',
+        )!;
+        secret.value = "shared";
+        secret.dispatchEvent(new view.Event("input"));
+        Array.from(document.querySelectorAll("button"))
+          .find((button) => button.textContent === "Review answer")!
+          .click();
+        Array.from(document.querySelectorAll("button"))
+          .find((button) => button.textContent === "Confirm submission")!
+          .click();
+        await flushPromises();
+
+        expect(requests.map(([input]) => input)).toEqual([
+          "/api/fleet",
+          "/api/repo/factory-ui/answers",
+        ]);
+        expect(requests[1]?.[1]?.method).toBe("POST");
+        expect(document.querySelector(".answer-status")?.textContent).toBe(
+          "pending application",
+        );
+      } finally {
+        restore();
+      }
+    },
+  );
+
   test("submits and polls local tailnet-open answers without secret UI or authorization", async () => {
     const document = dashboardDocument();
     const timers = fakeTimers();

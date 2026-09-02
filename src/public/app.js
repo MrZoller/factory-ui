@@ -49,6 +49,13 @@ const disclosureStates = new WeakMap();
 const answerStores = new WeakMap();
 const answerRuntimes = new WeakMap();
 
+function receiverSafeFetcher(fetcher) {
+  return (input, init) =>
+    init === undefined
+      ? Reflect.apply(fetcher, globalThis, [input])
+      : Reflect.apply(fetcher, globalThis, [input, init]);
+}
+
 function disclosureState(documentRoot, machine, repository) {
   let machines = disclosureStates.get(documentRoot);
   if (!machines) disclosureStates.set(documentRoot, (machines = new Map()));
@@ -5301,6 +5308,7 @@ export function renderFleet(fleet, documentRoot = document, now = new Date()) {
 }
 
 export async function fetchPeerFleet(peer, fetcher, dependencyOverrides = {}) {
+  const requestFetcher = receiverSafeFetcher(fetcher);
   const setTimeout =
     dependencyOverrides.setTimeout ?? globalThis.setTimeout.bind(globalThis);
   const clearTimeout =
@@ -5316,9 +5324,12 @@ export async function fetchPeerFleet(peer, fetcher, dependencyOverrides = {}) {
   });
   try {
     const request = (async () => {
-      const response = await fetcher(new URL("/api/fleet", peer.origin).href, {
-        signal: controller.signal,
-      });
+      const response = await requestFetcher(
+        new URL("/api/fleet", peer.origin).href,
+        {
+          signal: controller.signal,
+        },
+      );
       return readFleetResponse(response);
     })();
     return await Promise.race([request, timeoutFailure]);
@@ -5397,6 +5408,7 @@ export async function loadFleet(
   fetcher = fetch,
   dependencyOverrides = {},
 ) {
+  const requestFetcher = receiverSafeFetcher(fetcher);
   const machine = documentRoot.querySelector("#machine");
   const repositories = documentRoot.querySelector("#repositories");
   const generated = documentRoot.querySelector("#generated");
@@ -5438,7 +5450,7 @@ export async function loadFleet(
     repositories?.replaceChildren();
   }
   try {
-    const response = await fetcher("/api/fleet");
+    const response = await requestFetcher("/api/fleet");
     const fleet = await readFleetResponse(response);
     if (loadGenerations.get(documentRoot) !== generation) return false;
     renderFleet(fleet, documentRoot, dependencies.now());
@@ -5462,7 +5474,7 @@ export async function loadFleet(
       fleet.peers,
       views,
       documentRoot,
-      fetcher,
+      requestFetcher,
       dependencies,
       generation,
     );
@@ -5500,6 +5512,7 @@ export function startDashboard(
   fetcher = fetch,
   dependencyOverrides = {},
 ) {
+  const requestFetcher = receiverSafeFetcher(fetcher);
   dashboardControllers.get(documentRoot)?.cleanup();
   const dependencies = {
     setTimeout:
@@ -5517,7 +5530,7 @@ export function startDashboard(
     randomUUID: dependencyOverrides.randomUUID ?? browserRandomUUID,
   };
   answerRuntimes.set(documentRoot, {
-    fetcher,
+    fetcher: requestFetcher,
     setTimeout: dependencies.setTimeout,
     clearTimeout: dependencies.clearTimeout,
     randomUUID: dependencies.randomUUID,
@@ -5550,7 +5563,7 @@ export function startDashboard(
     if (inFlight || documentRoot.hidden) return;
     inFlight = true;
     clearRefreshTimer();
-    const success = await loadFleet(documentRoot, fetcher, dependencies);
+    const success = await loadFleet(documentRoot, requestFetcher, dependencies);
     inFlight = false;
     if (success) {
       failures = 0;

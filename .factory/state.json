@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T72",
+  "branch": "factory/t72-bind-fetchers",
   "pr": null,
   "hold": false,
-  "updated": "2026-09-02T01:40:54Z"
+  "updated": "2026-09-02T01:44:33Z"
 }

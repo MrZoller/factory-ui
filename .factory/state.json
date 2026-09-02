@@ -1,11 +1,11 @@
 {
   "project": "factory-ui",
-  "phase": "idle",
+  "phase": "plan",
   "spec_approved": true,
-  "plan_approved": true,
+  "plan_approved": false,
   "current_task": null,
   "branch": null,
   "pr": null,
   "hold": false,
-  "updated": "2026-09-01T12:11:04Z"
+  "updated": "2026-09-02T01:31:01Z"
 }

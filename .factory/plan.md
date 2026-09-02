@@ -137,6 +137,11 @@ task.
   - acceptance: In `src/public/index.html`, `src/public/app.js`, `src/public/styles.css`, and colocated tests, replace the header's identically styled mix of page navigation and same-page Questions/Dependencies jumps with one consistent, visibly unambiguous navigation model; do not retain a redundant header jump to a section already visible at the top; preserve the question queue's `#question-queue` view/deep-link behavior, dependency and question access, responsive and keyboard navigation, text-only rendering, and existing hash routing; and pass `bun test` plus `bun run lint`.
   - pr: 97
 
+- [ ] T72 (standard) — All answer submits throw 'Can only call Window.fetch on instances of Window' — runtime seeded with unbound fetch, invoked as a method (Fixes #100)
+  - acceptance: In `src/public/app.js` and colocated tests, make the default and injected fetchers used by answer submission and the loader family safe to invoke regardless of call-site receiver; prove both free-text and option submissions reach the request path with the real default-parameter wiring, add a receiver-sensitive regression that fails for an unbound method call, preserve existing timeout and answer lifecycle behavior, and pass `bun test` plus `bun run lint`.
+- [ ] T73 (standard) — Answer submit permanently stuck on 'Submitting…': crypto.randomUUID is unavailable in insecure contexts (all http deployments) (Fixes #91)
+  - acceptance: In `src/public/app.js` and colocated tests, generate RFC 4122 v4 answer idempotency keys with `crypto.randomUUID` when available and a `crypto.getRandomValues` fallback suitable for plain-HTTP tailnet deployments; keep key generation and other synchronous failure points inside submission error handling so failures clear `sending`, render a visible error, and allow retry; cover an unavailable or throwing `randomUUID`, successful fallback submission, and retry behavior; preserve idempotency payload and lifecycle semantics; and pass `bun test` plus `bun run lint`.
+
 ## Risks
 
 - T2 is a security boundary. If deployment requires wildcard/public binding,

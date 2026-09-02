@@ -137,7 +137,7 @@ task.
   - acceptance: In `src/public/index.html`, `src/public/app.js`, `src/public/styles.css`, and colocated tests, replace the header's identically styled mix of page navigation and same-page Questions/Dependencies jumps with one consistent, visibly unambiguous navigation model; do not retain a redundant header jump to a section already visible at the top; preserve the question queue's `#question-queue` view/deep-link behavior, dependency and question access, responsive and keyboard navigation, text-only rendering, and existing hash routing; and pass `bun test` plus `bun run lint`.
   - pr: 97
 
-- [R] T72 (standard) — All answer submits throw 'Can only call Window.fetch on instances of Window' — runtime seeded with unbound fetch, invoked as a method (Fixes #100)
+- [x] T72 (standard) — All answer submits throw 'Can only call Window.fetch on instances of Window' — runtime seeded with unbound fetch, invoked as a method (Fixes #100)
   - acceptance: In `src/public/app.js` and colocated tests, make the default and injected fetchers used by answer submission and the loader family safe to invoke regardless of call-site receiver; prove both free-text and option submissions reach the request path with the real default-parameter wiring, add a receiver-sensitive regression that fails for an unbound method call, preserve existing timeout and answer lifecycle behavior, and pass `bun test` plus `bun run lint`.
   - pr: 101
 - [x] T73 (standard) — Answer submit permanently stuck on 'Submitting…': crypto.randomUUID is unavailable in insecure contexts (all http deployments) (Fixes #91)

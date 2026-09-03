@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T76",
+  "branch": "factory/t76-stale-question-links",
   "pr": null,
   "hold": false,
-  "updated": "2026-09-03T10:50:48Z"
+  "updated": "2026-09-03T10:53:35Z"
 }

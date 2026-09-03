@@ -108,3 +108,19 @@ Day-to-day consequence: stale question links continue to lack a dedicated explan
 Cost or risk: Fixes #93 remains undelivered and the parked implementation may be discarded.
 Recommendation rationale: A reuses the existing inert lifecycle renderer and directly restores the acceptance requirement without widening the feature.
 **A:** A — the factory owner authorizes one additional fix-and-review round: render matched pending/accepted/rejected lifecycle on the stale target with resume and submission controls disabled, add legacy-link regressions, full suite plus one final panel (Chris, 2026-09-03).
+
+## Q10 (task T74, open, filed-at 2026-09-03T18:55:56Z) — Should T74 receive a fifth panel round for two newly confirmed defects?
+Context:
+Observable failure: A maintainer uses a numbered future field such as `Future field v2:` and the dashboard still appends it to the final option; when option details contain balanced backticks, the dashboard also shows the backticks literally instead of the established monospace treatment. The Q8-authorized panel confirmed both defects after the standalone-field fix. Work is parked on branch `factory/t74-question-option-details`.
+Engine detail: The unknown-field detector excludes digits from labels, and the new detail/rationale rendering paths bypass the bounded inline-code renderer added by T75. Four panel rounds have now run for T74, reaching the standing delegation's human-escalation threshold.
+Options considered: A — the factory owner authorizes one additional fix-and-review round for both confirmed defects (recommended) / B — the dashboard product owner abandons the current structured-elaboration implementation and replans issue #102
+Option A: The T74 implementation owner accepts digits in unknown protocol labels, routes elaboration fields and recommendation rationale through the bounded inline-code renderer, adds focused reader and both-surface browser regressions, and runs the complete suite plus one final panel.
+Owner: T74 implementation owner.
+Day-to-day consequence: future numbered fields preserve lossless raw fallback and inline code remains consistent throughout structured questions.
+Cost or risk: this authorizes a fifth panel round after repeated distinct defects in the same task.
+Option B: The dashboard product owner replaces T74 with a newly planned approach rather than shipping the parked implementation.
+Owner: dashboard product owner.
+Day-to-day consequence: structured option elaboration remains unavailable until replacement work is approved and completed.
+Cost or risk: Fixes #102 remains undelivered and the parked implementation may be discarded.
+Recommendation rationale: A addresses two bounded, reproduced integration gaps without changing the approved question grammar or rendering trust boundary.
+**A:**

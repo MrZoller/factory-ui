@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T74",
-  "branch": "factory/t74-question-option-details",
+  "current_task": null,
+  "branch": null,
   "pr": null,
   "hold": false,
-  "updated": "2026-09-03T18:46:21Z"
+  "updated": "2026-09-03T18:55:56Z"
 }

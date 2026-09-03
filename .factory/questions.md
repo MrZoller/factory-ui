@@ -46,7 +46,7 @@ Cost or risk: T68's stated acceptance and Fixes #89 outcome are not delivered an
 Recommendation rationale: A fixes the confirmed fail-closed gap without weakening the approved bounded-window acceptance criteria.
 **A:** A — the factory owner authorizes one additional fix-and-review round: validate every bounded-source task entry before retention, keep the approved recent-window behavior, full suite plus one final panel (Chris, 2026-09-01).
 
-## Q6 (task T74, open, filed-at 2026-09-03T02:26:13Z) — Should T74 receive another fix-and-review round after exhausting its panel budget?
+## Q6 (task T74, consumed, filed-at 2026-09-03T02:26:13Z) — Should T74 receive another fix-and-review round after exhausting its panel budget?
 Context:
 Observable failure: A maintainer writes a long, hard-wrapped option explanation, but the dashboard silently replaces the structured option details with raw question text and gives no oversized-content warning. The required initial panel and one re-panel each found a defect, so the factory protocol requires work to stop before another fix. Parked branch: `factory/t74-question-option-details`.
 Engine detail: The elaboration parser enforces the existing 8,192-character structured-field bound, but its over-limit result is currently indistinguishable from malformed input and therefore does not emit `QUESTIONS_OPTION_TOO_LONG`.
@@ -62,7 +62,7 @@ Cost or risk: Fixes #102 remains undelivered and the parked implementation may b
 Recommendation rationale: A is a small bounded correction that preserves the approved structured-detail behavior and makes the existing oversized-content contract truthful.
 **A:** A — the factory owner authorizes one additional fix-and-review round: propagate the oversized-elaboration result as an explicit QUESTIONS_OPTION_TOO_LONG-class warning with lossless raw fallback, add the hard-wrapped over-bound regression, full suite plus one final panel (Chris, 2026-09-03).
 
-## Q7 (task T76, open, filed-at 2026-09-03T04:09:01Z) — Should T76 receive another fix-and-review round after exhausting its panel budget?
+## Q7 (task T76, consumed, filed-at 2026-09-03T04:09:01Z) — Should T76 receive another fix-and-review round after exhausting its panel budget?
 Context:
 Observable failure: A maintainer follows an old question link while a different question is open, but the dashboard makes that unrelated open question impossible to answer until the maintainer manually removes the stale link from the address bar. The required initial panel and one re-panel each found a blocking defect, so the factory protocol requires work to stop before another fix. Parked branch: `factory/t76-stale-question-links`.
 Engine detail: The stale-target guard is applied to every question card rather than only to the missing target identified by the URL hash; the re-panel also requested a regression proving controls recover after the hash changes.

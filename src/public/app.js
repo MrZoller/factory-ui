@@ -29,6 +29,7 @@ const MAX_QUESTION_OPTION_LENGTH = 8192;
 const MAX_QUESTION_FILED_AT_LENGTH = 64;
 const MAX_QUESTION_INLINE_CODE_SPANS = 32;
 const MAX_QUESTION_INLINE_CODE_LENGTH = 1024;
+const MAX_QUESTION_ID_LENGTH = 128;
 const MAX_ANSWER_TEXT_LENGTH = 10_000;
 const MAX_ANSWER_RESPONSE_BYTES = 64 * 1024;
 const MAX_STORED_ANSWER_LIFECYCLES = 128;
@@ -3771,6 +3772,50 @@ function questionHash(machine, repository, question) {
   return dashboardHash(machine, repository, question);
 }
 
+function staleQuestionLink(documentRoot, views, answerStore) {
+  const selection = hashSelection(documentRoot.defaultView);
+  if (
+    selection.machine === null ||
+    selection.repository === null ||
+    selection.question === null ||
+    selection.question.length > MAX_QUESTION_ID_LENGTH
+  ) {
+    return null;
+  }
+  const canonical = /^Q[1-9][0-9]*$/.test(selection.question);
+  const legacy = /^[1-9][0-9]*$/.test(selection.question);
+  if (!canonical && !legacy) return null;
+  const questionId = canonical ? selection.question : `Q${selection.question}`;
+  const view = views.find(
+    (candidate) => candidate.identity === selection.machine,
+  );
+  const repository = view?.fleet?.repositories?.find(
+    (candidate) => candidate.name === selection.repository,
+  );
+  // Partial readers may have omitted the target. Only a complete exported set
+  // can support the stronger claim that a deep link no longer names an open
+  // question.
+  if (repository?.questions?.status !== "available") return null;
+  if (
+    canonical &&
+    (readerData(repository.questions)?.open ?? []).some(
+      (question) => question.id === questionId,
+    )
+  ) {
+    return null;
+  }
+  const lifecycle = answerStore.get(
+    answerKey(selection.machine, selection.repository, questionId),
+  );
+  if (
+    canonical &&
+    lifecycle &&
+    (lifecycle.id || lifecycle.status === "uncertain")
+  )
+    return null;
+  return { ...selection, questionId };
+}
+
 function duplicateRepositoryNames(documentRoot, views) {
   const machinesByRepository = new Map();
   const visibleMachines = new Set(views.map((view) => view.identity));
@@ -4671,6 +4716,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
   const questionOccurrences = new Map();
   const answerStore = getAnswerStore(documentRoot);
   const duplicatedRepositories = duplicateRepositoryNames(documentRoot, views);
+  const staleLink = staleQuestionLink(documentRoot, views, answerStore);
   for (const view of views) {
     for (const repository of view.fleet?.repositories ?? []) {
       for (const question of readerData(repository.questions)?.open ?? []) {
@@ -4722,9 +4768,29 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
       ? `Question queue · ${countLabel} · showing ${entries.length}`
       : `Question queue · ${countLabel}`;
   if (headerCount) headerCount.textContent = String(openEntries);
+  const staleNotice = staleLink
+    ? (() => {
+        const notice = documentRoot.createElement("article");
+        notice.className = "stale-question-notice";
+        const displayIdentity = questionDisplayIdentity(
+          staleLink.machine,
+          staleLink.repository,
+          staleLink.questionId,
+          duplicatedRepositories,
+        );
+        appendText(notice, "h3", `No open question ${displayIdentity}`);
+        appendText(
+          notice,
+          "p",
+          `The link's question=${staleLink.question} target is not in this repository's open-question set. Older notification links used question=<pull request number> for pull request events, so this may be an old pull request link.`,
+        );
+        return notice;
+      })()
+    : null;
   if (entries.length === 0) {
     list.replaceChildren(
-      textElement(documentRoot, "p", "No open questions", "empty"),
+      staleNotice ??
+        textElement(documentRoot, "p", "No open questions", "empty"),
     );
     updateQuestionDetailIdentities(documentRoot, duplicatedRepositories);
     return;
@@ -4870,6 +4936,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
       if (references.length > 0) item.append(refs);
       const structured = questionIsStructured(question);
       if (
+        !staleLink &&
         view.origin === undefined &&
         intakeEnabled &&
         structured &&
@@ -4887,6 +4954,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
         answerStore.set(key, answerState);
       }
       const interactiveOptions =
+        !staleLink &&
         view.origin === undefined &&
         intakeEnabled &&
         Array.isArray(question.options) &&
@@ -4925,6 +4993,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
         return item;
       }
       if (!intakeEnabled) return item;
+      if (staleLink) return item;
       if (answerState?.id) {
         answerState.authRequired = authRequired;
         renderAnswerLifecycle(
@@ -4954,7 +5023,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
       return item;
     },
   );
-  list.replaceChildren(...cards);
+  list.replaceChildren(...(staleNotice ? [staleNotice] : []), ...cards);
   updateQuestionDetailIdentities(documentRoot, duplicatedRepositories);
   list
     .querySelector(".question-queue-entry-linked")

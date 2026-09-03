@@ -339,6 +339,11 @@ export function parseQuestionDetails(text: string): ParsedQuestionDetails {
       index < detailsEnd &&
       elaborationField(line.value) !== undefined,
   );
+  const unknownBeforeEnvelope =
+    envelopeIndex >= 0 &&
+    lines
+      .slice(optionsIndex + 1, envelopeIndex)
+      .some((line) => looksLikeUnknownElaborationField(line.value));
   const context = bodyField(
     lines,
     contextIndex,
@@ -370,7 +375,8 @@ export function parseQuestionDetails(text: string): ParsedQuestionDetails {
         )
       : undefined;
   const malformedEnvelope =
-    envelopeIndex >= 0 && parsedElaborations === undefined;
+    envelopeIndex >= 0 &&
+    (unknownBeforeEnvelope || parsedElaborations === undefined);
   const branch = PARKED_BRANCH.exec(context ?? "")?.[1];
   return {
     ...(context === undefined ? {} : { context }),

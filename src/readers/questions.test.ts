@@ -340,6 +340,22 @@ Future protocol field: retain this exactly
         }
       });
 
+      test("keeps an unrecognized field before option elaboration in the raw fallback", () => {
+        const question = `## Q8 (task T8, open) — Preserve reordered unknown grammar
+Context: The reader must not merge a future field into the final option.
+Options considered: A — Proceed / B — Wait
+Future protocol field: retain this exactly
+Option A: Use the current implementation path.
+**A:**`;
+        const result = parseFactoryQuestions(question);
+
+        expect(result).toMatchObject({ status: "available" });
+        if (result.status === "available") {
+          expect(result.data.open[0]?.options).toBeUndefined();
+          expect(result.data.open[0]?.text).toBe(question);
+        }
+      });
+
       test("excludes answered questions from open array", () => {
         const questions = `## Q1 (task T1, open) — Open question?
 Context: Context

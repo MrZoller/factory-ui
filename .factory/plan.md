@@ -145,6 +145,8 @@ task.
 
 - [ ] T74 (standard) — Last option swallows the per-option elaboration blocks (Option A:/Owner:/Cost or risk:/Recommendation rationale:) (Fixes #102)
   - acceptance: In `src/readers/questions.ts`, the question-card rendering under `src/public/app.js` and `src/public/styles.css`, and colocated reader/browser tests, stop option continuation text at the enumerated `Option <letter>:`, `Owner:`, `Day-to-day consequence:`, `Cost or risk:`, and `Recommendation rationale:` prefixes; parse each option's elaboration into a compact detail section under its matching option and render the recommendation rationale separately; preserve the current raw fallback for unrecognized trailing lines, keep all source text literal and inert, cover this repository's Q5 and the issue's mixed-envelope fixture, prove the final option ends at its own content, and pass `bun test` plus `bun run lint`.
+- [ ] T75 (standard) — Inline backticks bleed through literally — render backtick spans in monospace (textContent-only, no markdown) (Fixes #103)
+  - acceptance: In the question queue and per-repository question-panel rendering under `src/public/` and colocated browser tests, recognize balanced inline backtick pairs in question context, option text, elaboration fields, qualifiers, and rejection reasons; render each bounded span as a monospace `<code>` element created with text-only DOM APIs while consuming its delimiters; render unbalanced, nested, over-count, and over-length spans literally; prove multiple spans render correctly and HTML-looking span content such as `<script>` remains inert; leave worklog and task surfaces unchanged; and pass `bun test` plus `bun run lint`.
 
 ## Risks
 

@@ -45,3 +45,19 @@ Day-to-day consequence: operators lose cost visibility again as active histories
 Cost or risk: T68's stated acceptance and Fixes #89 outcome are not delivered and would require replanning.
 Recommendation rationale: A fixes the confirmed fail-closed gap without weakening the approved bounded-window acceptance criteria.
 **A:** A — the factory owner authorizes one additional fix-and-review round: validate every bounded-source task entry before retention, keep the approved recent-window behavior, full suite plus one final panel (Chris, 2026-09-01).
+
+## Q6 (task T74, open, filed-at 2026-09-03T02:26:13Z) — Should T74 receive another fix-and-review round after exhausting its panel budget?
+Context:
+Observable failure: A maintainer writes a long, hard-wrapped option explanation, but the dashboard silently replaces the structured option details with raw question text and gives no oversized-content warning. The required initial panel and one re-panel each found a defect, so the factory protocol requires work to stop before another fix. Parked branch: `factory/t74-question-option-details`.
+Engine detail: The elaboration parser enforces the existing 8,192-character structured-field bound, but its over-limit result is currently indistinguishable from malformed input and therefore does not emit `QUESTIONS_OPTION_TOO_LONG`.
+Options considered: A — the factory owner authorizes one additional fix-and-review round that propagates the oversized-elaboration result (recommended) / B — the dashboard product owner abandons structured option elaboration for T74 and replans the issue
+Option A: The T74 implementation owner adds the missing oversized-result signal, a regression for hard-wrapped elaboration above the field bound, and runs the complete suite plus one final panel.
+Owner: T74 implementation owner.
+Day-to-day consequence: maintainers receive an explicit warning and lossless raw fallback when an elaboration exceeds the structured-rendering bound.
+Cost or risk: one exception to the normal two-panel-round convergence budget and another implementation/review pass.
+Option B: The dashboard product owner declines another panel round and replaces T74 with a newly planned approach rather than shipping the current partial implementation.
+Owner: dashboard product owner.
+Day-to-day consequence: option elaboration remains unstructured until replacement work is approved and completed.
+Cost or risk: Fixes #102 remains undelivered and the parked implementation may be discarded.
+Recommendation rationale: A is a small bounded correction that preserves the approved structured-detail behavior and makes the existing oversized-content contract truthful.
+**A:**

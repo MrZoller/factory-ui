@@ -345,11 +345,16 @@ export function parseQuestionDetails(text: string): ParsedQuestionDetails {
       index < detailsEnd &&
       elaborationField(line.value) !== undefined,
   );
-  const unknownBeforeEnvelope =
-    envelopeIndex >= 0 &&
-    lines
-      .slice(optionsIndex + 1, envelopeIndex)
-      .some((line) => looksLikeUnknownElaborationField(line.value));
+  // Unknown protocol fields require the lossless raw fallback even when no
+  // recognized elaboration field follows them. Otherwise parseOptions treats
+  // a trailing labelled line as hard-wrapped text for the final option.
+  const unknownEnvelopeField = lines
+    .slice(optionsIndex + 1, detailsEnd)
+    .some(
+      (line) =>
+        elaborationField(line.value) === undefined &&
+        looksLikeUnknownElaborationField(line.value),
+    );
   const context = bodyField(
     lines,
     contextIndex,
@@ -385,10 +390,9 @@ export function parseQuestionDetails(text: string): ParsedQuestionDetails {
     "optionsTooLong" in parsedElaborations &&
     parsedElaborations.optionsTooLong;
   const malformedEnvelope =
-    envelopeIndex >= 0 &&
-    (unknownBeforeEnvelope ||
-      parsedElaborations === undefined ||
-      elaborationsTooLong);
+    unknownEnvelopeField ||
+    (envelopeIndex >= 0 &&
+      (parsedElaborations === undefined || elaborationsTooLong));
   const branch = PARKED_BRANCH.exec(context ?? "")?.[1];
   return {
     ...(context === undefined ? {} : { context }),

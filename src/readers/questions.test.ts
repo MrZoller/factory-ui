@@ -378,6 +378,22 @@ Option A: Use the current implementation path.
         }
       });
 
+      test("keeps an unrecognized trailing field in the raw fallback without an elaboration anchor", () => {
+        const question = `## Q9 (task T9, open) — Preserve standalone unknown grammar
+Context: The reader must not merge a future field into the final option.
+Options considered: A — Proceed / B — Wait
+Future protocol field: retain this exactly
+**A:**`;
+        const result = parseFactoryQuestions(question);
+
+        expect(result).toMatchObject({ status: "available", warnings: [] });
+        if (result.status === "available") {
+          expect(result.data.open[0]?.options).toBeUndefined();
+          expect(result.data.open[0]?.proseOptions).toBeUndefined();
+          expect(result.data.open[0]?.text).toBe(question);
+        }
+      });
+
       test("excludes answered questions from open array", () => {
         const questions = `## Q1 (task T1, open) — Open question?
 Context: Context

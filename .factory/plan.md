@@ -143,6 +143,9 @@ task.
 - [x] T73 (standard) — Answer submit permanently stuck on 'Submitting…': crypto.randomUUID is unavailable in insecure contexts (all http deployments) (Fixes #91)
   - acceptance: In `src/public/app.js` and colocated tests, generate RFC 4122 v4 answer idempotency keys with `crypto.randomUUID` when available and a `crypto.getRandomValues` fallback suitable for plain-HTTP tailnet deployments; keep key generation and other synchronous failure points inside submission error handling so failures clear `sending`, render a visible error, and allow retry; cover an unavailable or throwing `randomUUID`, successful fallback submission, and retry behavior; preserve idempotency payload and lifecycle semantics; and pass `bun test` plus `bun run lint`.
 
+- [ ] T74 (standard) — Last option swallows the per-option elaboration blocks (Option A:/Owner:/Cost or risk:/Recommendation rationale:) (Fixes #102)
+  - acceptance: In `src/readers/questions.ts`, the question-card rendering under `src/public/app.js` and `src/public/styles.css`, and colocated reader/browser tests, stop option continuation text at the enumerated `Option <letter>:`, `Owner:`, `Day-to-day consequence:`, `Cost or risk:`, and `Recommendation rationale:` prefixes; parse each option's elaboration into a compact detail section under its matching option and render the recommendation rationale separately; preserve the current raw fallback for unrecognized trailing lines, keep all source text literal and inert, cover this repository's Q5 and the issue's mixed-envelope fixture, prove the final option ends at its own content, and pass `bun test` plus `bun run lint`.
+
 ## Risks
 
 - T2 is a security boundary. If deployment requires wildcard/public binding,

@@ -229,6 +229,7 @@ function parseOptionElaborations(
       options: QuestionOption[];
       recommendationRationale?: string;
     }
+  | { optionsTooLong: true }
   | undefined {
   const labels = new Set(options.map((option) => option.label));
   const details = new Map<string, QuestionOptionDetails>();
@@ -237,12 +238,16 @@ function parseOptionElaborations(
   let current: ElaborationField | undefined;
   let continuations: string[] = [];
   let recommendationRationale: string | undefined;
+  let optionsTooLong = false;
 
   const flush = (): boolean => {
     if (current === undefined) return true;
     const value = joinHardWraps([current.value, ...continuations].join("\n"));
     continuations = [];
-    if (value.length > MAX_QUESTION_OPTION_LENGTH) return false;
+    if (value.length > MAX_QUESTION_OPTION_LENGTH) {
+      optionsTooLong = true;
+      return false;
+    }
     if (current.kind === "recommendationRationale") {
       if (recommendationRationale !== undefined || value.length === 0)
         return false;
@@ -278,7 +283,8 @@ function parseOptionElaborations(
   for (const line of lines) {
     const field = elaborationField(line.value);
     if (field !== undefined) {
-      if (!flush()) return undefined;
+      if (!flush())
+        return optionsTooLong ? { optionsTooLong: true } : undefined;
       if (field.kind === "recommendationRationale") selectedLabel = undefined;
       current = field;
       continue;
@@ -287,7 +293,7 @@ function parseOptionElaborations(
     if (current === undefined) return undefined;
     continuations.push(line.value);
   }
-  if (!flush()) return undefined;
+  if (!flush()) return optionsTooLong ? { optionsTooLong: true } : undefined;
 
   return {
     options: options.map((option) => {
@@ -374,14 +380,20 @@ export function parseQuestionDetails(text: string): ParsedQuestionDetails {
           parsedOptions.options,
         )
       : undefined;
+  const elaborationsTooLong =
+    parsedElaborations !== undefined &&
+    "optionsTooLong" in parsedElaborations &&
+    parsedElaborations.optionsTooLong;
   const malformedEnvelope =
     envelopeIndex >= 0 &&
-    (unknownBeforeEnvelope || parsedElaborations === undefined);
+    (unknownBeforeEnvelope ||
+      parsedElaborations === undefined ||
+      elaborationsTooLong);
   const branch = PARKED_BRANCH.exec(context ?? "")?.[1];
   return {
     ...(context === undefined ? {} : { context }),
     ...(malformedEnvelope
-      ? parsedOptions.optionsTooLong
+      ? parsedOptions.optionsTooLong || elaborationsTooLong
         ? { optionsTooLong: true as const }
         : {}
       : (parsedElaborations ?? parsedOptions)),

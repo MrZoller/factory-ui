@@ -99,6 +99,28 @@ describe("questions reader", () => {
     });
 
     describe("structured option bounds", () => {
+      test("falls back when a hard-wrapped option elaboration exceeds the limit", () => {
+        const fragment = "x".repeat(4500);
+        const question = `## Q1 (task T1, open) — Long elaboration
+Context: Context
+Options considered: A — Proceed / B — Wait
+Option A: ${fragment}
+${fragment}
+**A:**`;
+        const result = parseFactoryQuestions(question);
+
+        expect(result.status).toBe("partial");
+        expect(result.warnings).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ code: "QUESTIONS_OPTION_TOO_LONG" }),
+          ]),
+        );
+        if (result.status === "partial") {
+          expect(result.data.open[0]?.options).toBeUndefined();
+          expect(result.data.open[0]?.text).toBe(question);
+        }
+      });
+
       test("falls back when a hard-wrapped labelled option exceeds the limit", () => {
         const fragment = "x".repeat(4500);
         const questions = `## Q1 (task T1, open) — Long option

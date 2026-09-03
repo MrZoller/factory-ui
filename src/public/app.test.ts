@@ -2458,6 +2458,11 @@ accept unbounded input.
                   label: "A",
                   text: "Choose `option one` then `option two`.",
                 },
+                {
+                  label: "B",
+                  text: "`policy (recommended) value`",
+                  recommended: true,
+                },
               ],
               qualifier: "Only `the owner` may proceed.",
             },
@@ -2509,6 +2514,7 @@ Options considered: Select \`fallback option\`.
         script,
         "option one",
         "option two",
+        "policy (recommended) value",
         "the owner",
       ]);
       expect(codeText(questionBody(surface, "Q91"))).toEqual([

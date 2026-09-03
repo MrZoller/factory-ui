@@ -1352,8 +1352,14 @@ function appendQuestionOptionText(row, option) {
   const marker = option.recommended
     ? /\(\s*recommended\b[^)]*\)/i.exec(option.text)
     : null;
-  if (marker?.index !== undefined) {
-    const parts = questionInlineCodeParts(option.text);
+  const parts = questionInlineCodeParts(option.text);
+  const markerInsideCode =
+    marker?.index !== undefined &&
+    parts !== null &&
+    (option.text.slice(0, marker.index).match(/`/g)?.length ?? 0) % 2 === 1;
+  if (markerInsideCode) {
+    appendQuestionInlineCode(row, option.text);
+  } else if (marker?.index !== undefined) {
     if (parts) {
       appendQuestionInlineCode(row, option.text.slice(0, marker.index));
     } else {
@@ -1368,7 +1374,10 @@ function appendQuestionOptionText(row, option) {
   } else {
     appendQuestionInlineCode(row, option.text);
   }
-  if (option.recommended && !/\(\s*recommended\b/i.test(option.text))
+  if (
+    option.recommended &&
+    (markerInsideCode || !/\(\s*recommended\b/i.test(option.text))
+  )
     appendText(
       row,
       "span",

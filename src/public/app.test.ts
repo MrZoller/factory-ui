@@ -2141,9 +2141,8 @@ describe("answer lifecycle queue", () => {
         document.querySelector("fieldset.question-options-edit") !== null,
       ).toBe(hasUnrelated);
       expect(
-        document.querySelectorAll(
-          'input[type="radio"], input[type="password"]',
-        ).length > 0,
+        document.querySelectorAll('input[type="radio"], input[type="password"]')
+          .length > 0,
       ).toBe(hasUnrelated);
       expect(
         Array.from(

@@ -2463,6 +2463,11 @@ accept unbounded input.
                   text: "`policy (recommended) value`",
                   recommended: true,
                 },
+                {
+                  label: "C",
+                  text: "Use (recommended: run `--safe`)",
+                  recommended: true,
+                },
               ],
               qualifier: "Only `the owner` may proceed.",
             },
@@ -2515,6 +2520,7 @@ Options considered: Select \`fallback option\`.
         "option one",
         "option two",
         "policy (recommended) value",
+        "--safe",
         "the owner",
       ]);
       expect(codeText(questionBody(surface, "Q91"))).toEqual([

@@ -1367,7 +1367,10 @@ function appendQuestionOptionText(row, option) {
         row.ownerDocument.createTextNode(option.text.slice(0, marker.index)),
       );
     }
-    appendText(row, "span", marker[0], "chip chip-accent question-recommended");
+    const recommendation = row.ownerDocument.createElement("span");
+    recommendation.className = "chip chip-accent question-recommended";
+    appendQuestionInlineCode(recommendation, marker[0]);
+    row.append(recommendation);
     const suffix = option.text.slice(marker.index + marker[0].length);
     if (parts) appendQuestionInlineCode(row, suffix);
     else row.append(row.ownerDocument.createTextNode(suffix));

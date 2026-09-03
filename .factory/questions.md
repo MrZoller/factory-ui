@@ -92,8 +92,7 @@ Owner: dashboard product owner.
 Day-to-day consequence: structured option elaboration remains unavailable until replacement work is approved and completed.
 Cost or risk: Fixes #102 remains undelivered and the parked implementation may be discarded.
 Recommendation rationale: A is a bounded parser correction that restores the implementation's documented lossless-fallback contract.
-**A:**
-
+**A:** A — the factory owner authorizes one additional fix-and-review round: detect standalone unknown labelled fields throughout the options-to-answer region and preserve the complete question via raw fallback, with a focused regression, full suite, and one final panel (Chris, 2026-09-03).
 ## Q9 (task T76, open, filed-at 2026-09-03T11:04:08Z) — Should T76 receive another fix-and-review round for hidden answer lifecycle status?
 Context:
 Observable failure: A maintainer follows an old numeric question link after an answer attempt, but the dashboard hides that answer's pending or rejected status and its rejection reason even though the matching question is still open. The operator-authorized final panel found this blocking defect, so work is parked on branch `factory/t76-stale-question-links` before another unapproved round.
@@ -108,4 +107,4 @@ Owner: dashboard product owner.
 Day-to-day consequence: stale question links continue to lack a dedicated explanation and preserved lifecycle display until replacement work is approved and completed.
 Cost or risk: Fixes #93 remains undelivered and the parked implementation may be discarded.
 Recommendation rationale: A reuses the existing inert lifecycle renderer and directly restores the acceptance requirement without widening the feature.
-**A:**
+**A:** A — the factory owner authorizes one additional fix-and-review round: render matched pending/accepted/rejected lifecycle on the stale target with resume and submission controls disabled, add legacy-link regressions, full suite plus one final panel (Chris, 2026-09-03).

@@ -4841,12 +4841,12 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
       const intake = view.fleet?.answerIntake;
       const intakeEnabled = intake?.enabled === true;
       const authRequired = intake?.authRequired !== false;
+      const isStaleTarget =
+        staleLink?.machine === machine &&
+        staleLink.repository === repository.name &&
+        staleLink.questionId === question.id;
       if (answerState) answerState.authRequired = authRequired;
       if (lifecycleOnly) {
-        const isStaleTarget =
-          staleLink?.machine === machine &&
-          staleLink.repository === repository.name &&
-          staleLink.questionId === question.id;
         if (isStaleTarget && answerState) {
           renderAnswerLifecycle(
             item,
@@ -4946,7 +4946,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
       if (references.length > 0) item.append(refs);
       const structured = questionIsStructured(question);
       if (
-        !staleLink &&
+        !isStaleTarget &&
         view.origin === undefined &&
         intakeEnabled &&
         structured &&
@@ -4964,7 +4964,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
         answerStore.set(key, answerState);
       }
       const interactiveOptions =
-        !staleLink &&
+        !isStaleTarget &&
         view.origin === undefined &&
         intakeEnabled &&
         Array.isArray(question.options) &&
@@ -5003,7 +5003,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
         return item;
       }
       if (!intakeEnabled) return item;
-      if (staleLink) return item;
+      if (isStaleTarget) return item;
       if (answerState?.id) {
         answerState.authRequired = authRequired;
         renderAnswerLifecycle(

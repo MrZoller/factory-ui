@@ -2134,22 +2134,46 @@ describe("answer lifecycle queue", () => {
           document.querySelectorAll(".question-queue-entry .question-options"),
         ).toHaveLength(1);
       }
-      expect(document.querySelector(".answer-form")).toBeNull();
+      expect(document.querySelector(".answer-form") !== null).toBe(
+        hasUnrelated,
+      );
       expect(
-        document.querySelector("fieldset.question-options-edit"),
-      ).toBeNull();
+        document.querySelector("fieldset.question-options-edit") !== null,
+      ).toBe(hasUnrelated);
       expect(
         document.querySelectorAll(
           'input[type="radio"], input[type="password"]',
-        ),
-      ).toHaveLength(0);
+        ).length > 0,
+      ).toBe(hasUnrelated);
       expect(
         Array.from(
           document.querySelectorAll("button"),
           (button) => button.textContent,
-        ),
-      ).not.toContain("Review answer");
+        ).includes("Review answer"),
+      ).toBe(hasUnrelated);
     }
+  });
+
+  test("restores answer controls when a stale link changes to the canonical open question", () => {
+    const document = dashboardDocument();
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=factory-ui&question=9";
+
+    renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
+
+    expect(document.querySelector(".stale-question-notice")).not.toBeNull();
+    expect(document.querySelector(".answer-form")).toBeNull();
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=factory-ui&question=Q9";
+    document.defaultView!.dispatchEvent(
+      new document.defaultView!.Event("hashchange"),
+    );
+
+    expect(document.querySelector(".stale-question-notice")).toBeNull();
+    expect(document.querySelector(".answer-form")).not.toBeNull();
+    expect(
+      document.querySelector("fieldset.question-options-edit"),
+    ).not.toBeNull();
   });
 
   test("does not claim a stale question is missing when its reader is partial or unavailable", () => {

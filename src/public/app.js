@@ -3807,12 +3807,7 @@ function staleQuestionLink(documentRoot, views, answerStore) {
   const lifecycle = answerStore.get(
     answerKey(selection.machine, selection.repository, questionId),
   );
-  if (
-    canonical &&
-    lifecycle &&
-    (lifecycle.id || lifecycle.status === "uncertain")
-  )
-    return null;
+  if (canonical && lifecycle?.id) return null;
   return { ...selection, questionId };
 }
 
@@ -4848,6 +4843,21 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
       const authRequired = intake?.authRequired !== false;
       if (answerState) answerState.authRequired = authRequired;
       if (lifecycleOnly) {
+        const isStaleTarget =
+          staleLink?.machine === machine &&
+          staleLink.repository === repository.name &&
+          staleLink.questionId === question.id;
+        if (isStaleTarget && answerState) {
+          renderAnswerLifecycle(
+            item,
+            documentRoot,
+            view,
+            answerState,
+            displayIdentity,
+            false,
+          );
+          return item;
+        }
         if (view.origin !== undefined) {
           if (answerState) {
             renderAnswerLifecycle(

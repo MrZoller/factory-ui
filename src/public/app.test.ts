@@ -2201,6 +2201,77 @@ describe("answer lifecycle queue", () => {
     );
   });
 
+  test("keeps a stale canonical deep link inert when its uncertain retry no longer names an open question", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=factory-ui&question=Q404";
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: "Q404",
+          status: "uncertain",
+          payload: { question: "Q404", option: "A", text: "because" },
+          idempotencyKey: "123e4567-e89b-42d3-a456-426614174000",
+        },
+      ]),
+    );
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, _init?: RequestInit) =>
+        String(input) === "/api/fleet"
+          ? jsonResponse(
+              fleet(
+                "mini",
+                [],
+                [
+                  answerableRepository({
+                    questions: {
+                      status: "available",
+                      data: { open: [] },
+                      warnings: [],
+                    },
+                  }),
+                ],
+              ),
+            )
+          : jsonResponse({ error: "unexpected answer request" }, 500),
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, { now: () => NOW }),
+    );
+    await flushPromises();
+
+    expect(
+      document.querySelector(".stale-question-notice")?.textContent,
+    ).toContain("No open question factory-ui/Q404");
+    expect(document.querySelector(".answer-status")?.textContent).toBe(
+      "pending application",
+    );
+    expect(document.querySelector(".answer-error")?.textContent).toBe(
+      "Submission status uncertain; operator verification required",
+    );
+    expect(document.querySelector(".answer-form")).toBeNull();
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+    expect(
+      Array.from(
+        document.querySelectorAll("button"),
+        (button) => button.textContent,
+      ),
+    ).not.toContain("Check submission status");
+    expect(
+      fetcher.mock.calls.filter(
+        ([, init]) => String(init?.method).toUpperCase() === "POST",
+      ),
+    ).toHaveLength(0);
+    controller.cleanup();
+  });
+
   test("keeps missing-question lifecycle records tracked ahead of stale notices", () => {
     const hostileReason =
       '<img src=x onerror="globalThis.rejectedPwned=1"> closed';

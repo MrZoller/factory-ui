@@ -709,6 +709,14 @@ p {
   margin-left: var(--space-2);
 }
 
+.question-body code,
+.answer-reason code {
+  padding: 0.08em 0.28em;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  font-family: var(--font-mono);
+}
+
 .answer-form,
 .answer-lifecycle {
   display: grid;

@@ -60,7 +60,7 @@ Owner: dashboard product owner.
 Day-to-day consequence: option elaboration remains unstructured until replacement work is approved and completed.
 Cost or risk: Fixes #102 remains undelivered and the parked implementation may be discarded.
 Recommendation rationale: A is a small bounded correction that preserves the approved structured-detail behavior and makes the existing oversized-content contract truthful.
-**A:**
+**A:** A — the factory owner authorizes one additional fix-and-review round: propagate the oversized-elaboration result as an explicit QUESTIONS_OPTION_TOO_LONG-class warning with lossless raw fallback, add the hard-wrapped over-bound regression, full suite plus one final panel (Chris, 2026-09-03).
 
 ## Q7 (task T76, open, filed-at 2026-09-03T04:09:01Z) — Should T76 receive another fix-and-review round after exhausting its panel budget?
 Context:
@@ -76,4 +76,4 @@ Owner: dashboard product owner.
 Day-to-day consequence: stale question links continue to provide no dedicated explanation until replacement work is approved and completed.
 Cost or risk: Fixes #93 remains undelivered and the parked implementation may be discarded.
 Recommendation rationale: A is a small scoped correction that preserves the validated stale-target and lifecycle behavior without blocking unrelated questions.
-**A:**
+**A:** A — the factory owner authorizes one additional fix-and-review round: scope stale-target suppression to the exact missing target per card, add the hash-change recovery regression, full suite plus one final panel (Chris, 2026-09-03).

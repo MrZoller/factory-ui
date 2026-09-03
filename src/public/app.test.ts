@@ -2425,6 +2425,164 @@ accept unbounded input.
     ).toBeUndefined();
   });
 
+  test("renders bounded inline code spans in question bodies and rejected answers without changing task or worklog text", () => {
+    const document = dashboardDocument();
+    const script = "<script>globalThis.inlineCodePwned = true</script>";
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: "Q90",
+          id: "123e4567-e89b-42d3-a456-426614174000",
+          status: "rejected",
+          reason: "Rejected `reason one` and `reason two`.",
+        },
+      ]),
+    );
+    const repository = richRepository({
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q90",
+              taskId: "T90",
+              title: "Structured inline code",
+              text: "source",
+              context: `Use \`context one\`, \`context two\`, and \`${script}\`.`,
+              options: [
+                {
+                  label: "A",
+                  text: "Choose `option one` then `option two`.",
+                },
+              ],
+              qualifier: "Only `the owner` may proceed.",
+            },
+            {
+              id: "Q91",
+              taskId: "T91",
+              title: "Prose inline code",
+              text: "source",
+              context: "Read `prose context`.",
+              proseOptions: ["Describe `prose option`."],
+            },
+            {
+              id: "Q92",
+              taskId: "T92",
+              title: "Fallback inline code",
+              text: `## Q92 (task T92, open) — Fallback inline code
+Context: Keep \`fallback context\` visible.
+Options considered: Select \`fallback option\`.
+**A:**`,
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const questionBody = (surface: "panel" | "queue", id: string) => {
+      const entries = document.querySelectorAll<HTMLElement>(
+        surface === "panel"
+          ? ".questions-panel article.question"
+          : ".question-queue-entry",
+      );
+      return Array.from(entries)
+        .find((entry) => entry.textContent?.includes(`factory-ui/${id}`))
+        ?.querySelector<HTMLElement>(".question-body");
+    };
+    const codeText = (body: HTMLElement | null | undefined) =>
+      Array.from(
+        body?.querySelectorAll("code") ?? [],
+        (code) => code.textContent,
+      );
+
+    for (const surface of ["panel", "queue"] as const) {
+      expect(codeText(questionBody(surface, "Q90"))).toEqual([
+        "context one",
+        "context two",
+        script,
+        "option one",
+        "option two",
+        "the owner",
+      ]);
+      expect(codeText(questionBody(surface, "Q91"))).toEqual([
+        "prose context",
+        "prose option",
+      ]);
+      expect(codeText(questionBody(surface, "Q92"))).toEqual([
+        "fallback context",
+        "fallback option",
+      ]);
+    }
+    expect(
+      codeText(
+        document.querySelector<HTMLElement>(
+          ".question-queue-entry .answer-reason",
+        ),
+      ),
+    ).toEqual(["reason one", "reason two"]);
+    expect(document.querySelectorAll("script")).toHaveLength(0);
+    expect(
+      (globalThis as Record<string, unknown>).inlineCodePwned,
+    ).toBeUndefined();
+    expect(
+      document.querySelector(".active-work .task-title")?.textContent,
+    ).toContain("Safe dashboard");
+    expect(document.querySelector(".worklog-panel")?.textContent).toContain(
+      "Built dashboard",
+    );
+  });
+
+  test.each([
+    ["unbalanced", "Keep `an opening delimiter literal."],
+    ["nested delimiters", "Keep `outer `inner` text` literal."],
+    ["multi-backtick delimiters", "Keep ``two ticks`` literal."],
+    [
+      "more than 32 spans",
+      Array.from({ length: 33 }, (_, index) => `\`span ${index + 1}\``).join(
+        " ",
+      ),
+    ],
+    ["a span longer than 1024 code points", `\`${"x".repeat(1025)}\``],
+  ])("keeps %s wholly literal in both question surfaces", (_kind, context) => {
+    const document = dashboardDocument();
+    const repository = richRepository({
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q93",
+              taskId: "T93",
+              title: "Invalid inline code",
+              text: "source",
+              context,
+              options: [{ label: "A", text: "Proceed" }],
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    for (const selector of [
+      ".questions-panel .question-context",
+      ".question-queue-entry .question-context",
+    ]) {
+      const field = document.querySelector<HTMLElement>(selector);
+      expect(field?.textContent).toBe(context);
+      expect(field?.querySelector("code")).toBeNull();
+    }
+  });
+
   test("keeps the free-text-only fallback when structured options have no labels", () => {
     const document = dashboardDocument();
     const repository = richRepository({

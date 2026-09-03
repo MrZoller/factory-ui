@@ -27,6 +27,8 @@ const MAX_QUESTION_TEXT_LENGTH = 256 * 1024;
 const MAX_QUESTION_OPTIONS = 26;
 const MAX_QUESTION_OPTION_LENGTH = 8192;
 const MAX_QUESTION_FILED_AT_LENGTH = 64;
+const MAX_QUESTION_INLINE_CODE_SPANS = 32;
+const MAX_QUESTION_INLINE_CODE_LENGTH = 1024;
 const MAX_ANSWER_TEXT_LENGTH = 10_000;
 const MAX_ANSWER_RESPONSE_BYTES = 64 * 1024;
 const MAX_STORED_ANSWER_LIFECYCLES = 128;
@@ -80,6 +82,53 @@ function appendText(parent, tag, text, className) {
   const element = textElement(parent.ownerDocument, tag, text, className);
   parent.append(element);
   return element;
+}
+
+function questionInlineCodeParts(value) {
+  const text = String(value ?? "");
+  if (!text.includes("`")) return [{ text, code: false }];
+  // Inline code is deliberately a tiny, bounded grammar rather than Markdown.
+  // Rejecting the whole field on ambiguity keeps source punctuation visible.
+  if (text.includes("``")) return null;
+  const parts = [];
+  let cursor = 0;
+  let spans = 0;
+  while (cursor < text.length) {
+    const opening = text.indexOf("`", cursor);
+    if (opening === -1) {
+      parts.push({ text: text.slice(cursor), code: false });
+      break;
+    }
+    const closing = text.indexOf("`", opening + 1);
+    if (closing === -1) return null;
+    const code = text.slice(opening + 1, closing);
+    if (
+      code.length === 0 ||
+      /^\s|\s$/.test(code) ||
+      Array.from(code).length > MAX_QUESTION_INLINE_CODE_LENGTH ||
+      ++spans > MAX_QUESTION_INLINE_CODE_SPANS
+    )
+      return null;
+    if (opening > cursor)
+      parts.push({ text: text.slice(cursor, opening), code: false });
+    parts.push({ text: code, code: true });
+    cursor = closing + 1;
+  }
+  return parts;
+}
+
+function appendQuestionInlineCode(parent, value) {
+  const text = String(value ?? "");
+  const parts = questionInlineCodeParts(text);
+  if (!parts) {
+    parent.append(parent.ownerDocument.createTextNode(text));
+    return;
+  }
+  for (const part of parts) {
+    if (part.code) appendText(parent, "code", part.text);
+    else if (part.text)
+      parent.append(parent.ownerDocument.createTextNode(part.text));
+  }
 }
 
 function readerData(result) {
@@ -1304,17 +1353,20 @@ function appendQuestionOptionText(row, option) {
     ? /\(\s*recommended\b[^)]*\)/i.exec(option.text)
     : null;
   if (marker?.index !== undefined) {
-    row.append(
-      row.ownerDocument.createTextNode(option.text.slice(0, marker.index)),
-    );
+    const parts = questionInlineCodeParts(option.text);
+    if (parts) {
+      appendQuestionInlineCode(row, option.text.slice(0, marker.index));
+    } else {
+      row.append(
+        row.ownerDocument.createTextNode(option.text.slice(0, marker.index)),
+      );
+    }
     appendText(row, "span", marker[0], "chip chip-accent question-recommended");
-    row.append(
-      row.ownerDocument.createTextNode(
-        option.text.slice(marker.index + marker[0].length),
-      ),
-    );
+    const suffix = option.text.slice(marker.index + marker[0].length);
+    if (parts) appendQuestionInlineCode(row, suffix);
+    else row.append(row.ownerDocument.createTextNode(suffix));
   } else {
-    row.append(row.ownerDocument.createTextNode(option.text));
+    appendQuestionInlineCode(row, option.text);
   }
   if (option.recommended && !/\(\s*recommended\b/i.test(option.text))
     appendText(
@@ -1382,7 +1434,9 @@ function renderQuestionOptions(parent, question, interactive) {
     }
   } else {
     for (const option of question.proseOptions) {
-      appendText(options, "li", questionParagraphs(option).join(" "));
+      const row = documentRoot.createElement("li");
+      appendQuestionInlineCode(row, questionParagraphs(option).join(" "));
+      options.append(row);
     }
   }
   parent.append(options);
@@ -1396,13 +1450,21 @@ function renderQuestionBody(parent, question, interactiveOptions) {
 
   if (structured) {
     appendText(body, "h4", "Context", "question-field-label");
-    for (const paragraph of questionParagraphs(question.context))
-      appendText(body, "p", paragraph, "question-context");
+    for (const paragraph of questionParagraphs(question.context)) {
+      const content = documentRoot.createElement("p");
+      content.className = "question-context";
+      appendQuestionInlineCode(content, paragraph);
+      body.append(content);
+    }
     renderQuestionOptions(body, question, interactiveOptions);
     if (question.qualifier !== undefined) {
       appendText(body, "h4", "Qualifier", "question-field-label");
-      for (const paragraph of questionParagraphs(question.qualifier))
-        appendText(body, "p", paragraph, "question-qualifier");
+      for (const paragraph of questionParagraphs(question.qualifier)) {
+        const content = documentRoot.createElement("p");
+        content.className = "question-qualifier";
+        appendQuestionInlineCode(content, paragraph);
+        body.append(content);
+      }
     }
   } else {
     const lines = String(question?.text ?? "").split("\n");
@@ -1413,7 +1475,10 @@ function renderQuestionBody(parent, question, interactiveOptions) {
     for (const section of questionFallbackSections(lines.join("\n"))) {
       if (section.label)
         appendText(body, "h4", section.label, "question-field-label");
-      appendText(body, "p", section.text, "question-fallback-text");
+      const content = documentRoot.createElement("p");
+      content.className = "question-fallback-text";
+      appendQuestionInlineCode(content, section.text);
+      body.append(content);
     }
   }
   parent.append(body);
@@ -4313,7 +4378,10 @@ function renderAnswerLifecycle(
       "rejected",
       "answer-status chip chip-danger",
     );
-    appendText(lifecycle, "p", state.reason, "answer-reason");
+    const reason = lifecycle.ownerDocument.createElement("p");
+    reason.className = "answer-reason";
+    appendQuestionInlineCode(reason, state.reason);
+    lifecycle.append(reason);
     appendText(lifecycle, "p", identity, "answer-identity");
   } else {
     appendText(

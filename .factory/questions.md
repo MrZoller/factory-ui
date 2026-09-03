@@ -124,3 +124,19 @@ Day-to-day consequence: structured option elaboration remains unavailable until 
 Cost or risk: Fixes #102 remains undelivered and the parked implementation may be discarded.
 Recommendation rationale: A addresses two bounded, reproduced integration gaps without changing the approved question grammar or rendering trust boundary.
 **A:**
+
+## Q11 (task T76, open, filed-at 2026-09-03T19:15:20Z) — Should T76 receive a fifth panel round for a stale peer-link defect?
+Context:
+Observable failure: A maintainer follows an old numeric question link for a peer machine, sees a warning that the target is stale, but is also offered a link that opens an unrelated live question's answer form on that peer. The Q9-authorized panel confirmed this defect after the matched-lifecycle fix. Work is parked on branch `factory/t76-stale-question-links`.
+Engine detail: Peer question cards return before the local stale-target guard and still build an owning-dashboard link from the normalized `Q<n>` identifier. Four panel rounds have now run for T76, reaching the standing delegation's human-escalation threshold.
+Options considered: A — the factory owner authorizes one additional fix-and-review round that suppresses the peer owner link for the exact stale target (recommended) / B — the dashboard product owner abandons the current stale-link implementation and replans issue #93
+Option A: The T76 implementation owner gates the peer owner link on the stale-target check, adds a focused peer regression, and runs the complete suite plus one final panel.
+Owner: T76 implementation owner.
+Day-to-day consequence: old numeric peer links remain inert while valid canonical peer links continue to reach their owning dashboard.
+Cost or risk: this authorizes a fifth panel round after repeated distinct defects in the same task.
+Option B: The dashboard product owner replaces T76 with a newly planned approach rather than shipping the parked implementation.
+Owner: dashboard product owner.
+Day-to-day consequence: stale question links continue to lack a complete safe explanation until replacement work is approved and completed.
+Cost or risk: Fixes #93 remains undelivered and the parked implementation may be discarded.
+Recommendation rationale: A is a bounded peer-path correction that prevents the stale warning from leading directly to an unrelated answer form.
+**A:**

@@ -1,11 +1,11 @@
 {
   "project": "factory-ui",
-  "phase": "build",
+  "phase": "idle",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T76",
-  "branch": "factory/t76-stale-question-links",
+  "current_task": null,
+  "branch": null,
   "pr": null,
   "hold": false,
-  "updated": "2026-09-03T19:00:50Z"
+  "updated": "2026-09-03T19:15:20Z"
 }

@@ -61,3 +61,19 @@ Day-to-day consequence: option elaboration remains unstructured until replacemen
 Cost or risk: Fixes #102 remains undelivered and the parked implementation may be discarded.
 Recommendation rationale: A is a small bounded correction that preserves the approved structured-detail behavior and makes the existing oversized-content contract truthful.
 **A:**
+
+## Q7 (task T76, open, filed-at 2026-09-03T04:09:01Z) — Should T76 receive another fix-and-review round after exhausting its panel budget?
+Context:
+Observable failure: A maintainer follows an old question link while a different question is open, but the dashboard makes that unrelated open question impossible to answer until the maintainer manually removes the stale link from the address bar. The required initial panel and one re-panel each found a blocking defect, so the factory protocol requires work to stop before another fix. Parked branch: `factory/t76-stale-question-links`.
+Engine detail: The stale-target guard is applied to every question card rather than only to the missing target identified by the URL hash; the re-panel also requested a regression proving controls recover after the hash changes.
+Options considered: A — the factory owner authorizes one additional fix-and-review round that scopes suppression to the exact stale target and adds hash-recovery coverage (recommended) / B — the dashboard product owner abandons the current stale-link implementation and replans issue #93
+Option A: The T76 implementation owner narrows the stale-target predicate per card, adds the requested hash-change regression, and runs the complete suite plus one final panel.
+Owner: T76 implementation owner.
+Day-to-day consequence: stale links still show an inert explanation while unrelated open questions remain answerable.
+Cost or risk: one exception to the normal two-panel-round convergence budget and another implementation/review pass.
+Option B: The dashboard product owner replaces T76 with a newly planned approach rather than shipping the parked implementation.
+Owner: dashboard product owner.
+Day-to-day consequence: stale question links continue to provide no dedicated explanation until replacement work is approved and completed.
+Cost or risk: Fixes #93 remains undelivered and the parked implementation may be discarded.
+Recommendation rationale: A is a small scoped correction that preserves the validated stale-target and lifecycle behavior without blocking unrelated questions.
+**A:**

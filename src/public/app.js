@@ -5002,8 +5002,20 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
         }
         return item;
       }
+      if (isStaleTarget) {
+        if (answerState?.id) {
+          renderAnswerLifecycle(
+            item,
+            documentRoot,
+            view,
+            answerState,
+            displayIdentity,
+            false,
+          );
+        }
+        return item;
+      }
       if (!intakeEnabled) return item;
-      if (isStaleTarget) return item;
       if (answerState?.id) {
         answerState.authRequired = authRequired;
         renderAnswerLifecycle(

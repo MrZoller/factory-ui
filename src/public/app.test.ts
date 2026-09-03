@@ -2175,6 +2175,90 @@ describe("answer lifecycle queue", () => {
     ).not.toBeNull();
   });
 
+  test.each([
+    {
+      status: "pending",
+      chip: "pending application",
+      actor: undefined,
+      reason: undefined,
+    },
+    {
+      status: "accepted",
+      chip: "applied/consumed",
+      actor: "Authorized actor",
+      reason: undefined,
+    },
+    {
+      status: "rejected",
+      chip: "rejected",
+      actor: undefined,
+      reason: '<img src=x onerror="globalThis.staleReasonPwned=1"> denied',
+    },
+  ] as const)(
+    "keeps stale legacy Q9 links inert while showing authorized $status lifecycle state",
+    ({ status, chip, actor, reason }) => {
+      const document = dashboardDocument();
+      document.defaultView!.location.hash =
+        "#machine=mini&repo=factory-ui&question=9";
+      document.defaultView!.localStorage.setItem(
+        "factory-ui.answer-lifecycle.v1",
+        JSON.stringify([
+          {
+            version: 1,
+            machine: "mini",
+            repository: "factory-ui",
+            question: "Q9",
+            id: "123e4567-e89b-42d3-a456-426614174000",
+            status,
+            ...(actor === undefined ? {} : { actor }),
+            ...(reason === undefined ? {} : { reason }),
+          },
+        ]),
+      );
+
+      renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
+
+      expect(document.querySelector(".stale-question-notice")).not.toBeNull();
+      expect(document.querySelector("#question-queue-count")?.textContent).toBe(
+        "1",
+      );
+      expect(document.querySelector(".answer-status")?.textContent).toBe(chip);
+      if (actor === undefined) {
+        expect(document.querySelector(".answer-attribution")).toBeNull();
+      } else {
+        expect(
+          document.querySelector(".answer-attribution")?.textContent,
+        ).toContain(actor);
+      }
+      expect(document.querySelector(".answer-reason")?.textContent).toBe(
+        reason,
+      );
+      expect(document.querySelector(".answer-form")).toBeNull();
+      expect(document.querySelector(".answer-resume")).toBeNull();
+      expect(
+        document.querySelector("fieldset.question-options-edit"),
+      ).toBeNull();
+      expect(
+        document.querySelectorAll(
+          'input[type="radio"], input[type="password"]',
+        ),
+      ).toHaveLength(0);
+      const buttons = Array.from(
+        document.querySelectorAll("button"),
+        (button) => button.textContent,
+      );
+      expect(buttons).not.toContain("Review answer");
+      expect(buttons).not.toContain("Check submission status");
+      expect(buttons).not.toContain("Resume tracking");
+      if (reason !== undefined) {
+        expect(document.querySelectorAll("img, [onerror]")).toHaveLength(0);
+        expect(
+          (globalThis as Record<string, unknown>).staleReasonPwned,
+        ).toBeUndefined();
+      }
+    },
+  );
+
   test("does not claim a stale question is missing when its reader is partial or unavailable", () => {
     for (const questions of [
       { status: "partial", data: { open: [] }, warnings: [] },

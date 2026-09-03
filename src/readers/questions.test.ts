@@ -10,6 +10,7 @@ import {
   MAX_QUESTIONS,
   MAX_QUESTIONS_WARNINGS,
   parseFactoryQuestions,
+  parseQuestionDetails,
   readFactoryQuestions,
 } from "./questions";
 import { type QuestionsData } from "../contracts";
@@ -223,6 +224,119 @@ coordinate the outage window
               ],
             },
           ]);
+        }
+      });
+
+      test("parses Q5 option elaboration without appending it to the final option", () => {
+        const details =
+          parseQuestionDetails(`## Q5 (task T68, open, filed-at 2026-09-01T05:56:28Z) — Another review round?
+Context: A bounded cost reader masks an invalid older task.
+Options considered: A — authorize one additional fix-and-review round that validates every bounded-source task before retention (recommended) / B — restore fail-closed unavailability for every file above 64 KiB
+Option A: The T68 implementation owner adds a full bounded validation pass and runs one final panel.
+Owner: T68 implementation owner.
+Day-to-day consequence: active repositories keep partial recent costs instead of losing the panel.
+Cost or risk: one exception to the normal two-panel-round convergence budget.
+Option B: The dashboard product owner accepts that repositories above 64 KiB continue to show costs as unavailable.
+Owner: dashboard product owner.
+Day-to-day consequence: operators lose cost visibility again as active histories grow.
+Cost or risk: T68's stated acceptance is not delivered and requires replanning.
+Recommendation rationale: A fixes the confirmed fail-closed gap without weakening the approved bounded-window acceptance criteria.
+**A:**`);
+
+        expect(details).toMatchObject({
+          options: [
+            {
+              label: "A",
+              text: "authorize one additional fix-and-review round that validates every bounded-source task before retention (recommended)",
+              recommended: true,
+              details: {
+                elaboration:
+                  "The T68 implementation owner adds a full bounded validation pass and runs one final panel.",
+                owner: "T68 implementation owner.",
+                dayToDayConsequence:
+                  "active repositories keep partial recent costs instead of losing the panel.",
+                costOrRisk:
+                  "one exception to the normal two-panel-round convergence budget.",
+              },
+            },
+            {
+              label: "B",
+              text: "restore fail-closed unavailability for every file above 64 KiB",
+              details: {
+                elaboration:
+                  "The dashboard product owner accepts that repositories above 64 KiB continue to show costs as unavailable.",
+                owner: "dashboard product owner.",
+                dayToDayConsequence:
+                  "operators lose cost visibility again as active histories grow.",
+                costOrRisk:
+                  "T68's stated acceptance is not delivered and requires replanning.",
+              },
+            },
+          ],
+          recommendationRationale:
+            "A fixes the confirmed fail-closed gap without weakening the approved bounded-window acceptance criteria.",
+        });
+      });
+
+      test("parses each elaboration field in a mixed option envelope with its matching option", () => {
+        const result =
+          parseFactoryQuestions(`## Q6 (task T6, open) — Which migration should run?
+Context: The operator needs to choose a migration.
+Options considered: A — migrate the first cohort / B — migrate every cohort
+Option A: Start with the smallest tenant group.
+Owner: rollout owner.
+Cost or risk: the pilot takes another day.
+Option B: Move all tenants in one maintenance window.
+Day-to-day consequence: support coordinates one larger outage notice.
+Owner: migration owner.
+Cost or risk: a failed migration affects every tenant.
+Recommendation rationale: A limits the initial blast radius.
+**A:**`);
+
+        expect(result).toMatchObject({ status: "available" });
+        if (result.status === "available") {
+          expect(result.data.open[0]?.options).toEqual([
+            {
+              label: "A",
+              text: "migrate the first cohort",
+              details: {
+                elaboration: "Start with the smallest tenant group.",
+                owner: "rollout owner.",
+                costOrRisk: "the pilot takes another day.",
+              },
+            },
+            {
+              label: "B",
+              text: "migrate every cohort",
+              details: {
+                elaboration: "Move all tenants in one maintenance window.",
+                dayToDayConsequence:
+                  "support coordinates one larger outage notice.",
+                owner: "migration owner.",
+                costOrRisk: "a failed migration affects every tenant.",
+              },
+            },
+          ]);
+          expect(
+            (result.data.open[0] as { recommendationRationale?: string })
+              .recommendationRationale,
+          ).toBe("A limits the initial blast radius.");
+        }
+      });
+
+      test("keeps an unrecognized trailing envelope in the raw fallback", () => {
+        const question = `## Q7 (task T7, open) — Preserve unknown grammar
+Context: The reader must not discard a future protocol field.
+Options considered: A — Proceed
+Option A: Use the current implementation path.
+Future protocol field: retain this exactly
+**A:**`;
+        const result = parseFactoryQuestions(question);
+
+        expect(result).toMatchObject({ status: "available" });
+        if (result.status === "available") {
+          expect(result.data.open[0]?.options).toBeUndefined();
+          expect(result.data.open[0]?.text).toBe(question);
         }
       });
 

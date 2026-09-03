@@ -1404,6 +1404,38 @@ function appendQuestionOptionText(row, option) {
     );
 }
 
+function renderQuestionOptionDetails(parent, details) {
+  if (!details) return;
+  const block = parent.ownerDocument.createElement("div");
+  block.className = "question-option-details";
+  if (details.elaboration !== undefined) {
+    appendText(
+      block,
+      "p",
+      questionParagraphs(details.elaboration).join(" "),
+      "question-option-elaboration",
+    );
+  }
+  const fields = [
+    ["Owner", details.owner],
+    ["Day to day", details.dayToDayConsequence],
+    ["Cost or risk", details.costOrRisk],
+  ];
+  for (const [label, value] of fields) {
+    if (value === undefined) continue;
+    const row = block.ownerDocument.createElement("p");
+    row.className = "question-option-detail";
+    appendText(row, "strong", `${label}:`, "question-option-detail-label");
+    row.append(
+      row.ownerDocument.createTextNode(
+        ` ${questionParagraphs(value).join(" ")}`,
+      ),
+    );
+    block.append(row);
+  }
+  if (block.childNodes.length > 0) parent.append(block);
+}
+
 function questionIsStructured(question) {
   const labelled =
     Array.isArray(question?.options) && question.options.length > 0;
@@ -1444,7 +1476,7 @@ function renderQuestionOptions(parent, question, interactive) {
           interactive.state.option = option.label;
         });
         row.append(input);
-        content = documentRoot.createElement("span");
+        content = documentRoot.createElement("div");
         row.append(content);
       }
       appendText(content, "strong", option.label, "question-option-label");
@@ -1457,6 +1489,7 @@ function renderQuestionOptions(parent, question, interactive) {
       } else if (option.recommended) {
         appendQuestionOptionText(content, option);
       }
+      renderQuestionOptionDetails(content, option.details);
       options.append(row);
     }
   } else {
@@ -1486,6 +1519,18 @@ function renderQuestionBody(parent, question, interactiveOptions) {
       body.append(content);
     }
     renderQuestionOptions(body, question, interactiveOptions);
+    if (question.recommendationRationale !== undefined) {
+      appendText(
+        body,
+        "h4",
+        "Recommendation rationale",
+        "question-field-label",
+      );
+      for (const paragraph of questionParagraphs(
+        question.recommendationRationale,
+      ))
+        appendText(body, "p", paragraph, "question-recommendation-rationale");
+    }
     if (question.qualifier !== undefined) {
       appendText(body, "h4", "Qualifier", "question-field-label");
       const qualifierParts = questionInlineCodeParts(question.qualifier);
@@ -2314,7 +2359,27 @@ function isQuestionOption(value) {
     value.label.length <= 128 &&
     typeof value.text === "string" &&
     value.text.length <= MAX_QUESTION_OPTION_LENGTH &&
-    (value.recommended === undefined || typeof value.recommended === "boolean")
+    (value.recommended === undefined ||
+      typeof value.recommended === "boolean") &&
+    (value.details === undefined || isQuestionOptionDetails(value.details))
+  );
+}
+
+function isQuestionOptionDetails(value) {
+  return (
+    isRecord(value) &&
+    [
+      value.elaboration,
+      value.owner,
+      value.dayToDayConsequence,
+      value.costOrRisk,
+    ].every(
+      (field) =>
+        field === undefined ||
+        (typeof field === "string" &&
+          field.length > 0 &&
+          field.length <= MAX_QUESTION_OPTION_LENGTH),
+    )
   );
 }
 
@@ -2362,6 +2427,10 @@ function isQuestion(value) {
     (value.qualifier === undefined ||
       (typeof value.qualifier === "string" &&
         value.qualifier.length <= MAX_QUESTION_TEXT_LENGTH)) &&
+    (value.recommendationRationale === undefined ||
+      (typeof value.recommendationRationale === "string" &&
+        value.recommendationRationale.length > 0 &&
+        value.recommendationRationale.length <= MAX_QUESTION_OPTION_LENGTH)) &&
     (value.options === undefined ||
       (Array.isArray(value.options) &&
         value.options.length <= MAX_QUESTION_OPTIONS &&

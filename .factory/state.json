@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T75",
+  "branch": "factory/t75-inline-code-spans",
   "pr": null,
   "hold": false,
-  "updated": "2026-09-03T02:26:13Z"
+  "updated": "2026-09-03T02:29:28Z"
 }

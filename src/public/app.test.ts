@@ -2468,6 +2468,11 @@ accept unbounded input.
                   text: "Use (recommended: run `--safe`)",
                   recommended: true,
                 },
+                {
+                  label: "D",
+                  text: "Use (recommended: call `foo()` now)",
+                  recommended: true,
+                },
               ],
               qualifier: "Only `the owner` may proceed.",
             },
@@ -2521,6 +2526,7 @@ Options considered: Select \`fallback option\`.
         "option two",
         "policy (recommended) value",
         "--safe",
+        "foo()",
         "the owner",
       ]);
       expect(codeText(questionBody(surface, "Q91"))).toEqual([
@@ -2592,6 +2598,50 @@ Options considered: Select \`fallback option\`.
       const field = document.querySelector<HTMLElement>(selector);
       expect(field?.textContent).toBe(context);
       expect(field?.querySelector("code")).toBeNull();
+    }
+  });
+
+  test("keeps every paragraph literal when a question field exceeds the code-span cap", () => {
+    const document = dashboardDocument();
+    const context = Array.from({ length: 2 }, (_, paragraph) =>
+      Array.from(
+        { length: 20 },
+        (_, span) => `\`paragraph ${paragraph}-${span}\``,
+      ).join(" "),
+    ).join("\n\n");
+    const repository = richRepository({
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q94",
+              taskId: "T94",
+              title: "Capped paragraphs",
+              text: "source",
+              context,
+              options: [{ label: "A", text: "Proceed" }],
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    for (const selector of [
+      ".questions-panel .question-context",
+      ".question-queue-entry .question-context",
+    ]) {
+      const fields = document.querySelectorAll<HTMLElement>(selector);
+      expect(fields).toHaveLength(2);
+      expect(
+        Array.from(fields, (field) => field.textContent).join("\n\n"),
+      ).toBe(context);
+      expect(
+        Array.from(fields).every((field) => !field.querySelector("code")),
+      ).toBe(true);
     }
   });
 

@@ -131,6 +131,31 @@ function appendQuestionInlineCode(parent, value) {
   }
 }
 
+function recommendationMarker(value) {
+  const text = String(value ?? "");
+  let inCode = false;
+  for (let start = 0; start < text.length; start += 1) {
+    if (text[start] === "`") {
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode || !/^\(\s*recommended\b/i.test(text.slice(start))) continue;
+    let depth = 0;
+    for (let end = start; end < text.length; end += 1) {
+      if (text[end] === "`") {
+        inCode = !inCode;
+        continue;
+      }
+      if (inCode) continue;
+      if (text[end] === "(") depth += 1;
+      else if (text[end] === ")" && --depth === 0)
+        return { index: start, text: text.slice(start, end + 1) };
+    }
+    return null;
+  }
+  return null;
+}
+
 function readerData(result) {
   return result && result.status !== "unavailable" ? result.data : undefined;
 }
@@ -1349,17 +1374,9 @@ function questionFallbackSections(value) {
 }
 
 function appendQuestionOptionText(row, option) {
-  const marker = option.recommended
-    ? /\(\s*recommended\b[^)]*\)/i.exec(option.text)
-    : null;
+  const marker = option.recommended ? recommendationMarker(option.text) : null;
   const parts = questionInlineCodeParts(option.text);
-  const markerInsideCode =
-    marker?.index !== undefined &&
-    parts !== null &&
-    (option.text.slice(0, marker.index).match(/`/g)?.length ?? 0) % 2 === 1;
-  if (markerInsideCode) {
-    appendQuestionInlineCode(row, option.text);
-  } else if (marker?.index !== undefined) {
+  if (marker) {
     if (parts) {
       appendQuestionInlineCode(row, option.text.slice(0, marker.index));
     } else {
@@ -1369,18 +1386,15 @@ function appendQuestionOptionText(row, option) {
     }
     const recommendation = row.ownerDocument.createElement("span");
     recommendation.className = "chip chip-accent question-recommended";
-    appendQuestionInlineCode(recommendation, marker[0]);
+    appendQuestionInlineCode(recommendation, marker.text);
     row.append(recommendation);
-    const suffix = option.text.slice(marker.index + marker[0].length);
+    const suffix = option.text.slice(marker.index + marker.text.length);
     if (parts) appendQuestionInlineCode(row, suffix);
     else row.append(row.ownerDocument.createTextNode(suffix));
   } else {
     appendQuestionInlineCode(row, option.text);
   }
-  if (
-    option.recommended &&
-    (markerInsideCode || !/\(\s*recommended\b/i.test(option.text))
-  )
+  if (option.recommended && !marker)
     appendText(
       row,
       "span",
@@ -1462,19 +1476,23 @@ function renderQuestionBody(parent, question, interactiveOptions) {
 
   if (structured) {
     appendText(body, "h4", "Context", "question-field-label");
+    const contextParts = questionInlineCodeParts(question.context);
     for (const paragraph of questionParagraphs(question.context)) {
       const content = documentRoot.createElement("p");
       content.className = "question-context";
-      appendQuestionInlineCode(content, paragraph);
+      if (contextParts) appendQuestionInlineCode(content, paragraph);
+      else content.append(content.ownerDocument.createTextNode(paragraph));
       body.append(content);
     }
     renderQuestionOptions(body, question, interactiveOptions);
     if (question.qualifier !== undefined) {
       appendText(body, "h4", "Qualifier", "question-field-label");
+      const qualifierParts = questionInlineCodeParts(question.qualifier);
       for (const paragraph of questionParagraphs(question.qualifier)) {
         const content = documentRoot.createElement("p");
         content.className = "question-qualifier";
-        appendQuestionInlineCode(content, paragraph);
+        if (qualifierParts) appendQuestionInlineCode(content, paragraph);
+        else content.append(content.ownerDocument.createTextNode(paragraph));
         body.append(content);
       }
     }

@@ -77,3 +77,19 @@ Day-to-day consequence: stale question links continue to provide no dedicated ex
 Cost or risk: Fixes #93 remains undelivered and the parked implementation may be discarded.
 Recommendation rationale: A is a small scoped correction that preserves the validated stale-target and lifecycle behavior without blocking unrelated questions.
 **A:** A — the factory owner authorizes one additional fix-and-review round: scope stale-target suppression to the exact missing target per card, add the hash-change recovery regression, full suite plus one final panel (Chris, 2026-09-03).
+
+## Q8 (task T74, open, filed-at 2026-09-03T10:50:48Z) — Should T74 receive another fix-and-review round for an unknown-field fallback defect?
+Context:
+Observable failure: A maintainer adds a future labelled field after the option list, but the dashboard displays that field as part of the final option instead of preserving the complete question as raw text. The operator-authorized final panel found this blocking defect, so work is parked on branch `factory/t74-question-option-details` before another unapproved round.
+Engine detail: When no recognized elaboration prefix appears, the parser includes every line through `**A:**` in the options slice and never applies its unknown-envelope-field guard.
+Options considered: A — the factory owner authorizes one additional fix-and-review round that detects a standalone unknown trailing field (recommended) / B — the dashboard product owner abandons the current structured-elaboration implementation and replans issue #102
+Option A: The T74 implementation owner detects unknown labelled fields throughout the options-to-answer region, preserves the whole question through raw fallback, adds a focused regression, and runs the complete suite plus one final panel.
+Owner: T74 implementation owner.
+Day-to-day consequence: future question fields remain visible and are not misrepresented as option text.
+Cost or risk: one more exception to the normal panel-round budget and another implementation/review pass.
+Option B: The dashboard product owner replaces T74 with a newly planned approach rather than shipping the parked implementation.
+Owner: dashboard product owner.
+Day-to-day consequence: structured option elaboration remains unavailable until replacement work is approved and completed.
+Cost or risk: Fixes #102 remains undelivered and the parked implementation may be discarded.
+Recommendation rationale: A is a bounded parser correction that restores the implementation's documented lossless-fallback contract.
+**A:**

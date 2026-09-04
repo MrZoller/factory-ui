@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T78",
-  "branch": "factory/t78-unknown-field-fallback",
-  "pr": 108,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-09-04T03:03:25Z"
+  "updated": "2026-09-04T03:48:40Z"
 }

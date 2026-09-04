@@ -149,7 +149,7 @@ task.
   - acceptance: Reuse the parked `factory/t74-question-option-details` implementation in `src/readers/questions.ts`, `src/public/app.js`, `src/public/styles.css`, and colocated reader/browser tests to stop option text at recognized `Option <letter>:`, `Owner:`, `Day-to-day consequence:`, `Cost or risk:`, and `Recommendation rationale:` fields; render bounded per-option details and recommendation rationale separately with T75's bounded text-only inline-code treatment; emit the explicit oversized-option warning with lossless raw fallback; keep unrecognized trailing fields on the existing conservative raw fallback rather than claiming the unresolved generalized label grammar; cover Q5, mixed-envelope, oversized, inline-code, and hostile-text behavior; and pass `bun test` plus `bun run lint`.
   - deps: none
   - pr: 107
-- [R] T78 (standard) — Complete conservative unknown trailing-field fallback (Fixes #102)
+- [x] T78 (standard) — Complete conservative unknown trailing-field fallback (Fixes #102)
   - acceptance: After T77, harden `src/readers/questions.ts` and colocated reader/browser tests so standalone unknown labelled fields throughout the options-to-answer region trigger lossless raw fallback for labels beginning with letters, digits, or punctuation, including `Future field v2:`, `2FA policy v2:`, and `Future_field:`; do not misclassify ordinary wrapped option prose as protocol fields; preserve recognized structured details, warning bounds, and text-only hostile-input safety; and pass `bun test` plus `bun run lint`.
   - deps: T77
   - pr: 108
@@ -210,10 +210,12 @@ task.
   - deps: none
   - pr: 99
 
-- [!] T71 (trivial) — parked review minors (batch)
+- [ ] T71 (trivial) — parked review minors (batch)
   - PR #99: Allow lifecycle-only peer records to migrate after their questions close so the owner dashboard preserves the lifecycle indicator.
   - PR #105: Keep a recommendation marker wholly literal when its otherwise invalid option fails the inline-code parser's whole-field validation.
   - PR #105: Enforce the inline-code span cap across all sections of fallback question rendering.
+  - PR #108: Preserve structured compact-hyphen options after colon-bearing wrapped prose while retaining the `X-field:` unknown-field fallback.
+  - PR #108: Detect interleaved unknown envelope fields before later continued options without misclassifying colon-bearing wrapped option prose.
   - deps: none
 
 - [x] T11 (standard) — parked review minors (batch)

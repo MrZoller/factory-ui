@@ -123,8 +123,7 @@ Owner: dashboard product owner.
 Day-to-day consequence: structured option elaboration remains unavailable until replacement work is approved and completed.
 Cost or risk: Fixes #102 remains undelivered and the parked implementation may be discarded.
 Recommendation rationale: A addresses two bounded, reproduced integration gaps without changing the approved question grammar or rendering trust boundary.
-**A:**
-
+**A:** A — the factory owner authorizes one additional fix-and-review round for both confirmed defects: accept digits in unknown protocol labels and route elaboration fields plus recommendation rationale through the bounded inline-code renderer, with focused reader and both-surface browser regressions, full suite, and one final panel. Owner proviso: a sixth budget question on this task is answered with a ship-what-passes-and-split plan, not another round (Chris, 2026-09-03).
 ## Q11 (task T76, open, filed-at 2026-09-03T19:15:20Z) — Should T76 receive a fifth panel round for a stale peer-link defect?
 Context:
 Observable failure: A maintainer follows an old numeric question link for a peer machine, sees a warning that the target is stale, but is also offered a link that opens an unrelated live question's answer form on that peer. The Q9-authorized panel confirmed this defect after the matched-lifecycle fix. Work is parked on branch `factory/t76-stale-question-links`.
@@ -139,4 +138,4 @@ Owner: dashboard product owner.
 Day-to-day consequence: stale question links continue to lack a complete safe explanation until replacement work is approved and completed.
 Cost or risk: Fixes #93 remains undelivered and the parked implementation may be discarded.
 Recommendation rationale: A is a bounded peer-path correction that prevents the stale warning from leading directly to an unrelated answer form.
-**A:**
+**A:** A — the factory owner authorizes one additional fix-and-review round: gate the peer owner link on the exact stale-target check, add the focused peer regression, full suite plus one final panel. Owner proviso: a sixth budget question on this task is answered with a ship-what-passes-and-split plan, not another round (Chris, 2026-09-03).

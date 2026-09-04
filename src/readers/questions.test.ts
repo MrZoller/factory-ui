@@ -505,6 +505,73 @@ ${options}
         },
       );
 
+      test("keeps colon-bearing wrapped prose structured before a compact option while X-field falls back", () => {
+        const structured =
+          parseFactoryQuestions(`## Q13 (task T13, open) — Compact continuation
+Context: The reader must retain prose and compact choices.
+Options considered: A — Continue after reviewing the
+Note: migration window
+B- Wait
+**A:**`);
+
+        expect(structured).toMatchObject({ status: "available", warnings: [] });
+        if (structured.status === "available") {
+          expect(structured.data.open[0]?.options).toEqual([
+            {
+              label: "A",
+              text: "Continue after reviewing the Note: migration window",
+            },
+            { label: "B", text: "Wait" },
+          ]);
+        }
+
+        const unknown = `## Q14 (task T14, open) — Future field
+Context: The reader must retain unknown protocol fields.
+Options considered: A — Continue after reviewing the
+X-field: migration window
+B- Wait
+**A:**`;
+        const fallback = parseFactoryQuestions(unknown);
+        expect(fallback).toMatchObject({ status: "available", warnings: [] });
+        if (fallback.status === "available") {
+          expect(fallback.data.open[0]?.options).toBeUndefined();
+          expect(fallback.data.open[0]?.text).toBe(unknown);
+        }
+      });
+
+      test("uses lossless fallback for an interleaved Future_field but keeps Note prose with compact options", () => {
+        const future = `## Q15 (task T15, open) — Interleaved future field
+Context: The reader must retain unknown protocol fields.
+Options considered: A — Continue
+Future_field: retain this exactly
+B- Wait
+**A:**`;
+        const fallback = parseFactoryQuestions(future);
+        expect(fallback).toMatchObject({ status: "available", warnings: [] });
+        if (fallback.status === "available") {
+          expect(fallback.data.open[0]?.options).toBeUndefined();
+          expect(fallback.data.open[0]?.text).toBe(future);
+        }
+
+        const prose =
+          parseFactoryQuestions(`## Q16 (task T16, open) — Interleaved prose
+Context: The reader must retain ordinary prose.
+Options considered: A — Continue
+Note: wait for the migration window
+B- Wait
+**A:**`);
+        expect(prose).toMatchObject({ status: "available", warnings: [] });
+        if (prose.status === "available") {
+          expect(prose.data.open[0]?.options).toEqual([
+            {
+              label: "A",
+              text: "Continue Note: wait for the migration window",
+            },
+            { label: "B", text: "Wait" },
+          ]);
+        }
+      });
+
       test("excludes answered questions from open array", () => {
         const questions = `## Q1 (task T1, open) — Open question?
 Context: Context

@@ -1387,7 +1387,8 @@ function appendQuestionOptionText(row, option) {
     }
     const recommendation = row.ownerDocument.createElement("span");
     recommendation.className = "chip chip-accent question-recommended";
-    appendQuestionInlineCode(recommendation, marker.text);
+    if (parts) appendQuestionInlineCode(recommendation, marker.text);
+    else recommendation.textContent = marker.text;
     row.append(recommendation);
     const suffix = option.text.slice(marker.index + marker.text.length);
     if (parts) appendQuestionInlineCode(row, suffix);
@@ -1556,12 +1557,18 @@ function renderQuestionBody(parent, question, interactiveOptions) {
     while (lines.length > 0 && !lines.at(-1)?.trim()) lines.pop();
     if (/^\*\*A:\*\*\s*$/.test(lines.at(-1)?.trim() ?? "")) lines.pop();
     while (lines.length > 0 && !lines.at(-1)?.trim()) lines.pop();
-    for (const section of questionFallbackSections(lines.join("\n"))) {
+    const fallbackText = lines.join("\n");
+    // The inline-code budget applies to the complete fallback, not each
+    // presentation section independently. Invalidating the whole body keeps
+    // every delimiter literal while retaining the readable section layout.
+    const fallbackParts = questionInlineCodeParts(fallbackText);
+    for (const section of questionFallbackSections(fallbackText)) {
       if (section.label)
         appendText(body, "h4", section.label, "question-field-label");
       const content = documentRoot.createElement("p");
       content.className = "question-fallback-text";
-      appendQuestionInlineCode(content, section.text);
+      if (fallbackParts) appendQuestionInlineCode(content, section.text);
+      else content.textContent = section.text;
       body.append(content);
     }
   }
@@ -4145,10 +4152,10 @@ function importLifecycleMigration(documentRoot, views) {
   const repository = localView.fleet?.repositories?.find(
     (candidate) => candidate.name === lifecycle.repository,
   );
-  const visible = (readerData(repository?.questions)?.open ?? []).some(
-    (question) => question.id === lifecycle.question,
-  );
-  if (!visible) return;
+  // Lifecycle records remain useful after their question closes. Repository
+  // ownership is authoritative here; requiring an open question would make a
+  // peer's pending/accepted/rejected outcome impossible to migrate later.
+  if (!repository) return;
 
   const store = getAnswerStore(documentRoot);
   const key = answerKey(

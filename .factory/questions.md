@@ -109,7 +109,7 @@ Cost or risk: Fixes #93 remains undelivered and the parked implementation may be
 Recommendation rationale: A reuses the existing inert lifecycle renderer and directly restores the acceptance requirement without widening the feature.
 **A:** A — the factory owner authorizes one additional fix-and-review round: render matched pending/accepted/rejected lifecycle on the stale target with resume and submission controls disabled, add legacy-link regressions, full suite plus one final panel (Chris, 2026-09-03).
 
-## Q10 (task T74, open, filed-at 2026-09-03T18:55:56Z) — Should T74 receive a fifth panel round for two newly confirmed defects?
+## Q10 (task T74, consumed, filed-at 2026-09-03T18:55:56Z) — Should T74 receive a fifth panel round for two newly confirmed defects?
 Context:
 Observable failure: A maintainer uses a numbered future field such as `Future field v2:` and the dashboard still appends it to the final option; when option details contain balanced backticks, the dashboard also shows the backticks literally instead of the established monospace treatment. The Q8-authorized panel confirmed both defects after the standalone-field fix. Work is parked on branch `factory/t74-question-option-details`.
 Engine detail: The unknown-field detector excludes digits from labels, and the new detail/rationale rendering paths bypass the bounded inline-code renderer added by T75. Four panel rounds have now run for T74, reaching the standing delegation's human-escalation threshold.
@@ -124,7 +124,7 @@ Day-to-day consequence: structured option elaboration remains unavailable until 
 Cost or risk: Fixes #102 remains undelivered and the parked implementation may be discarded.
 Recommendation rationale: A addresses two bounded, reproduced integration gaps without changing the approved question grammar or rendering trust boundary.
 **A:** A — the factory owner authorizes one additional fix-and-review round for both confirmed defects: accept digits in unknown protocol labels and route elaboration fields plus recommendation rationale through the bounded inline-code renderer, with focused reader and both-surface browser regressions, full suite, and one final panel. Owner proviso: a sixth budget question on this task is answered with a ship-what-passes-and-split plan, not another round (Chris, 2026-09-03).
-## Q11 (task T76, open, filed-at 2026-09-03T19:15:20Z) — Should T76 receive a fifth panel round for a stale peer-link defect?
+## Q11 (task T76, consumed, filed-at 2026-09-03T19:15:20Z) — Should T76 receive a fifth panel round for a stale peer-link defect?
 Context:
 Observable failure: A maintainer follows an old numeric question link for a peer machine, sees a warning that the target is stale, but is also offered a link that opens an unrelated live question's answer form on that peer. The Q9-authorized panel confirmed this defect after the matched-lifecycle fix. Work is parked on branch `factory/t76-stale-question-links`.
 Engine detail: Peer question cards return before the local stale-target guard and still build an owning-dashboard link from the normalized `Q<n>` identifier. Four panel rounds have now run for T76, reaching the standing delegation's human-escalation threshold.

@@ -1375,24 +1375,20 @@ function questionFallbackSections(value) {
 }
 
 function appendQuestionOptionText(row, option) {
-  const marker = option.recommended ? recommendationMarker(option.text) : null;
   const parts = questionInlineCodeParts(option.text);
+  if (!parts) {
+    row.append(row.ownerDocument.createTextNode(option.text));
+    return;
+  }
+  const marker = option.recommended ? recommendationMarker(option.text) : null;
   if (marker) {
-    if (parts) {
-      appendQuestionInlineCode(row, option.text.slice(0, marker.index));
-    } else {
-      row.append(
-        row.ownerDocument.createTextNode(option.text.slice(0, marker.index)),
-      );
-    }
+    appendQuestionInlineCode(row, option.text.slice(0, marker.index));
     const recommendation = row.ownerDocument.createElement("span");
     recommendation.className = "chip chip-accent question-recommended";
-    if (parts) appendQuestionInlineCode(recommendation, marker.text);
-    else recommendation.textContent = marker.text;
+    appendQuestionInlineCode(recommendation, marker.text);
     row.append(recommendation);
     const suffix = option.text.slice(marker.index + marker.text.length);
-    if (parts) appendQuestionInlineCode(row, suffix);
-    else row.append(row.ownerDocument.createTextNode(suffix));
+    appendQuestionInlineCode(row, suffix);
   } else {
     appendQuestionInlineCode(row, option.text);
   }

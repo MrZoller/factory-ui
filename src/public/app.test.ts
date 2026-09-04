@@ -3263,11 +3263,9 @@ Options considered: Select \`fallback option\`.
         ".question-queue-entry .question-options",
       ]) {
         const options = document.querySelector<HTMLElement>(selector);
-        expect(options?.textContent).toContain(text);
+        expect(options?.lastElementChild?.textContent).toBe(`A · ${text}`);
         expect(options?.querySelectorAll("code")).toHaveLength(0);
-        expect(
-          options?.querySelector(".question-recommended")?.textContent,
-        ).toContain(text.slice(text.toLowerCase().lastIndexOf("(recommended")));
+        expect(options?.querySelector(".question-recommended")).toBeNull();
       }
     },
   );

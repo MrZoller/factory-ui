@@ -2473,6 +2473,42 @@ ${futureField}
     );
   });
 
+  test("completes a local deep-link landing after peer fan-out rerenders", async () => {
+    const document = dashboardDocument();
+    const peers = [
+      { name: "macbook", origin: "https://macbook.example" },
+      { name: "legion", origin: "https://legion.example" },
+    ];
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=factory-ui&question=Q9";
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === "/api/fleet") {
+        return Promise.resolve(
+          jsonResponse(fleet("mini", peers, [answerableRepository()])),
+        );
+      }
+      if (url.includes("macbook")) {
+        return Promise.resolve(
+          jsonResponse(fleet("macbook", [], [richRepository()])),
+        );
+      }
+      return Promise.reject(new TypeError("CORS failure"));
+    });
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    expect(
+      document.querySelector(".question-queue-entry-linked")?.textContent,
+    ).toContain("factory-ui/Q9");
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-question-landing-focus="true"]'),
+    );
+    expect(document.defaultView!.location.hash).toBe(
+      "#machine=mini&repo=factory-ui",
+    );
+  });
+
   test.each(["9", "Q404"])(
     "consumes stale or phantom question=%s links without focusing an answer control",
     (question) => {

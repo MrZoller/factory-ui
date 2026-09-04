@@ -5737,7 +5737,6 @@ async function fanOutToPeers(
           renderQuestionQueue(documentRoot, views);
           renderDependencyGraph(documentRoot, views);
           installTabs(documentRoot, views);
-          completeQuestionLanding(documentRoot, views);
         }
       } catch (cause) {
         if (
@@ -5757,7 +5756,6 @@ async function fanOutToPeers(
           renderQuestionQueue(documentRoot, views);
           renderDependencyGraph(documentRoot, views);
           installTabs(documentRoot, views);
-          completeQuestionLanding(documentRoot, views);
         }
       }
     }
@@ -5838,7 +5836,6 @@ export async function loadFleet(
     }
     const views = machineViews.get(documentRoot);
     if (!views) return true;
-    completeQuestionLanding(documentRoot, views);
     const peerTimedOut = await fanOutToPeers(
       fleet.peers,
       views,
@@ -5848,6 +5845,7 @@ export async function loadFleet(
       generation,
     );
     if (loadGenerations.get(documentRoot) !== generation) return false;
+    completeQuestionLanding(documentRoot, views);
     state.peerTimedOut = peerTimedOut;
     updateSnapshotStatus(documentRoot, state, dependencies.now());
     return true;

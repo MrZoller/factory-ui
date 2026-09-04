@@ -2091,6 +2091,78 @@ ${futureField}
     controller.cleanup();
   });
 
+  test("migrates lifecycle-only peer ownership after closure but rejects a missing repository", () => {
+    const migration = {
+      version: 1,
+      machine: "mini",
+      repository: "factory-ui",
+      question: "Q9",
+      id: "123e4567-e89b-42d3-a456-426614174000",
+      status: "accepted",
+      actor: "Verified Actor",
+    };
+    const closed = dashboardDocument();
+    closed.defaultView!.location.hash = new URLSearchParams({
+      answerLifecycle: JSON.stringify(migration),
+    }).toString();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          answerableRepository({
+            questions: {
+              status: "available",
+              data: { open: [] },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      closed,
+      NOW,
+    );
+
+    expect(
+      JSON.parse(
+        closed.defaultView!.localStorage.getItem(
+          "factory-ui.answer-lifecycle.v1",
+        )!,
+      ),
+    ).toEqual([migration]);
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          answerableRepository({
+            questions: {
+              status: "available",
+              data: { open: [] },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      closed,
+      NOW,
+    );
+    expect(closed.querySelector(".answer-attribution")?.textContent).toContain(
+      "factory-ui/Q9",
+    );
+
+    const missing = dashboardDocument();
+    missing.defaultView!.location.hash = new URLSearchParams({
+      answerLifecycle: JSON.stringify({ ...migration, repository: "missing" }),
+    }).toString();
+    renderFleet(fleet("mini", [], [answerableRepository()]), missing, NOW);
+    expect(
+      missing.defaultView!.localStorage.getItem(
+        "factory-ui.answer-lifecycle.v1",
+      ),
+    ).toBeNull();
+  });
+
   test("ignores malformed, mismatched, and conflicting lifecycle migrations", () => {
     const answerId = "123e4567-e89b-42d3-a456-426614174000";
     const cases = [
@@ -3152,6 +3224,98 @@ Options considered: Select \`fallback option\`.
       const field = document.querySelector<HTMLElement>(selector);
       expect(field?.textContent).toBe(context);
       expect(field?.querySelector("code")).toBeNull();
+    }
+  });
+
+  test.each([
+    ["unbalanced", "Proceed with `broken code (recommended)"],
+    [
+      "over-cap",
+      `${Array.from({ length: 33 }, (_, index) => `\`span ${index}\``).join(" ")} (recommended)`,
+    ],
+  ])(
+    "keeps an invalid %s recommended option wholly literal on both surfaces",
+    (_kind, text) => {
+      const document = dashboardDocument();
+      const repository = richRepository({
+        questions: {
+          status: "available",
+          data: {
+            open: [
+              {
+                id: "Q95",
+                taskId: "T95",
+                title: "Literal recommendation",
+                text: "source",
+                context: "Context",
+                options: [{ label: "A", text, recommended: true }],
+              },
+            ],
+          },
+          warnings: [],
+        },
+      });
+
+      renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+      for (const selector of [
+        ".questions-panel .question-options",
+        ".question-queue-entry .question-options",
+      ]) {
+        const options = document.querySelector<HTMLElement>(selector);
+        expect(options?.lastElementChild?.textContent).toBe(`A · ${text}`);
+        expect(options?.querySelectorAll("code")).toHaveLength(0);
+        expect(options?.querySelector(".question-recommended")).toBeNull();
+      }
+    },
+  );
+
+  test("applies the 32-span cap across every fallback section on both surfaces", () => {
+    const context = Array.from(
+      { length: 20 },
+      (_, index) => `\`context ${index}\``,
+    ).join(" ");
+    const options = Array.from(
+      { length: 13 },
+      (_, index) => `\`option ${index}\``,
+    ).join(" ");
+    const document = dashboardDocument();
+    const repository = richRepository({
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q96",
+              taskId: "T96",
+              title: "Fallback cap",
+              text: `## Q96 (task T96, open) — Fallback cap
+Context: ${context}
+Options considered: ${options}
+**A:**`,
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    for (const selector of [
+      ".questions-panel .question-body",
+      ".question-queue-entry .question-body",
+    ]) {
+      const body = document.querySelector<HTMLElement>(selector);
+      expect(body?.textContent).toContain(context);
+      expect(body?.textContent).toContain(options);
+      expect(body?.querySelectorAll("code")).toHaveLength(0);
+      expect(
+        Array.from(
+          body?.querySelectorAll("h4.question-field-label") ?? [],
+          (field) => field.textContent,
+        ),
+      ).toEqual(["Context:", "Options considered:"]);
     }
   });
 

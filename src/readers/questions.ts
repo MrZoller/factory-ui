@@ -227,10 +227,26 @@ function looksLikeUnknownElaborationField(value: string): boolean {
 function containsLabelledOptionStart(value: string): boolean {
   // Unlike parseOptions' rendering grammar, this boundary detector must not
   // treat an identifier-like future field such as `X-field:` as option X.
-  // A hyphenated option separator is therefore recognized only when spaces
-  // delimit it, while em-dash and colon forms retain their legacy handling.
-  return /(?:^|\s+\/\s+|\s*;\s+)[A-Z](?:\s*(?:—|:)|\s+-\s+|\s*(?:\/|$))/.test(
+  // A compact hyphen is safe only when whitespace follows it (`B- Wait`), so
+  // identifier-like future fields such as `X-field:` remain envelope fields.
+  return /(?:^|\s+\/\s+|\s*;\s+)[A-Z](?:\s*(?:—|:)|\s*-(?=\s)|\s*(?:\/|$))/.test(
     value,
+  );
+}
+
+function looksLikeInterleavedEnvelopeField(value: string): boolean {
+  const label = /^([^:\n]{1,80}):\s*/.exec(value)?.[1];
+  if (label === undefined || /^[A-Z]$/.test(label)) return false;
+  // Before the final option, an ordinary `Note:`-style continuation is
+  // ambiguous and must remain prose. A multiword label, identifier
+  // punctuation, a numeric suffix, or a non-letter initial is an explicit
+  // protocol-field signal, including `Future field v2:`, `Future2:`,
+  // `Future_field:`, and `X-field:`, without broadening this into a generic
+  // colon heuristic.
+  return (
+    /[^\p{L}\p{N}]/u.test(label) ||
+    /\p{L}\p{N}/u.test(label) ||
+    /^[^\p{L}]/u.test(label)
   );
 }
 
@@ -369,13 +385,22 @@ export function parseQuestionDetails(text: string): ParsedQuestionDetails {
   const lastContinuedOptionLine = possibleEnvelopeLines.findLastIndex((line) =>
     containsLabelledOptionStart(line.value),
   );
-  const unknownEnvelopeField = possibleEnvelopeLines
-    .slice(lastContinuedOptionLine + 1)
-    .some(
-      (line) =>
-        elaborationField(line.value) === undefined &&
-        looksLikeUnknownElaborationField(line.value),
-    );
+  const unknownEnvelopeField =
+    possibleEnvelopeLines
+      .slice(0, Math.max(0, lastContinuedOptionLine))
+      .some(
+        (line) =>
+          !containsLabelledOptionStart(line.value) &&
+          elaborationField(line.value) === undefined &&
+          looksLikeInterleavedEnvelopeField(line.value),
+      ) ||
+    possibleEnvelopeLines
+      .slice(lastContinuedOptionLine + 1)
+      .some(
+        (line) =>
+          elaborationField(line.value) === undefined &&
+          looksLikeUnknownElaborationField(line.value),
+      );
   const context = bodyField(
     lines,
     contextIndex,

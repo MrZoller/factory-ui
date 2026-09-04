@@ -170,4 +170,4 @@ Owner: dashboard product owner.
 Day-to-day consequence: the other four parked minors can ship, but interleaved alphanumeric fields remain raw-parser debt until replacement work lands.
 Cost or risk: another PR and delayed completion of the PR #108 review minor.
 Recommendation rationale: A is a bounded correction for the exact documented field class and preserves the existing conservative treatment of ambiguous prose.
-**A:**
+**A:** A — authorize one additional bounded fix-and-review round: recognize the multiword alphanumeric future-field class (`Future field v2:`) without reclassifying ordinary `Note:` continuations, paired regression, complete suite plus one final panel. Factory recommendation and operator assessment agree (distinct bounded defect, T71 round 3, no scope growth); answered by the operator session under the agreed-recommendation delegation and the 2026-09-03 panel-round delegation (operator, 2026-09-04).

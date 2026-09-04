@@ -210,7 +210,7 @@ task.
   - deps: none
   - pr: 99
 
-- [R] T71 (standard) — parked review minors (batch)
+- [x] T71 (standard) — parked review minors (batch)
   - PR #99: Allow lifecycle-only peer records to migrate after their questions close so the owner dashboard preserves the lifecycle indicator.
   - PR #105: Keep a recommendation marker wholly literal when its otherwise invalid option fails the inline-code parser's whole-field validation.
   - PR #105: Enforce the inline-code span cap across all sections of fallback question rendering.

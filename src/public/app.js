@@ -4990,7 +4990,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
             false,
           );
         }
-        if (structured && intakeEnabled) {
+        if (!isStaleTarget && structured && intakeEnabled) {
           renderOwningDashboardLink(
             item,
             view,

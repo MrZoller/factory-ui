@@ -2308,6 +2308,48 @@ describe("answer lifecycle queue", () => {
     );
   });
 
+  test("keeps an old numeric peer link from pointing at an unrelated live question", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "macbook", origin: "https://macbook.example" };
+    const local = answerableRepository({
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+    });
+    const unrelatedPeerQuestion = answerableRepository({
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q9",
+              taskId: "T9",
+              title: "Unrelated live question",
+              text: "raw",
+              context: "Context",
+              options: [{ label: "A", text: "Proceed" }],
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+    document.defaultView!.location.hash =
+      "#machine=macbook&repo=factory-ui&question=9";
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      Promise.resolve(
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [peer], [local]))
+          : jsonResponse(fleet("macbook", [], [unrelatedPeerQuestion])),
+      ),
+    );
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    expect(document.querySelector(".stale-question-notice")).not.toBeNull();
+    expect(
+      document.querySelector<HTMLAnchorElement>(".answer-owning-dashboard a"),
+    ).toBeNull();
+  });
+
   test("keeps a stale canonical deep link inert when its uncertain retry no longer names an open question", async () => {
     const document = dashboardDocument();
     const timers = fakeTimers();

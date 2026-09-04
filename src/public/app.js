@@ -1409,12 +1409,13 @@ function renderQuestionOptionDetails(parent, details) {
   const block = parent.ownerDocument.createElement("div");
   block.className = "question-option-details";
   if (details.elaboration !== undefined) {
-    appendText(
-      block,
-      "p",
+    const elaboration = block.ownerDocument.createElement("p");
+    elaboration.className = "question-option-elaboration";
+    appendQuestionInlineCode(
+      elaboration,
       questionParagraphs(details.elaboration).join(" "),
-      "question-option-elaboration",
     );
+    block.append(elaboration);
   }
   const fields = [
     ["Owner", details.owner],
@@ -1426,11 +1427,8 @@ function renderQuestionOptionDetails(parent, details) {
     const row = block.ownerDocument.createElement("p");
     row.className = "question-option-detail";
     appendText(row, "strong", `${label}:`, "question-option-detail-label");
-    row.append(
-      row.ownerDocument.createTextNode(
-        ` ${questionParagraphs(value).join(" ")}`,
-      ),
-    );
+    row.append(row.ownerDocument.createTextNode(" "));
+    appendQuestionInlineCode(row, questionParagraphs(value).join(" "));
     block.append(row);
   }
   if (block.childNodes.length > 0) parent.append(block);
@@ -1528,8 +1526,12 @@ function renderQuestionBody(parent, question, interactiveOptions) {
       );
       for (const paragraph of questionParagraphs(
         question.recommendationRationale,
-      ))
-        appendText(body, "p", paragraph, "question-recommendation-rationale");
+      )) {
+        const content = documentRoot.createElement("p");
+        content.className = "question-recommendation-rationale";
+        appendQuestionInlineCode(content, paragraph);
+        body.append(content);
+      }
     }
     if (question.qualifier !== undefined) {
       appendText(body, "h4", "Qualifier", "question-field-label");

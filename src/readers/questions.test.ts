@@ -394,6 +394,22 @@ Future protocol field: retain this exactly
         }
       });
 
+      test("keeps a numbered unknown field in the raw fallback", () => {
+        const question = `## Q10 (task T10, open) — Preserve numbered future grammar
+Context: The reader must not merge a numbered future field into the final option.
+Options considered: A — Proceed / B — Wait
+Future field v2: retain this exactly
+**A:**`;
+        const result = parseFactoryQuestions(question);
+
+        expect(result).toMatchObject({ status: "available", warnings: [] });
+        if (result.status === "available") {
+          expect(result.data.open[0]?.options).toBeUndefined();
+          expect(result.data.open[0]?.proseOptions).toBeUndefined();
+          expect(result.data.open[0]?.text).toBe(question);
+        }
+      });
+
       test("excludes answered questions from open array", () => {
         const questions = `## Q1 (task T1, open) — Open question?
 Context: Context

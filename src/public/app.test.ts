@@ -673,9 +673,9 @@ describe("answer lifecycle queue", () => {
                         text: "Pilot the change (recommended)",
                         recommended: true,
                         details: {
-                          elaboration: "Start with the smallest cohort.",
+                          elaboration: "Start with the `smallest` cohort.",
                           owner: hostile,
-                          costOrRisk: "The pilot takes another day.",
+                          costOrRisk: "The pilot takes `another day`.",
                         },
                       },
                       {
@@ -684,12 +684,12 @@ describe("answer lifecycle queue", () => {
                         details: {
                           owner: "release owner",
                           dayToDayConsequence:
-                            "Support coordinates one notice.",
+                            "Support coordinates `one notice`.",
                         },
                       },
                     ],
                     recommendationRationale:
-                      "A limits the initial blast radius.",
+                      "`A` limits the initial blast radius.",
                   },
                 ],
               },
@@ -720,6 +720,15 @@ describe("answer lifecycle queue", () => {
     expect(
       entry.querySelector(".question-recommendation-rationale")?.textContent,
     ).toBe("A limits the initial blast radius.");
+    expect(
+      Array.from(entry.querySelectorAll(".question-option-details code")).map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(["smallest", "another day", "one notice"]);
+    expect(
+      entry.querySelector(".question-recommendation-rationale code")
+        ?.textContent,
+    ).toBe("A");
     const repositoryOptions = document.querySelectorAll<HTMLElement>(
       ".questions-panel .question-options > li",
     );
@@ -731,6 +740,18 @@ describe("answer lifecycle queue", () => {
         ".questions-panel .question-recommendation-rationale",
       )?.textContent,
     ).toBe("A limits the initial blast radius.");
+    expect(
+      Array.from(
+        document.querySelectorAll(
+          ".questions-panel .question-option-details code",
+        ),
+      ).map((node) => node.textContent),
+    ).toEqual(["smallest", "another day", "one notice"]);
+    expect(
+      document.querySelector(
+        ".questions-panel .question-recommendation-rationale code",
+      )?.textContent,
+    ).toBe("A");
     expect(entry.querySelectorAll("img, [onerror]")).toHaveLength(0);
     expect((globalThis as Record<string, unknown>).detailPwned).toBeUndefined();
   });

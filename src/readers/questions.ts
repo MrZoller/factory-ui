@@ -221,9 +221,13 @@ function looksLikeUnknownElaborationField(value: string): boolean {
   // than a generic "text before a colon" heuristic because option prose may
   // contain colons, while allowing identifier-like future labels to begin
   // with letters, digits, or punctuation and to carry version suffixes.
-  return /^(?![A-Z]:(?:\s|$))(?=[^:\n]{2,80}:(?:\s|$))[A-Za-z0-9!#$%&'*+./<=>?@\\^_`{|}~-][A-Za-z0-9 !#$%&'*+./<=>?@\\^_`{|}~-]*:(?:\s|$)/.test(
+  return /^(?![A-Z]:(?:\s|$))(?=[^:\n]{2,80}:(?:\s|$))[^\s:][^:\n]*:(?:\s|$)/.test(
     value,
   );
+}
+
+function containsLabelledOptionStart(value: string): boolean {
+  return /(?:^|\s+\/\s+|\s*;\s+)[A-Z](?:\s*(?:—|-|:)|\s*(?:\/|$))/.test(value);
 }
 
 function parseOptionElaborations(
@@ -353,8 +357,16 @@ export function parseQuestionDetails(text: string): ParsedQuestionDetails {
   // Unknown protocol fields require the lossless raw fallback even when no
   // recognized elaboration field follows them. Otherwise parseOptions treats
   // a trailing labelled line as hard-wrapped text for the final option.
-  const unknownEnvelopeField = lines
-    .slice(optionsIndex + 1, detailsEnd)
+  const possibleEnvelopeLines = lines.slice(optionsIndex + 1, detailsEnd);
+  // A hard-wrapped option may itself begin with label-shaped prose. It is
+  // still option text when a later line (or a later fragment on this line)
+  // starts another choice. Only inspect lines after that final option start;
+  // protocol envelope fields follow the complete choice list.
+  const lastContinuedOptionLine = possibleEnvelopeLines.findLastIndex((line) =>
+    containsLabelledOptionStart(line.value),
+  );
+  const unknownEnvelopeField = possibleEnvelopeLines
+    .slice(lastContinuedOptionLine + 1)
     .some(
       (line) =>
         elaborationField(line.value) === undefined &&

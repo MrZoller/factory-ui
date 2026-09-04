@@ -413,6 +413,10 @@ Future protocol field: retain this exactly
           label: "@future-field:",
           envelope: "@future-field: retain this exactly",
         },
+        {
+          label: "[Future field]:",
+          envelope: "[Future field]: retain this exactly",
+        },
       ])(
         "keeps standalone unknown label $label anywhere in the raw fallback",
         ({ envelope }) => {
@@ -452,6 +456,38 @@ tracks the Future field v2 migration / B — Wait for the next window
           expect(result.data.open[0]?.proseOptions).toBeUndefined();
         }
       });
+
+      test.each([
+        {
+          options: `Options considered: A — Follow the published
+2FA policy v2: require step-up verification / B — Wait`,
+          expected:
+            "Follow the published 2FA policy v2: require step-up verification",
+        },
+        {
+          options: `Options considered: A — Follow the published
+Note: track the migration
+B — Wait`,
+          expected: "Follow the published Note: track the migration",
+        },
+      ])(
+        "keeps colon-bearing hard-wrapped option prose structured",
+        ({ options, expected }) => {
+          const result =
+            parseFactoryQuestions(`## Q12 (task T12, open) — Preserve colon prose
+Context: The reader must preserve ordinary option continuations.
+${options}
+**A:**`);
+
+          expect(result).toMatchObject({ status: "available", warnings: [] });
+          if (result.status === "available") {
+            expect(result.data.open[0]?.options).toEqual([
+              { label: "A", text: expected },
+              { label: "B", text: "Wait" },
+            ]);
+          }
+        },
+      );
 
       test("excludes answered questions from open array", () => {
         const questions = `## Q1 (task T1, open) — Open question?

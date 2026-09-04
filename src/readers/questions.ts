@@ -384,6 +384,7 @@ export function parseQuestionDetails(text: string): ParsedQuestionDetails {
       .slice(0, Math.max(0, lastContinuedOptionLine))
       .some(
         (line) =>
+          !containsLabelledOptionStart(line.value) &&
           elaborationField(line.value) === undefined &&
           looksLikeInterleavedEnvelopeField(line.value),
       ) ||

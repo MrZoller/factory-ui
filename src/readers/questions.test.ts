@@ -539,11 +539,11 @@ B- Wait
         }
       });
 
-      test("uses lossless fallback for an interleaved Future_field but keeps Note prose with compact options", () => {
+      test("uses lossless fallback for an interleaved multiword field but keeps Note prose with compact options", () => {
         const future = `## Q15 (task T15, open) — Interleaved future field
 Context: The reader must retain unknown protocol fields.
 Options considered: A — Continue
-Future_field: retain this exactly
+Future field v2: retain this exactly
 B- Wait
 **A:**`;
         const fallback = parseFactoryQuestions(future);

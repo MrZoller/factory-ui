@@ -1,11 +1,11 @@
 {
   "project": "factory-ui",
-  "phase": "build",
+  "phase": "idle",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T79",
-  "branch": "factory/t79-question-deep-link-focus",
-  "pr": 110,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-09-04T11:28:26Z"
+  "updated": "2026-09-04T12:13:00Z"
 }

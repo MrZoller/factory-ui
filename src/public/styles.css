@@ -685,12 +685,15 @@ p {
 .question-body,
 .question-context,
 .question-qualifier,
+.question-recommendation-rationale,
+.question-option-details,
 .question-fallback-text {
   overflow-wrap: anywhere;
 }
 
 .question-context,
 .question-qualifier,
+.question-recommendation-rationale,
 .question-fallback-text {
   margin: 0 0 var(--space-2);
 }
@@ -730,6 +733,24 @@ p {
   border-radius: var(--radius-sm);
   background: var(--color-surface-raised);
   font-family: var(--font-mono);
+}
+
+.question-option-details {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+
+.question-option-details p {
+  margin: 0;
+}
+
+.question-option-detail-label {
+  color: var(--color-text);
+  font-weight: 700;
 }
 
 .answer-form,

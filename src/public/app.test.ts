@@ -648,6 +648,157 @@ describe("answer lifecycle queue", () => {
     expect((globalThis as Record<string, unknown>).optionPwned).toBeUndefined();
   });
 
+  test("renders compact per-option details and the recommendation rationale separately as inert text", () => {
+    const document = dashboardDocument();
+    const hostile = '<img src=x onerror="globalThis.detailPwned=1">';
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          answerableRepository({
+            questions: {
+              status: "available",
+              data: {
+                open: [
+                  {
+                    id: "Q9",
+                    taskId: "T8",
+                    title: "Choose safely",
+                    text: "raw",
+                    context: "Context",
+                    options: [
+                      {
+                        label: "A",
+                        text: "Pilot the change (recommended)",
+                        recommended: true,
+                        details: {
+                          elaboration: "Start with the `smallest` cohort.",
+                          owner: hostile,
+                          costOrRisk: "The pilot takes `another day`.",
+                        },
+                      },
+                      {
+                        label: "B",
+                        text: "Release to every cohort",
+                        details: {
+                          owner: "release owner",
+                          dayToDayConsequence:
+                            "Support coordinates `one notice`.",
+                        },
+                      },
+                    ],
+                    recommendationRationale:
+                      "`A` limits the initial blast radius.",
+                  },
+                ],
+              },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const entry = document.querySelector(".question-queue-entry")!;
+    const options = entry.querySelectorAll<HTMLElement>(
+      ".question-options > label",
+    );
+    expect(options).toHaveLength(2);
+    expect(options[0]?.textContent).toContain(
+      "Start with the smallest cohort.",
+    );
+    expect(options[0]?.textContent).toContain(hostile);
+    expect(options[0]?.textContent).not.toContain("release owner");
+    expect(options[1]?.textContent).toContain("release owner");
+    expect(options[1]?.textContent).not.toContain(hostile);
+    expect(entry.querySelector(".question-options")?.textContent).not.toContain(
+      "A limits the initial blast radius.",
+    );
+    expect(
+      entry.querySelector(".question-recommendation-rationale")?.textContent,
+    ).toBe("A limits the initial blast radius.");
+    expect(
+      Array.from(entry.querySelectorAll(".question-option-details code")).map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(["smallest", "another day", "one notice"]);
+    expect(
+      entry.querySelector(".question-recommendation-rationale code")
+        ?.textContent,
+    ).toBe("A");
+    const repositoryOptions = document.querySelectorAll<HTMLElement>(
+      ".questions-panel .question-options > li",
+    );
+    expect(repositoryOptions).toHaveLength(2);
+    expect(repositoryOptions[0]?.textContent).toContain(hostile);
+    expect(repositoryOptions[1]?.textContent).toContain("release owner");
+    expect(
+      document.querySelector(
+        ".questions-panel .question-recommendation-rationale",
+      )?.textContent,
+    ).toBe("A limits the initial blast radius.");
+    expect(
+      Array.from(
+        document.querySelectorAll(
+          ".questions-panel .question-option-details code",
+        ),
+      ).map((node) => node.textContent),
+    ).toEqual(["smallest", "another day", "one notice"]);
+    expect(
+      document.querySelector(
+        ".questions-panel .question-recommendation-rationale code",
+      )?.textContent,
+    ).toBe("A");
+    expect(entry.querySelectorAll("img, [onerror]")).toHaveLength(0);
+    expect((globalThis as Record<string, unknown>).detailPwned).toBeUndefined();
+  });
+
+  test("retains unrecognized question trailing lines in the readable raw fallback", () => {
+    const document = dashboardDocument();
+    const raw = `## Q9 (task T8, open) — Keep unknown text
+Context: Context
+Options considered: A — Proceed
+Unrecognized envelope field: retain this exactly
+**A:**`;
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          answerableRepository({
+            questions: {
+              status: "available",
+              data: {
+                open: [
+                  {
+                    id: "Q9",
+                    taskId: "T8",
+                    title: "Keep unknown text",
+                    text: raw,
+                  },
+                ],
+              },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const entry = document.querySelector(".question-queue-entry")!;
+    expect(entry.querySelector(".question-body")?.textContent).toContain(
+      "Unrecognized envelope field: retain this exactly",
+    );
+    expect(entry.querySelector(".question-body")?.textContent).not.toContain(
+      "**A:**",
+    );
+  });
+
   test("qualifies duplicate-repository question identities", async () => {
     const document = dashboardDocument();
     const peer = { name: "macbook", origin: "https://macbook.example" };
@@ -3010,6 +3161,7 @@ Options considered: Select \`fallback option\`.
               title: "Capped paragraphs",
               text: "source",
               context,
+              recommendationRationale: context,
               options: [{ label: "A", text: "Proceed" }],
             },
           ],
@@ -3023,6 +3175,8 @@ Options considered: Select \`fallback option\`.
     for (const selector of [
       ".questions-panel .question-context",
       ".question-queue-entry .question-context",
+      ".questions-panel .question-recommendation-rationale",
+      ".question-queue-entry .question-recommendation-rationale",
     ]) {
       const fields = document.querySelectorAll<HTMLElement>(selector);
       expect(fields).toHaveLength(2);

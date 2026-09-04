@@ -1,6 +1,7 @@
 import {
   type OpenQuestion,
   type QuestionOption,
+  type QuestionOptionDetails,
   type QuestionsData,
   type ReaderResult,
   type ReaderWarning,
@@ -184,6 +185,130 @@ function parseOptions(value: string | undefined): {
     : {};
 }
 
+type ElaborationField =
+  | { kind: "option"; label: string; value: string }
+  | {
+      kind: "owner" | "dayToDayConsequence" | "costOrRisk";
+      value: string;
+    }
+  | { kind: "recommendationRationale"; value: string };
+
+function elaborationField(value: string): ElaborationField | undefined {
+  const option = /^Option ([A-Z]):\s*(.*)$/.exec(value);
+  if (option) {
+    const label = option[1];
+    if (label !== undefined)
+      return { kind: "option", label, value: option[2] ?? "" };
+  }
+  const fields = [
+    ["Owner:", "owner"],
+    ["Day-to-day consequence:", "dayToDayConsequence"],
+    ["Cost or risk:", "costOrRisk"],
+    ["Recommendation rationale:", "recommendationRationale"],
+  ] as const;
+  for (const [prefix, kind] of fields) {
+    if (value.startsWith(prefix)) {
+      return { kind, value: value.slice(prefix.length).trim() };
+    }
+  }
+  return undefined;
+}
+
+function looksLikeUnknownElaborationField(value: string): boolean {
+  // A one-letter `A:` line is still a valid legacy option. Longer labelled
+  // lines after the choices are a protocol envelope: unknown labels must send
+  // the whole question through the lossless raw fallback.
+  return /^[A-Za-z][A-Za-z -]+:\s*/.test(value);
+}
+
+function parseOptionElaborations(
+  lines: SourceLine[],
+  options: QuestionOption[],
+):
+  | {
+      options: QuestionOption[];
+      recommendationRationale?: string;
+    }
+  | { optionsTooLong: true }
+  | undefined {
+  const labels = new Set(options.map((option) => option.label));
+  const details = new Map<string, QuestionOptionDetails>();
+  const seen = new Map<string, Set<keyof QuestionOptionDetails>>();
+  let selectedLabel: string | undefined;
+  let current: ElaborationField | undefined;
+  let continuations: string[] = [];
+  let recommendationRationale: string | undefined;
+  let optionsTooLong = false;
+
+  const flush = (): boolean => {
+    if (current === undefined) return true;
+    const value = joinHardWraps([current.value, ...continuations].join("\n"));
+    continuations = [];
+    if (value.length > MAX_QUESTION_OPTION_LENGTH) {
+      optionsTooLong = true;
+      return false;
+    }
+    if (current.kind === "recommendationRationale") {
+      if (recommendationRationale !== undefined || value.length === 0)
+        return false;
+      recommendationRationale = value;
+      current = undefined;
+      return true;
+    }
+    if (current.kind === "option") {
+      selectedLabel = current.label;
+      if (!labels.has(selectedLabel) || details.has(selectedLabel))
+        return false;
+      details.set(selectedLabel, value ? { elaboration: value } : {});
+      seen.set(selectedLabel, value ? new Set(["elaboration"]) : new Set());
+      current = undefined;
+      return true;
+    }
+    if (selectedLabel === undefined) return false;
+    const optionDetails = details.get(selectedLabel);
+    const optionSeen = seen.get(selectedLabel);
+    if (
+      optionDetails === undefined ||
+      optionSeen === undefined ||
+      optionSeen.has(current.kind) ||
+      value.length === 0
+    )
+      return false;
+    optionDetails[current.kind] = value;
+    optionSeen.add(current.kind);
+    current = undefined;
+    return true;
+  };
+
+  for (const line of lines) {
+    const field = elaborationField(line.value);
+    if (field !== undefined) {
+      if (!flush())
+        return optionsTooLong ? { optionsTooLong: true } : undefined;
+      if (field.kind === "recommendationRationale") selectedLabel = undefined;
+      current = field;
+      continue;
+    }
+    if (looksLikeUnknownElaborationField(line.value)) return undefined;
+    if (current === undefined) return undefined;
+    continuations.push(line.value);
+  }
+  if (!flush()) return optionsTooLong ? { optionsTooLong: true } : undefined;
+
+  return {
+    options: options.map((option) => {
+      const optionDetails = details.get(option.label);
+      return optionDetails === undefined ||
+        Object.keys(optionDetails).length === 0
+        ? option
+        : { ...option, details: optionDetails };
+    }),
+    ...(recommendationRationale === undefined
+      ? {}
+      : { recommendationRationale }),
+  };
+}
+
 type ParsedQuestionDetails = Omit<
   OpenQuestion,
   "id" | "taskId" | "title" | "text"
@@ -208,6 +333,28 @@ export function parseQuestionDetails(text: string): ParsedQuestionDetails {
         line.value,
       ),
   );
+  const detailsEnd =
+    qualifierIndex >= 0
+      ? qualifierIndex
+      : answerIndex >= 0
+        ? answerIndex
+        : lines.length;
+  const envelopeIndex = lines.findIndex(
+    (line, index) =>
+      index > optionsIndex &&
+      index < detailsEnd &&
+      elaborationField(line.value) !== undefined,
+  );
+  // Unknown protocol fields require the lossless raw fallback even when no
+  // recognized elaboration field follows them. Otherwise parseOptions treats
+  // a trailing labelled line as hard-wrapped text for the final option.
+  const unknownEnvelopeField = lines
+    .slice(optionsIndex + 1, detailsEnd)
+    .some(
+      (line) =>
+        elaborationField(line.value) === undefined &&
+        looksLikeUnknownElaborationField(line.value),
+    );
   const context = bodyField(
     lines,
     contextIndex,
@@ -217,11 +364,7 @@ export function parseQuestionDetails(text: string): ParsedQuestionDetails {
   const optionsText = bodyField(
     lines,
     optionsIndex,
-    qualifierIndex >= 0
-      ? qualifierIndex
-      : answerIndex >= 0
-        ? answerIndex
-        : lines.length,
+    envelopeIndex >= 0 ? envelopeIndex : detailsEnd,
     "Options considered:",
   );
   const qualifierLine = lines[qualifierIndex]?.value ?? "";
@@ -235,10 +378,29 @@ export function parseQuestionDetails(text: string): ParsedQuestionDetails {
     qualifierPrefix ?? "",
   );
   const parsedOptions = parseOptions(optionsText);
+  const parsedElaborations =
+    envelopeIndex >= 0 && parsedOptions.options !== undefined
+      ? parseOptionElaborations(
+          lines.slice(envelopeIndex, detailsEnd),
+          parsedOptions.options,
+        )
+      : undefined;
+  const elaborationsTooLong =
+    parsedElaborations !== undefined &&
+    "optionsTooLong" in parsedElaborations &&
+    parsedElaborations.optionsTooLong;
+  const malformedEnvelope =
+    unknownEnvelopeField ||
+    (envelopeIndex >= 0 &&
+      (parsedElaborations === undefined || elaborationsTooLong));
   const branch = PARKED_BRANCH.exec(context ?? "")?.[1];
   return {
     ...(context === undefined ? {} : { context }),
-    ...parsedOptions,
+    ...(malformedEnvelope
+      ? parsedOptions.optionsTooLong || elaborationsTooLong
+        ? { optionsTooLong: true as const }
+        : {}
+      : (parsedElaborations ?? parsedOptions)),
     ...(qualifier === undefined ? {} : { qualifier }),
     ...(branch === undefined ? {} : { branch }),
   };

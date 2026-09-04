@@ -188,6 +188,7 @@ export interface OpenQuestion {
   options?: QuestionOption[];
   /** Legacy prose choices separated by the protocol's literal ` / `. */
   proseOptions?: string[];
+  recommendationRationale?: string;
   qualifier?: string;
   branch?: string;
   branchUrl?: string;
@@ -198,6 +199,14 @@ export interface QuestionOption {
   label: string;
   text: string;
   recommended?: boolean;
+  details?: QuestionOptionDetails;
+}
+
+export interface QuestionOptionDetails {
+  elaboration?: string;
+  owner?: string;
+  dayToDayConsequence?: string;
+  costOrRisk?: string;
 }
 
 export interface QuestionTask {

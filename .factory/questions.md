@@ -156,7 +156,7 @@ Cost or risk: more reimplementation time, but the replacement starts without T74
 Recommendation rationale: A follows the owner's ship-what-passes-and-split direction while restoring a fresh review budget around the unresolved blocking parser boundary.
 **A:** A — replace T74 with two fresh standard tasks that reuse the parked work Answered by Chris via operator. [factory-answer-intake: bf0bdba7-3f5c-4262-846c-0123a2a0907f]
 
-## Q13 (task T71, open, filed-at 2026-09-04T04:18:41Z) — Should T71 receive another fix-and-review round for interleaved future fields?
+## Q13 (task T71, consumed, filed-at 2026-09-04T04:18:41Z) — Should T71 receive another fix-and-review round for interleaved future fields?
 Context:
 Observable failure: A maintainer places a future field such as `Future field v2:` between two answer options, but the dashboard appends that field to the first option and presents it as selectable answer text. The required initial panel and one re-panel each found a blocking defect, so work is parked on branch `factory/t71-parked-review-minors` before another unapproved round.
 Engine detail: The interleaved-field guard recognizes punctuation-bearing labels but deliberately leaves ordinary `Note:` prose alone; it does not yet distinguish a multiword alphanumeric future-field label from that prose.

@@ -139,3 +139,19 @@ Day-to-day consequence: stale question links continue to lack a complete safe ex
 Cost or risk: Fixes #93 remains undelivered and the parked implementation may be discarded.
 Recommendation rationale: A is a bounded peer-path correction that prevents the stale warning from leading directly to an unrelated answer form.
 **A:** A — the factory owner authorizes one additional fix-and-review round: gate the peer owner link on the exact stale-target check, add the focused peer regression, full suite plus one final panel. Owner proviso: a sixth budget question on this task is answered with a ship-what-passes-and-split plan, not another round (Chris, 2026-09-03).
+
+## Q12 (task T74, open, filed-at 2026-09-04T00:47:35Z) — How should the repeatedly failing question-parser work be split?
+Context:
+Observable failure: A maintainer adds a future labelled field such as `2FA policy v2:` or `Future_field:`, but the dashboard displays it as part of the final answer option instead of preserving the complete question as raw text. T74's owner-authorized fifth panel found this new blocking case, so the task cannot ship under the factory review rules. Work is parked on branch `factory/t74-question-option-details`.
+Engine detail: The unknown-field detector recognizes labels made from letters, digits, spaces, and hyphens only when they begin with a letter. Expanding that detector safely needs another reviewed change, but the Q10 answer directs a sixth budget question toward a ship-what-passes-and-split plan rather than another T74 panel round.
+Options considered: A — replace T74 with two fresh standard tasks that reuse the parked work (recommended) / B — abandon the parked implementation and replan issue #102 from scratch as one fresh standard task
+Option A: Mark T74 dropped; create T77 for the option elaboration, detail, rationale, oversized fallback, and inline-code rendering already present on the parked branch; create dependent T78 to complete conservative unknown trailing-field fallback for letter-, digit-, and punctuation-bearing labels and carry `Fixes #102`; each fresh task receives the normal verification and panel budget before shipping.
+Owner: factory-ui product owner and the implementation owners of T77 and T78.
+Day-to-day consequence: the independently reviewable rendering work can ship first, while parser fallback hardening follows without granting T74 a sixth panel round.
+Cost or risk: two PRs and duplicated integration verification, plus careful extraction from the parked branch.
+Option B: Mark T74 dropped, discard the parked implementation, and create one new standard task that redesigns all issue #102 parsing and rendering behavior without reusing the branch.
+Owner: factory-ui product owner and the replacement task's implementation owner.
+Day-to-day consequence: no part ships until the complete replacement passes a fresh review cycle.
+Cost or risk: more reimplementation time, but the replacement starts without T74's accumulated parser assumptions.
+Recommendation rationale: A follows the owner's ship-what-passes-and-split direction while restoring a fresh review budget around the unresolved blocking parser boundary.
+**A:**

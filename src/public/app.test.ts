@@ -3658,6 +3658,41 @@ Options considered: ${options}
     ]);
   });
 
+  test("keeps a capped queue's deep-link target after later entries reorder it", () => {
+    const document = dashboardDocument();
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=beta&question=Q128";
+    const questionsFor = (repository: string) =>
+      Array.from({ length: 128 }, (_, index) => ({
+        id: `Q${index + 1}`,
+        taskId: `T${index + 1}`,
+        title: `${repository} question ${index + 1}`,
+        text: "open",
+      }));
+    const repositoryWithQuestions = (name: string) =>
+      richRepository({
+        name,
+        questions: {
+          status: "available",
+          data: { open: questionsFor(name) },
+          warnings: [],
+        },
+      });
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [repositoryWithQuestions("beta"), repositoryWithQuestions("alpha")],
+      ),
+      document,
+      NOW,
+    );
+
+    expect(
+      document.querySelector(".question-queue-entry-linked")?.textContent,
+    ).toContain("beta/Q128 · beta question 128");
+  });
+
   test("renders every repository work and activity group distinctly", () => {
     const document = dashboardDocument();
     renderFleet(

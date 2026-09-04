@@ -4869,6 +4869,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
   const duplicatedRepositories = duplicateRepositoryNames(documentRoot, views);
   const staleLink = staleQuestionLink(documentRoot, views, answerStore);
   const landing = questionLanding(documentRoot);
+  let landingEntry;
   for (const view of views) {
     for (const repository of view.fleet?.repositories ?? []) {
       for (const question of readerData(repository.questions)?.open ?? []) {
@@ -4882,16 +4883,14 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
           repository,
           question,
         };
-        insertBoundedQuestionEntry(entries, entry);
         if (
           landing?.machine === view.identity &&
           landing.repository === repository.name &&
-          landing.question === question.id &&
-          !entries.includes(entry)
+          landing.question === question.id
         ) {
-          entries[entries.length - 1] = entry;
-          entries.sort(compareQuestionQueueEntries);
+          landingEntry = entry;
         }
+        insertBoundedQuestionEntry(entries, entry);
       }
     }
   }
@@ -4919,6 +4918,14 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
       },
       lifecycleOnly: true,
     });
+  }
+  if (landingEntry && !entries.includes(landingEntry)) {
+    if (entries.length === MAX_QUESTION_QUEUE_ENTRIES) {
+      entries[entries.length - 1] = landingEntry;
+    } else {
+      entries.push(landingEntry);
+    }
+    entries.sort(compareQuestionQueueEntries);
   }
   const totalEntries = openEntries + trackedEntries;
   const countLabel =

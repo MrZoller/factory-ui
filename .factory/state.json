@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T81",
+  "branch": "factory/t81-phone-viewport-overflow",
   "pr": null,
   "hold": false,
-  "updated": "2026-09-04T23:20:15Z"
+  "updated": "2026-09-04T23:23:21Z"
 }

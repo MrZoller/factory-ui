@@ -217,8 +217,13 @@ function elaborationField(value: string): ElaborationField | undefined {
 function looksLikeUnknownElaborationField(value: string): boolean {
   // A one-letter `A:` line is still a valid legacy option. Longer labelled
   // lines after the choices are a protocol envelope: unknown labels must send
-  // the whole question through the lossless raw fallback.
-  return /^[A-Za-z][A-Za-z -]+:\s*/.test(value);
+  // the whole question through the lossless raw fallback. Keep this narrower
+  // than a generic "text before a colon" heuristic because option prose may
+  // contain colons, while allowing identifier-like future labels to begin
+  // with letters, digits, or punctuation and to carry version suffixes.
+  return /^(?![A-Z]:(?:\s|$))(?=[^:\n]{2,80}:(?:\s|$))[A-Za-z0-9!#$%&'*+./<=>?@\\^_`{|}~-][A-Za-z0-9 !#$%&'*+./<=>?@\\^_`{|}~-]*:(?:\s|$)/.test(
+    value,
+  );
 }
 
 function parseOptionElaborations(

@@ -210,13 +210,14 @@ task.
   - deps: none
   - pr: 99
 
-- [~] T71 (standard) — parked review minors (batch)
+- [R] T71 (standard) — parked review minors (batch)
   - PR #99: Allow lifecycle-only peer records to migrate after their questions close so the owner dashboard preserves the lifecycle indicator.
   - PR #105: Keep a recommendation marker wholly literal when its otherwise invalid option fails the inline-code parser's whole-field validation.
   - PR #105: Enforce the inline-code span cap across all sections of fallback question rendering.
   - PR #108: Preserve structured compact-hyphen options after colon-bearing wrapped prose while retaining the `X-field:` unknown-field fallback.
   - PR #108: Detect interleaved unknown envelope fields before later continued options without misclassifying colon-bearing wrapped option prose.
   - deps: none
+  - pr: 109
 
 - [x] T11 (standard) — parked review minors (batch)
   - Add `O_NONBLOCK` when opening validated `state.json` so a locally planted FIFO cannot block the fleet snapshot before the existing regular-file check rejects it (PR #2 review).

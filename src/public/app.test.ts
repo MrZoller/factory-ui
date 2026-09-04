@@ -4948,6 +4948,90 @@ Options considered: ${options}
     );
   });
 
+  test("keeps every rendered wide table in its own horizontal overflow surface", async () => {
+    const html = await Bun.file(
+      new URL("./index.html", import.meta.url),
+    ).text();
+    const document = new Window({ url: "https://dashboard.test/" })
+      .document as unknown as Document;
+    document.write(html);
+    renderFleet(fleet("mini", [], [richRepository()]), document, NOW);
+
+    const fleetSummary =
+      document.querySelector<HTMLTableElement>("#fleet-summary")!;
+    const repositorySummary = document.querySelector<HTMLTableElement>(
+      ".repository-summary",
+    )!;
+    const taskTables = Array.from(
+      document.querySelectorAll<HTMLTableElement>(".task-table"),
+    );
+
+    expect(fleetSummary.parentElement?.className).toBe("table-scroll");
+    expect(repositorySummary.parentElement?.className).toBe(
+      "table-scroll repository-summary-scroll",
+    );
+    expect(repositorySummary.closest(".table-scroll")).not.toBe(
+      fleetSummary.closest(".table-scroll"),
+    );
+    expect(taskTables.length).toBeGreaterThan(0);
+    expect(
+      taskTables.every(
+        (table) => table.parentElement?.className === "task-table-scroll",
+      ),
+    ).toBe(true);
+
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+    for (const [selector, minWidth] of [
+      ["#fleet-summary", "68rem"],
+      [".repository-summary", "89rem"],
+      [".task-table", "max\\(42rem, 100%\\)"],
+    ]) {
+      const escaped = selector.replace(/[.#]/g, "\\$&");
+      expect(css).toMatch(
+        new RegExp(
+          `${escaped}\\s*\\{[^}]*width: max-content;[^}]*min-width: ${minWidth};`,
+          "s",
+        ),
+      );
+    }
+    expect(css).toMatch(/\.table-scroll\s*\{[^}]*overflow-x:\s*auto;/s);
+    expect(css).toMatch(/\.task-table-scroll\s*\{[^}]*overflow-x:\s*auto;/s);
+  });
+
+  test("allows the repository-summary containment chain to shrink around its scroller", async () => {
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+
+    for (const selector of [
+      ".machine",
+      ".repository-grid",
+      ".repository-grid > *",
+      ".repository-summary-region",
+      ".table-scroll",
+      ".repository-panel",
+      ".repository",
+    ]) {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      expect(css).toMatch(
+        new RegExp(`${escaped}\\s*\\{[^}]*min-width:\\s*0;`, "s"),
+      );
+    }
+  });
+
+  test("keeps non-wrapping warning codes inside the warning panel scroller", async () => {
+    const document = dashboardDocument();
+    renderFleet(fleet("mini", [], [richRepository()]), document, NOW);
+
+    const warningCode = document.querySelector<HTMLElement>(
+      ".warnings-panel .warning-code",
+    )!;
+    const warningSurface = warningCode.closest<HTMLElement>(".warning-list");
+    expect(warningSurface?.closest(".warnings-panel")).not.toBeNull();
+
+    const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+    expect(css).toMatch(/\.warnings-panel ul\s*\{[^}]*overflow-x:\s*auto;/s);
+    expect(css).toMatch(/\.warning-code\s*\{[^}]*white-space:\s*nowrap;/s);
+  });
+
   test("uses four Current fact tracks on desktop and two term/value tracks below 1100px", async () => {
     const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
     expect(css).toMatch(

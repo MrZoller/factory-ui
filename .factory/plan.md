@@ -149,7 +149,7 @@ task.
   - acceptance: Reuse the parked `factory/t74-question-option-details` implementation in `src/readers/questions.ts`, `src/public/app.js`, `src/public/styles.css`, and colocated reader/browser tests to stop option text at recognized `Option <letter>:`, `Owner:`, `Day-to-day consequence:`, `Cost or risk:`, and `Recommendation rationale:` fields; render bounded per-option details and recommendation rationale separately with T75's bounded text-only inline-code treatment; emit the explicit oversized-option warning with lossless raw fallback; keep unrecognized trailing fields on the existing conservative raw fallback rather than claiming the unresolved generalized label grammar; cover Q5, mixed-envelope, oversized, inline-code, and hostile-text behavior; and pass `bun test` plus `bun run lint`.
   - deps: none
   - pr: 107
-- [ ] T78 (standard) — Complete conservative unknown trailing-field fallback (Fixes #102)
+- [~] T78 (standard) — Complete conservative unknown trailing-field fallback (Fixes #102)
   - acceptance: After T77, harden `src/readers/questions.ts` and colocated reader/browser tests so standalone unknown labelled fields throughout the options-to-answer region trigger lossless raw fallback for labels beginning with letters, digits, or punctuation, including `Future field v2:`, `2FA policy v2:`, and `Future_field:`; do not misclassify ordinary wrapped option prose as protocol fields; preserve recognized structured details, warning bounds, and text-only hostile-input safety; and pass `bun test` plus `bun run lint`.
   - deps: T77
 - [x] T75 (standard) — Inline backticks bleed through literally — render backtick spans in monospace (textContent-only, no markdown) (Fixes #103)

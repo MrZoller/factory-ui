@@ -221,9 +221,7 @@ function looksLikeUnknownElaborationField(value: string): boolean {
   // than a generic "text before a colon" heuristic because option prose may
   // contain colons, while allowing identifier-like future labels to begin
   // with letters, digits, or punctuation and to carry version suffixes.
-  return /^(?![A-Z]:(?:\s|$))(?=[^:\n]{2,80}:(?:\s|$))[^\s:][^:\n]*:(?:\s|$)/.test(
-    value,
-  );
+  return /^(?![A-Z]:)(?=[^:\n]{1,80}:)[^\s:][^:\n]*:\s*/.test(value);
 }
 
 function containsLabelledOptionStart(value: string): boolean {

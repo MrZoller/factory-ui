@@ -2076,7 +2076,7 @@ ${futureField}
 
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(document.defaultView!.location.hash).toBe(
-      "#machine=mini&repo=factory-ui&question=Q9",
+      "#machine=mini&repo=factory-ui",
     );
     expect(
       JSON.parse(
@@ -2199,7 +2199,7 @@ ${futureField}
         ),
       ).toBeNull();
       expect(document.defaultView!.location.hash).toBe(
-        "#machine=mini&repo=factory-ui&question=Q9",
+        "#machine=mini&repo=factory-ui",
       );
     }
 
@@ -2320,6 +2320,193 @@ ${futureField}
     expect(rejected.querySelector(".answer-reason")?.textContent).toBe(
       "question is terminal",
     );
+  });
+
+  test("lands a recommended deep link on its unselected radio, highlights its card, and keeps its row visible", () => {
+    const document = dashboardDocument();
+    const scrollIntoView = vi.fn();
+    document.defaultView!.HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=factory-ui&question=Q9";
+    const repository = answerableRepository({
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q9",
+              taskId: "T8",
+              title: "Choose the recommendation",
+              text: "raw",
+              context: "Context",
+              options: [
+                { label: "A", text: "First" },
+                { label: "B", text: "Recommended", recommended: true },
+              ],
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const entry = document.querySelector<HTMLElement>(
+      ".question-queue-entry-linked",
+    )!;
+    const radios = entry.querySelectorAll<HTMLInputElement>(
+      'input[type="radio"]',
+    );
+    expect(Array.from(radios, (radio) => radio.checked)).toEqual([
+      false,
+      false,
+    ]);
+    const recommendedRadio = radios[1];
+    if (!recommendedRadio) throw new Error("expected a recommended option");
+    expect(document.activeElement).toBe(recommendedRadio);
+    expect(entry.classList).toContain("question-queue-entry-linked");
+    expect(scrollIntoView.mock.calls).toEqual([
+      [{ block: "start" }],
+      [{ block: "nearest" }],
+    ]);
+    expect(document.defaultView!.location.hash).toBe(
+      "#machine=mini&repo=factory-ui",
+    );
+  });
+
+  test("lands an unrecommended deep link on its first radio without selecting it", () => {
+    const document = dashboardDocument();
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=factory-ui&question=Q9";
+    const repository = answerableRepository({
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q9",
+              taskId: "T8",
+              title: "Choose without a recommendation",
+              text: "raw",
+              context: "Context",
+              options: [
+                { label: "A", text: "First" },
+                { label: "B", text: "Second" },
+              ],
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const radios = document.querySelectorAll<HTMLInputElement>(
+      'input[type="radio"]',
+    );
+    const firstRadio = radios[0];
+    if (!firstRadio) throw new Error("expected a first answer option");
+    expect(document.activeElement).toBe(firstRadio);
+    expect(Array.from(radios, (radio) => radio.checked)).toEqual([
+      false,
+      false,
+    ]);
+  });
+
+  test("lands an option-less deep link on free text", () => {
+    const document = dashboardDocument();
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=factory-ui&question=Q9";
+    const repository = answerableRepository({
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q9",
+              taskId: "T8",
+              title: "Explain the decision",
+              text: "raw",
+              context: "Context",
+              proseOptions: ["Describe another approach"],
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    expect(document.activeElement).toBe(
+      document.querySelector('.answer-form input[type="text"]'),
+    );
+    expect(document.querySelectorAll('input[type="radio"]')).toHaveLength(0);
+  });
+
+  test("lands a cold asynchronous deep link on a narrow viewport", async () => {
+    const document = dashboardDocument();
+    const scrollIntoView = vi.fn();
+    document.defaultView!.HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    Object.defineProperty(document.defaultView!, "innerWidth", { value: 390 });
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=factory-ui&question=Q9";
+    const fetcher = vi.fn((): Promise<Response> =>
+      Promise.resolve(
+        jsonResponse(fleet("mini", [], [answerableRepository()])),
+      ),
+    );
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    expect(
+      document.querySelector(".question-queue-entry-linked")?.textContent,
+    ).toContain("factory-ui/Q9");
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-question-landing-focus="true"]'),
+    );
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+    expect(document.defaultView!.location.hash).toBe(
+      "#machine=mini&repo=factory-ui",
+    );
+  });
+
+  test.each(["9", "Q404"])(
+    "consumes stale or phantom question=%s links without focusing an answer control",
+    (question) => {
+      const document = dashboardDocument();
+      document.defaultView!.location.hash = `#machine=mini&repo=factory-ui&question=${question}`;
+
+      renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
+
+      expect(document.querySelector(".stale-question-notice")).not.toBeNull();
+      expect(document.activeElement).toBe(document.body);
+      expect(document.defaultView!.location.hash).toBe(
+        "#machine=mini&repo=factory-ui",
+      );
+    },
+  );
+
+  test("does not repeat a consumed question landing on refresh", () => {
+    const document = dashboardDocument();
+    const scrollIntoView = vi.fn();
+    document.defaultView!.HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=factory-ui&question=Q9";
+    const snapshot = fleet("mini", [], [answerableRepository()]);
+
+    renderFleet(snapshot, document, NOW);
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+    expect(document.defaultView!.location.hash).toBe(
+      "#machine=mini&repo=factory-ui",
+    );
+
+    renderFleet(snapshot, document, NOW);
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+    expect(document.querySelector(".question-queue-entry-linked")).toBeNull();
   });
 
   test("shows an inert notice for stale local question links", () => {
@@ -9335,7 +9522,7 @@ describe("fleet dependency graph", () => {
       new document.defaultView!.Event("hashchange"),
     );
     expect(document.defaultView!.location.hash).toBe(
-      "#machine=mini&repo=dashboard&question=Q4",
+      "#machine=mini&repo=dashboard",
     );
     expect(
       document.querySelector(".question-queue-entry-linked"),

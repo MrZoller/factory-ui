@@ -51,6 +51,7 @@ const dashboardControllers = new WeakMap();
 const disclosureStates = new WeakMap();
 const answerStores = new WeakMap();
 const answerRuntimes = new WeakMap();
+const questionLandings = new WeakMap();
 
 function receiverSafeFetcher(fetcher) {
   return (input, init) =>
@@ -1457,6 +1458,8 @@ function renderQuestionOptions(parent, question, interactive) {
   }
 
   if (labelled) {
+    let firstInput;
+    let recommendedInput;
     for (const option of question.options) {
       const row = documentRoot.createElement(interactive ? "label" : "li");
       let content = row;
@@ -1470,6 +1473,8 @@ function renderQuestionOptions(parent, question, interactive) {
         input.addEventListener("change", () => {
           interactive.state.option = option.label;
         });
+        firstInput ??= input;
+        if (option.recommended) recommendedInput ??= input;
         row.append(input);
         content = documentRoot.createElement("div");
         row.append(content);
@@ -1487,6 +1492,8 @@ function renderQuestionOptions(parent, question, interactive) {
       renderQuestionOptionDetails(content, option.details);
       options.append(row);
     }
+    const landingInput = recommendedInput ?? firstInput;
+    if (landingInput) landingInput.dataset.questionLandingFocus = "true";
   } else {
     for (const option of question.proseOptions) {
       const row = documentRoot.createElement("li");
@@ -3824,6 +3831,7 @@ function installTabs(documentRoot, views) {
   const onHashChange = () => {
     selectFromHash(true);
     renderQuestionQueue(documentRoot, views);
+    completeQuestionLanding(documentRoot, views);
   };
   windowRoot?.addEventListener("hashchange", onHashChange);
   selectFromHash(true);
@@ -3850,6 +3858,71 @@ function compareQuestionText(left, right) {
 
 function questionHash(machine, repository, question) {
   return dashboardHash(machine, repository, question);
+}
+
+function questionLanding(documentRoot) {
+  const selection = hashSelection(documentRoot.defaultView);
+  if (
+    selection.machine === null ||
+    selection.repository === null ||
+    selection.question === null ||
+    !/^(?:Q)?[1-9][0-9]*$/.test(selection.question) ||
+    selection.question.length > MAX_QUESTION_ID_LENGTH
+  ) {
+    return null;
+  }
+  const current = questionLandings.get(documentRoot);
+  if (
+    current?.machine === selection.machine &&
+    current.repository === selection.repository &&
+    current.question === selection.question
+  ) {
+    return current;
+  }
+  const landing = selection;
+  questionLandings.set(documentRoot, landing);
+  return landing;
+}
+
+function consumeQuestionLanding(documentRoot, landing) {
+  const windowRoot = documentRoot.defaultView;
+  if (!windowRoot?.history) return;
+  windowRoot.history.replaceState(
+    null,
+    "",
+    `${windowRoot.location.pathname}${windowRoot.location.search}${dashboardHash(
+      landing.machine,
+      landing.repository,
+    )}`,
+  );
+  questionLandings.delete(documentRoot);
+}
+
+function completeQuestionLanding(documentRoot, views) {
+  const landing = questionLanding(documentRoot);
+  if (!landing) return false;
+  const card = documentRoot.querySelector(".question-queue-entry-linked");
+  const staleNotice = staleQuestionLink(
+    documentRoot,
+    views,
+    getAnswerStore(documentRoot),
+  )
+    ? documentRoot.querySelector(".stale-question-notice")
+    : null;
+  if (!card && !staleNotice) return false;
+
+  if (card) {
+    card.scrollIntoView?.({ block: "start" });
+    const target = card.querySelector('[data-question-landing-focus="true"]');
+    if (target) {
+      target.focus({ preventScroll: true });
+      (target.closest(".answer-option") ?? target).scrollIntoView?.({
+        block: "nearest",
+      });
+    }
+  }
+  consumeQuestionLanding(documentRoot, landing);
+  return true;
 }
 
 function staleQuestionLink(documentRoot, views, answerStore) {
@@ -4695,6 +4768,9 @@ function renderAnswerForm(
   text.addEventListener("input", () => {
     state.text = text.value;
   });
+  if (!Array.isArray(question.options) || question.options.length === 0) {
+    text.dataset.questionLandingFocus = "true";
+  }
   textLabel.append(text);
   let secret;
   if (state.authRequired) {
@@ -4792,6 +4868,7 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
   const answerStore = getAnswerStore(documentRoot);
   const duplicatedRepositories = duplicateRepositoryNames(documentRoot, views);
   const staleLink = staleQuestionLink(documentRoot, views, answerStore);
+  const landing = questionLanding(documentRoot);
   for (const view of views) {
     for (const repository of view.fleet?.repositories ?? []) {
       for (const question of readerData(repository.questions)?.open ?? []) {
@@ -4799,12 +4876,22 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
         visibleKeys.add(key);
         questionOccurrences.set(key, (questionOccurrences.get(key) ?? 0) + 1);
         openEntries += 1;
-        insertBoundedQuestionEntry(entries, {
+        const entry = {
           machine: view.identity,
           view,
           repository,
           question,
-        });
+        };
+        insertBoundedQuestionEntry(entries, entry);
+        if (
+          landing?.machine === view.identity &&
+          landing.repository === repository.name &&
+          landing.question === question.id &&
+          !entries.includes(entry)
+        ) {
+          entries[entries.length - 1] = entry;
+          entries.sort(compareQuestionQueueEntries);
+        }
       }
     }
   }
@@ -5127,9 +5214,6 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
   );
   list.replaceChildren(...(staleNotice ? [staleNotice] : []), ...cards);
   updateQuestionDetailIdentities(documentRoot, duplicatedRepositories);
-  list
-    .querySelector(".question-queue-entry-linked")
-    ?.scrollIntoView?.({ block: "start" });
 }
 
 function graphTaskState(task, repository) {
@@ -5513,7 +5597,12 @@ function ensureFleetShell(documentRoot, repositories) {
   return { summaryBody, tabs };
 }
 
-export function renderFleet(fleet, documentRoot = document, now = new Date()) {
+export function renderFleet(
+  fleet,
+  documentRoot = document,
+  now = new Date(),
+  deferQuestionLanding = false,
+) {
   const machine = documentRoot.querySelector("#machine");
   const repositories = documentRoot.querySelector("#repositories");
   const generated = documentRoot.querySelector("#generated");
@@ -5574,6 +5663,7 @@ export function renderFleet(fleet, documentRoot = document, now = new Date()) {
   renderDependencyGraph(documentRoot, views);
   installTabs(documentRoot, views);
   machineViews.set(documentRoot, views);
+  if (!deferQuestionLanding) completeQuestionLanding(documentRoot, views);
 }
 
 export async function fetchPeerFleet(peer, fetcher, dependencyOverrides = {}) {
@@ -5640,6 +5730,7 @@ async function fanOutToPeers(
           renderQuestionQueue(documentRoot, views);
           renderDependencyGraph(documentRoot, views);
           installTabs(documentRoot, views);
+          completeQuestionLanding(documentRoot, views);
         }
       } catch (cause) {
         if (
@@ -5659,6 +5750,7 @@ async function fanOutToPeers(
           renderQuestionQueue(documentRoot, views);
           renderDependencyGraph(documentRoot, views);
           installTabs(documentRoot, views);
+          completeQuestionLanding(documentRoot, views);
         }
       }
     }
@@ -5722,7 +5814,7 @@ export async function loadFleet(
     const response = await requestFetcher("/api/fleet");
     const fleet = await readFleetResponse(response);
     if (loadGenerations.get(documentRoot) !== generation) return false;
-    renderFleet(fleet, documentRoot, dependencies.now());
+    renderFleet(fleet, documentRoot, dependencies.now(), true);
     state.lastGoodGeneratedAt = fleet.generatedAt;
     state.lastError = undefined;
     state.peerTimedOut = false;
@@ -5739,6 +5831,7 @@ export async function loadFleet(
     }
     const views = machineViews.get(documentRoot);
     if (!views) return true;
+    completeQuestionLanding(documentRoot, views);
     const peerTimedOut = await fanOutToPeers(
       fleet.peers,
       views,

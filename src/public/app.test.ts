@@ -4985,7 +4985,7 @@ Options considered: ${options}
       ["#fleet-summary", "68rem"],
       [".repository-summary", "89rem"],
       [".task-table", "max\\(42rem, 100%\\)"],
-    ]) {
+    ] as const) {
       const escaped = selector.replace(/[.#]/g, "\\$&");
       expect(css).toMatch(
         new RegExp(

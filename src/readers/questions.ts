@@ -218,7 +218,7 @@ function looksLikeUnknownElaborationField(value: string): boolean {
   // A one-letter `A:` line is still a valid legacy option. Longer labelled
   // lines after the choices are a protocol envelope: unknown labels must send
   // the whole question through the lossless raw fallback.
-  return /^[A-Za-z][A-Za-z0-9 -]+:\s*/.test(value);
+  return /^[A-Za-z][A-Za-z -]+:\s*/.test(value);
 }
 
 function parseOptionElaborations(

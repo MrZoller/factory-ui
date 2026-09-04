@@ -140,7 +140,7 @@ Cost or risk: Fixes #93 remains undelivered and the parked implementation may be
 Recommendation rationale: A is a bounded peer-path correction that prevents the stale warning from leading directly to an unrelated answer form.
 **A:** A — the factory owner authorizes one additional fix-and-review round: gate the peer owner link on the exact stale-target check, add the focused peer regression, full suite plus one final panel. Owner proviso: a sixth budget question on this task is answered with a ship-what-passes-and-split plan, not another round (Chris, 2026-09-03).
 
-## Q12 (task T74, open, filed-at 2026-09-04T00:47:35Z) — How should the repeatedly failing question-parser work be split?
+## Q12 (task T74, consumed, filed-at 2026-09-04T00:47:35Z) — How should the repeatedly failing question-parser work be split?
 Context:
 Observable failure: A maintainer adds a future labelled field such as `2FA policy v2:` or `Future_field:`, but the dashboard displays it as part of the final answer option instead of preserving the complete question as raw text. T74's owner-authorized fifth panel found this new blocking case, so the task cannot ship under the factory review rules. Work is parked on branch `factory/t74-question-option-details`.
 Engine detail: The unknown-field detector recognizes labels made from letters, digits, spaces, and hyphens only when they begin with a letter. Expanding that detector safely needs another reviewed change, but the Q10 answer directs a sixth budget question toward a ship-what-passes-and-split plan rather than another T74 panel round.
@@ -154,4 +154,4 @@ Owner: factory-ui product owner and the replacement task's implementation owner.
 Day-to-day consequence: no part ships until the complete replacement passes a fresh review cycle.
 Cost or risk: more reimplementation time, but the replacement starts without T74's accumulated parser assumptions.
 Recommendation rationale: A follows the owner's ship-what-passes-and-split direction while restoring a fresh review budget around the unresolved blocking parser boundary.
-**A:**
+**A:** A — replace T74 with two fresh standard tasks that reuse the parked work Answered by Chris via operator. [factory-answer-intake: bf0bdba7-3f5c-4262-846c-0123a2a0907f]

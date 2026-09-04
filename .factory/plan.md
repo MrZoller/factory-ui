@@ -148,8 +148,9 @@ task.
 - [x] T75 (standard) — Inline backticks bleed through literally — render backtick spans in monospace (textContent-only, no markdown) (Fixes #103)
   - acceptance: In the question queue and per-repository question-panel rendering under `src/public/` and colocated browser tests, recognize balanced inline backtick pairs in question context, option text, elaboration fields, qualifiers, and rejection reasons; render each bounded span as a monospace `<code>` element created with text-only DOM APIs while consuming its delimiters; render unbalanced, nested, over-count, and over-length spans literally; prove multiple spans render correctly and HTML-looking span content such as `<script>` remains inert; leave worklog and task surfaces unchanged; and pass `bun test` plus `bun run lint`.
   - pr: 105
-- [~] T76 (standard) — Answer form renders for a nonexistent question id from stale question=<pr> deep links — submission dies as unknown-question with no feedback (Fixes #93)
+- [R] T76 (standard) — Answer form renders for a nonexistent question id from stale question=<pr> deep links — submission dies as unknown-question with no feedback (Fixes #93)
   - acceptance: In `src/public/app.js`, `src/public/styles.css`, the existing answer-outcome path in `src/server.ts` and `src/answer-intake.ts` only where needed, and colocated browser/API tests, validate a question deep link against the owning repository's exported open-question set before rendering any answer controls; show an inert repository-qualified notice for a missing question, including the legacy PR-link explanation, and never submit an answer for it; preserve and render the durable pending, accepted, and rejected answer lifecycle on later visits, including the engine's bounded rejection reason as literal text, without counting lifecycle-only records as open questions; preserve valid canonical deep links, peer-owner routing, configured answer authentication, idempotency, bounded outcome reads, and text-only hostile-input safety; and pass `bun test` plus `bun run lint`.
+  - pr: 106
 
 ## Risks
 

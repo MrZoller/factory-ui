@@ -1524,12 +1524,18 @@ function renderQuestionBody(parent, question, interactiveOptions) {
         "Recommendation rationale",
         "question-field-label",
       );
+      // Validate the complete field before splitting paragraphs so the inline
+      // code span cap remains a field-level bound, not a per-paragraph bound.
+      const rationaleParts = questionInlineCodeParts(
+        question.recommendationRationale,
+      );
       for (const paragraph of questionParagraphs(
         question.recommendationRationale,
       )) {
         const content = documentRoot.createElement("p");
         content.className = "question-recommendation-rationale";
-        appendQuestionInlineCode(content, paragraph);
+        if (rationaleParts) appendQuestionInlineCode(content, paragraph);
+        else content.append(content.ownerDocument.createTextNode(paragraph));
         body.append(content);
       }
     }

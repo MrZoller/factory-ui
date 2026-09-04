@@ -3161,6 +3161,7 @@ Options considered: Select \`fallback option\`.
               title: "Capped paragraphs",
               text: "source",
               context,
+              recommendationRationale: context,
               options: [{ label: "A", text: "Proceed" }],
             },
           ],
@@ -3174,6 +3175,8 @@ Options considered: Select \`fallback option\`.
     for (const selector of [
       ".questions-panel .question-context",
       ".question-queue-entry .question-context",
+      ".questions-panel .question-recommendation-rationale",
+      ".question-queue-entry .question-recommendation-rationale",
     ]) {
       const fields = document.querySelectorAll<HTMLElement>(selector);
       expect(fields).toHaveLength(2);

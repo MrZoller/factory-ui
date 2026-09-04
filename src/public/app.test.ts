@@ -2086,6 +2086,396 @@ describe("answer lifecycle queue", () => {
     );
   });
 
+  test("shows an inert notice for stale local question links", () => {
+    const emptyQuestions = answerableRepository({
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+    });
+    const cases = [
+      {
+        question: "93",
+        repository: answerableRepository(),
+        hasUnrelated: true,
+      },
+      {
+        question: "Q404",
+        repository: answerableRepository(),
+        hasUnrelated: true,
+      },
+      { question: "Q404", repository: emptyQuestions, hasUnrelated: false },
+    ];
+
+    for (const { question, repository, hasUnrelated } of cases) {
+      const document = dashboardDocument();
+      document.defaultView!.location.hash = new URLSearchParams({
+        machine: "mini",
+        repo: "factory-ui",
+        question,
+      }).toString();
+
+      renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+      const notice = document.querySelector(".stale-question-notice");
+      expect(notice).not.toBeNull();
+      if (notice) {
+        expect(notice.textContent).toContain("factory-ui");
+        expect(notice.textContent).toContain(`question=${question}`);
+        expect(notice.textContent).toContain("old");
+        expect(notice.textContent).toContain("pull request");
+      }
+      expect(document.querySelectorAll(".question-queue-entry")).toHaveLength(
+        hasUnrelated ? 1 : 0,
+      );
+      if (hasUnrelated) {
+        expect(
+          document.querySelector(".question-queue-entry .question-title-text")
+            ?.textContent,
+        ).toContain("factory-ui/Q9");
+        expect(
+          document.querySelectorAll(".question-queue-entry .question-options"),
+        ).toHaveLength(1);
+      }
+      expect(document.querySelector(".answer-form") !== null).toBe(
+        hasUnrelated,
+      );
+      expect(
+        document.querySelector("fieldset.question-options-edit") !== null,
+      ).toBe(hasUnrelated);
+      expect(
+        document.querySelectorAll('input[type="radio"], input[type="password"]')
+          .length > 0,
+      ).toBe(hasUnrelated);
+      expect(
+        Array.from(
+          document.querySelectorAll("button"),
+          (button) => button.textContent,
+        ).includes("Review answer"),
+      ).toBe(hasUnrelated);
+    }
+  });
+
+  test("restores answer controls when a stale link changes to the canonical open question", () => {
+    const document = dashboardDocument();
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=factory-ui&question=9";
+
+    renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
+
+    expect(document.querySelector(".stale-question-notice")).not.toBeNull();
+    expect(document.querySelector(".answer-form")).toBeNull();
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=factory-ui&question=Q9";
+    document.defaultView!.dispatchEvent(
+      new document.defaultView!.Event("hashchange"),
+    );
+
+    expect(document.querySelector(".stale-question-notice")).toBeNull();
+    expect(document.querySelector(".answer-form")).not.toBeNull();
+    expect(
+      document.querySelector("fieldset.question-options-edit"),
+    ).not.toBeNull();
+  });
+
+  test.each([
+    {
+      status: "pending",
+      chip: "pending application",
+      actor: undefined,
+      reason: undefined,
+    },
+    {
+      status: "accepted",
+      chip: "applied/consumed",
+      actor: "Authorized actor",
+      reason: undefined,
+    },
+    {
+      status: "rejected",
+      chip: "rejected",
+      actor: undefined,
+      reason: '<img src=x onerror="globalThis.staleReasonPwned=1"> denied',
+    },
+  ] as const)(
+    "keeps stale legacy Q9 links inert while showing authorized $status lifecycle state",
+    ({ status, chip, actor, reason }) => {
+      const document = dashboardDocument();
+      document.defaultView!.location.hash =
+        "#machine=mini&repo=factory-ui&question=9";
+      document.defaultView!.localStorage.setItem(
+        "factory-ui.answer-lifecycle.v1",
+        JSON.stringify([
+          {
+            version: 1,
+            machine: "mini",
+            repository: "factory-ui",
+            question: "Q9",
+            id: "123e4567-e89b-42d3-a456-426614174000",
+            status,
+            ...(actor === undefined ? {} : { actor }),
+            ...(reason === undefined ? {} : { reason }),
+          },
+        ]),
+      );
+
+      renderFleet(fleet("mini", [], [answerableRepository()]), document, NOW);
+
+      expect(document.querySelector(".stale-question-notice")).not.toBeNull();
+      expect(document.querySelector("#question-queue-count")?.textContent).toBe(
+        "1",
+      );
+      expect(document.querySelector(".answer-status")?.textContent).toBe(chip);
+      if (actor === undefined) {
+        expect(document.querySelector(".answer-attribution")).toBeNull();
+      } else {
+        expect(
+          document.querySelector(".answer-attribution")?.textContent,
+        ).toContain(actor);
+      }
+      expect(document.querySelector(".answer-reason")?.textContent).toBe(
+        reason,
+      );
+      expect(document.querySelector(".answer-form")).toBeNull();
+      expect(document.querySelector(".answer-resume")).toBeNull();
+      expect(
+        document.querySelector("fieldset.question-options-edit"),
+      ).toBeNull();
+      expect(
+        document.querySelectorAll(
+          'input[type="radio"], input[type="password"]',
+        ),
+      ).toHaveLength(0);
+      const buttons = Array.from(
+        document.querySelectorAll("button"),
+        (button) => button.textContent,
+      );
+      expect(buttons).not.toContain("Review answer");
+      expect(buttons).not.toContain("Check submission status");
+      expect(buttons).not.toContain("Resume tracking");
+      if (reason !== undefined) {
+        expect(document.querySelectorAll("img, [onerror]")).toHaveLength(0);
+        expect(
+          (globalThis as Record<string, unknown>).staleReasonPwned,
+        ).toBeUndefined();
+      }
+    },
+  );
+
+  test("does not claim a stale question is missing when its reader is partial or unavailable", () => {
+    for (const questions of [
+      { status: "partial", data: { open: [] }, warnings: [] },
+      { status: "unavailable", warnings: [] },
+    ]) {
+      const document = dashboardDocument();
+      document.defaultView!.location.hash =
+        "#machine=mini&repo=factory-ui&question=Q404";
+      const repository = answerableRepository({ questions });
+
+      renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+      expect(document.querySelector(".stale-question-notice")).toBeNull();
+      expect(document.querySelector(".answer-form")).toBeNull();
+    }
+  });
+
+  test("resolves a canonical peer link on its exact owning machine", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "macbook", origin: "https://macbook.example" };
+    const local = answerableRepository({
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+    });
+    document.defaultView!.location.hash =
+      "#machine=macbook&repo=factory-ui&question=Q9";
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      Promise.resolve(
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [peer], [local]))
+          : jsonResponse(fleet("macbook", [], [answerableRepository()])),
+      ),
+    );
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    const entry = document.querySelector(".question-queue-entry-linked")!;
+    expect(entry.querySelector(".question-title-text")?.textContent).toContain(
+      "macbook/factory-ui/Q9",
+    );
+    expect(entry.querySelector(".stale-question-notice")).toBeNull();
+    expect(entry.querySelector(".answer-form")).toBeNull();
+    expect(
+      entry.querySelector<HTMLAnchorElement>(".answer-owning-dashboard a")
+        ?.href,
+    ).toBe(
+      "https://macbook.example/#machine=macbook&repo=factory-ui&question=Q9",
+    );
+  });
+
+  test("keeps an old numeric peer link from pointing at an unrelated live question", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "macbook", origin: "https://macbook.example" };
+    const local = answerableRepository({
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+    });
+    const unrelatedPeerQuestion = answerableRepository({
+      questions: {
+        status: "available",
+        data: {
+          open: [
+            {
+              id: "Q9",
+              taskId: "T9",
+              title: "Unrelated live question",
+              text: "raw",
+              context: "Context",
+              options: [{ label: "A", text: "Proceed" }],
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+    document.defaultView!.location.hash =
+      "#machine=macbook&repo=factory-ui&question=9";
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      Promise.resolve(
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [peer], [local]))
+          : jsonResponse(fleet("macbook", [], [unrelatedPeerQuestion])),
+      ),
+    );
+
+    await loadFleet(document, fetcher, { now: () => NOW });
+
+    expect(document.querySelector(".stale-question-notice")).not.toBeNull();
+    expect(
+      document.querySelector<HTMLAnchorElement>(".answer-owning-dashboard a"),
+    ).toBeNull();
+  });
+
+  test("keeps a stale canonical deep link inert when its uncertain retry no longer names an open question", async () => {
+    const document = dashboardDocument();
+    const timers = fakeTimers();
+    document.defaultView!.location.hash =
+      "#machine=mini&repo=factory-ui&question=Q404";
+    document.defaultView!.localStorage.setItem(
+      "factory-ui.answer-lifecycle.v1",
+      JSON.stringify([
+        {
+          version: 1,
+          machine: "mini",
+          repository: "factory-ui",
+          question: "Q404",
+          status: "uncertain",
+          payload: { question: "Q404", option: "A", text: "because" },
+          idempotencyKey: "123e4567-e89b-42d3-a456-426614174000",
+        },
+      ]),
+    );
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, _init?: RequestInit) =>
+        String(input) === "/api/fleet"
+          ? jsonResponse(
+              fleet(
+                "mini",
+                [],
+                [
+                  answerableRepository({
+                    questions: {
+                      status: "available",
+                      data: { open: [] },
+                      warnings: [],
+                    },
+                  }),
+                ],
+              ),
+            )
+          : jsonResponse({ error: "unexpected answer request" }, 500),
+    );
+    const controller = startDashboard(
+      document,
+      fetcher,
+      dashboardDependencies(timers, { now: () => NOW }),
+    );
+    await flushPromises();
+
+    expect(
+      document.querySelector(".stale-question-notice")?.textContent,
+    ).toContain("No open question factory-ui/Q404");
+    expect(document.querySelector(".answer-status")?.textContent).toBe(
+      "pending application",
+    );
+    expect(document.querySelector(".answer-error")?.textContent).toBe(
+      "Submission status uncertain; operator verification required",
+    );
+    expect(document.querySelector(".answer-form")).toBeNull();
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+    expect(
+      Array.from(
+        document.querySelectorAll("button"),
+        (button) => button.textContent,
+      ),
+    ).not.toContain("Check submission status");
+    expect(
+      fetcher.mock.calls.filter(
+        ([, init]) => String(init?.method).toUpperCase() === "POST",
+      ),
+    ).toHaveLength(0);
+    controller.cleanup();
+  });
+
+  test("keeps missing-question lifecycle records tracked ahead of stale notices", () => {
+    const hostileReason =
+      '<img src=x onerror="globalThis.rejectedPwned=1"> closed';
+    const cases = [
+      ["pending", "pending application"],
+      ["accepted", "applied/consumed"],
+      ["rejected", "rejected"],
+    ] as const;
+
+    for (const [status, label] of cases) {
+      const document = dashboardDocument();
+      document.defaultView!.location.hash =
+        "#machine=mini&repo=factory-ui&question=Q404";
+      document.defaultView!.localStorage.setItem(
+        "factory-ui.answer-lifecycle.v1",
+        JSON.stringify([
+          {
+            version: 1,
+            machine: "mini",
+            repository: "factory-ui",
+            question: "Q404",
+            id: "123e4567-e89b-42d3-a456-426614174000",
+            status,
+            ...(status === "accepted" ? { actor: "Verified Actor" } : {}),
+            ...(status === "rejected" ? { reason: hostileReason } : {}),
+          },
+        ]),
+      );
+
+      const emptyQuestions = answerableRepository({
+        questions: { status: "available", data: { open: [] }, warnings: [] },
+      });
+      renderFleet(fleet("mini", [], [emptyQuestions]), document, NOW);
+
+      expect(document.querySelector("#question-queue-count")?.textContent).toBe(
+        "0",
+      );
+      expect(
+        document.querySelector("#question-queue-heading")?.textContent,
+      ).toBe("Question queue · 0 open · 1 tracked");
+      expect(document.querySelector(".answer-status")?.textContent).toBe(label);
+      expect(document.querySelector(".stale-question-notice")).toBeNull();
+      expect(document.querySelector(".answer-form")).toBeNull();
+      if (status === "rejected") {
+        expect(document.querySelector(".answer-reason")?.textContent).toBe(
+          hostileReason,
+        );
+        expect(document.querySelectorAll("img, [onerror]")).toHaveLength(0);
+        expect(
+          (globalThis as Record<string, unknown>).rejectedPwned,
+        ).toBeUndefined();
+      }
+    }
+  });
+
   test("keeps an unknown polled outcome pending rather than calling it rejected", async () => {
     const document = dashboardDocument();
     const timers = fakeTimers();

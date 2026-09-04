@@ -217,8 +217,21 @@ function elaborationField(value: string): ElaborationField | undefined {
 function looksLikeUnknownElaborationField(value: string): boolean {
   // A one-letter `A:` line is still a valid legacy option. Longer labelled
   // lines after the choices are a protocol envelope: unknown labels must send
-  // the whole question through the lossless raw fallback.
-  return /^[A-Za-z][A-Za-z -]+:\s*/.test(value);
+  // the whole question through the lossless raw fallback. Keep this narrower
+  // than a generic "text before a colon" heuristic because option prose may
+  // contain colons, while allowing identifier-like future labels to begin
+  // with letters, digits, or punctuation and to carry version suffixes.
+  return /^(?![A-Z]:)(?=[^:\n]{1,80}:)[^\s:][^:\n]*:\s*/.test(value);
+}
+
+function containsLabelledOptionStart(value: string): boolean {
+  // Unlike parseOptions' rendering grammar, this boundary detector must not
+  // treat an identifier-like future field such as `X-field:` as option X.
+  // A hyphenated option separator is therefore recognized only when spaces
+  // delimit it, while em-dash and colon forms retain their legacy handling.
+  return /(?:^|\s+\/\s+|\s*;\s+)[A-Z](?:\s*(?:—|:)|\s+-\s+|\s*(?:\/|$))/.test(
+    value,
+  );
 }
 
 function parseOptionElaborations(
@@ -348,8 +361,16 @@ export function parseQuestionDetails(text: string): ParsedQuestionDetails {
   // Unknown protocol fields require the lossless raw fallback even when no
   // recognized elaboration field follows them. Otherwise parseOptions treats
   // a trailing labelled line as hard-wrapped text for the final option.
-  const unknownEnvelopeField = lines
-    .slice(optionsIndex + 1, detailsEnd)
+  const possibleEnvelopeLines = lines.slice(optionsIndex + 1, detailsEnd);
+  // A hard-wrapped option may itself begin with label-shaped prose. It is
+  // still option text when a later line (or a later fragment on this line)
+  // starts another choice. Only inspect lines after that final option start;
+  // protocol envelope fields follow the complete choice list.
+  const lastContinuedOptionLine = possibleEnvelopeLines.findLastIndex((line) =>
+    containsLabelledOptionStart(line.value),
+  );
+  const unknownEnvelopeField = possibleEnvelopeLines
+    .slice(lastContinuedOptionLine + 1)
     .some(
       (line) =>
         elaborationField(line.value) === undefined &&

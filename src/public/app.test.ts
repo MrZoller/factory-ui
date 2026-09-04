@@ -756,12 +756,14 @@ describe("answer lifecycle queue", () => {
     expect((globalThis as Record<string, unknown>).detailPwned).toBeUndefined();
   });
 
-  test("retains unrecognized question trailing lines in the readable raw fallback", () => {
+  test("retains a future unknown field literally and inertly in raw fallbacks", () => {
     const document = dashboardDocument();
+    const futureField =
+      'Future_field: <img src=x onerror="globalThis.futureFieldPwned=1">';
     const raw = `## Q9 (task T8, open) — Keep unknown text
 Context: Context
 Options considered: A — Proceed
-Unrecognized envelope field: retain this exactly
+${futureField}
 **A:**`;
     renderFleet(
       fleet(
@@ -792,11 +794,22 @@ Unrecognized envelope field: retain this exactly
 
     const entry = document.querySelector(".question-queue-entry")!;
     expect(entry.querySelector(".question-body")?.textContent).toContain(
-      "Unrecognized envelope field: retain this exactly",
+      futureField,
     );
     expect(entry.querySelector(".question-body")?.textContent).not.toContain(
       "**A:**",
     );
+    expect(
+      document.querySelector(".questions-panel .question-body")?.textContent,
+    ).toContain(futureField);
+    expect(
+      document.querySelectorAll(
+        ".question-queue-entry img, .questions-panel img, [onerror]",
+      ),
+    ).toHaveLength(0);
+    expect(
+      (globalThis as Record<string, unknown>).futureFieldPwned,
+    ).toBeUndefined();
   });
 
   test("qualifies duplicate-repository question identities", async () => {

@@ -394,6 +394,117 @@ Future protocol field: retain this exactly
         }
       });
 
+      test.each([
+        {
+          label: "Future field v2:",
+          envelope: "Future field v2: retain this exactly",
+        },
+        {
+          label: "2FA policy v2:",
+          envelope:
+            "Option A: Use the current implementation path.\n2FA policy v2: retain this exactly",
+        },
+        {
+          label: "Future_field:",
+          envelope:
+            "Option A: Use the current implementation path.\nOwner: implementation owner.\nFuture_field: retain this exactly",
+        },
+        {
+          label: "@future-field:",
+          envelope: "@future-field: retain this exactly",
+        },
+        {
+          label: "[Future field]:",
+          envelope: "[Future field]: retain this exactly",
+        },
+        {
+          label: "@:",
+          envelope: "@: retain this exactly",
+        },
+        {
+          label: "2:",
+          envelope: "2: retain this exactly",
+        },
+        {
+          label: "Future_field: without separating whitespace",
+          envelope: "Future_field:retain this exactly",
+        },
+        {
+          label: "X-field:",
+          envelope: "X-field: retain this exactly",
+        },
+      ])(
+        "keeps standalone unknown label $label anywhere in the raw fallback",
+        ({ envelope }) => {
+          const question = `## Q10 (task T10, open) — Preserve future grammar
+Context: The reader must preserve unknown protocol fields.
+Options considered: A — Proceed / B — Wait
+${envelope}
+**A:**`;
+          const result = parseFactoryQuestions(question);
+
+          expect(result).toMatchObject({ status: "available", warnings: [] });
+          if (result.status === "available") {
+            expect(result.data.open[0]?.options).toBeUndefined();
+            expect(result.data.open[0]?.proseOptions).toBeUndefined();
+            expect(result.data.open[0]?.text).toBe(question);
+          }
+        },
+      );
+
+      test("keeps ordinary hard-wrapped option prose structured without a standalone label", () => {
+        const result =
+          parseFactoryQuestions(`## Q11 (task T11, open) — Preserve wrapped prose
+Context: The reader must preserve ordinary option continuations.
+Options considered: A — Proceed with the staged rollout while the team
+tracks the Future field v2 migration / B — Wait for the next window
+**A:**`);
+
+        expect(result).toMatchObject({ status: "available", warnings: [] });
+        if (result.status === "available") {
+          expect(result.data.open[0]?.options).toEqual([
+            {
+              label: "A",
+              text: "Proceed with the staged rollout while the team tracks the Future field v2 migration",
+            },
+            { label: "B", text: "Wait for the next window" },
+          ]);
+          expect(result.data.open[0]?.proseOptions).toBeUndefined();
+        }
+      });
+
+      test.each([
+        {
+          options: `Options considered: A — Follow the published
+2FA policy v2: require step-up verification / B — Wait`,
+          expected:
+            "Follow the published 2FA policy v2: require step-up verification",
+        },
+        {
+          options: `Options considered: A — Follow the published
+Note: track the migration
+B — Wait`,
+          expected: "Follow the published Note: track the migration",
+        },
+      ])(
+        "keeps colon-bearing hard-wrapped option prose structured",
+        ({ options, expected }) => {
+          const result =
+            parseFactoryQuestions(`## Q12 (task T12, open) — Preserve colon prose
+Context: The reader must preserve ordinary option continuations.
+${options}
+**A:**`);
+
+          expect(result).toMatchObject({ status: "available", warnings: [] });
+          if (result.status === "available") {
+            expect(result.data.open[0]?.options).toEqual([
+              { label: "A", text: expected },
+              { label: "B", text: "Wait" },
+            ]);
+          }
+        },
+      );
+
       test("excludes answered questions from open array", () => {
         const questions = `## Q1 (task T1, open) — Open question?
 Context: Context

@@ -239,10 +239,15 @@ function looksLikeInterleavedEnvelopeField(value: string): boolean {
   if (label === undefined || /^[A-Z]$/.test(label)) return false;
   // Before the final option, an ordinary `Note:`-style continuation is
   // ambiguous and must remain prose. A multiword label, identifier
-  // punctuation, or a non-letter initial is an explicit protocol-field signal,
-  // including `Future field v2:`, `Future_field:`, and `X-field:`, without
-  // broadening this into a generic colon heuristic.
-  return /[^\p{L}\p{N}]/u.test(label) || /^[^\p{L}]/u.test(label);
+  // punctuation, a numeric suffix, or a non-letter initial is an explicit
+  // protocol-field signal, including `Future field v2:`, `Future2:`,
+  // `Future_field:`, and `X-field:`, without broadening this into a generic
+  // colon heuristic.
+  return (
+    /[^\p{L}\p{N}]/u.test(label) ||
+    /\p{L}\p{N}/u.test(label) ||
+    /^[^\p{L}]/u.test(label)
+  );
 }
 
 function parseOptionElaborations(

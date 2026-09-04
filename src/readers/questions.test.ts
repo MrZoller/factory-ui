@@ -544,13 +544,29 @@ B- Wait
 Context: The reader must retain unknown protocol fields.
 Options considered: A — Continue
 Future field v2: retain this exactly
-B- Wait
+B — Wait
 **A:**`;
         const fallback = parseFactoryQuestions(future);
         expect(fallback).toMatchObject({ status: "available", warnings: [] });
         if (fallback.status === "available") {
           expect(fallback.data.open[0]?.options).toBeUndefined();
           expect(fallback.data.open[0]?.text).toBe(future);
+        }
+
+        const suffixed = `## Q15 (task T15, open) — Interleaved suffixed field
+Context: The reader must retain unknown protocol fields.
+Options considered: A — Continue
+Future2: retain this exactly
+B — Wait
+**A:**`;
+        const suffixedFallback = parseFactoryQuestions(suffixed);
+        expect(suffixedFallback).toMatchObject({
+          status: "available",
+          warnings: [],
+        });
+        if (suffixedFallback.status === "available") {
+          expect(suffixedFallback.data.open[0]?.options).toBeUndefined();
+          expect(suffixedFallback.data.open[0]?.text).toBe(suffixed);
         }
 
         const prose =

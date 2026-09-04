@@ -429,6 +429,10 @@ Future protocol field: retain this exactly
           label: "Future_field: without separating whitespace",
           envelope: "Future_field:retain this exactly",
         },
+        {
+          label: "X-field:",
+          envelope: "X-field: retain this exactly",
+        },
       ])(
         "keeps standalone unknown label $label anywhere in the raw fallback",
         ({ envelope }) => {

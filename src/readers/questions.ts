@@ -225,7 +225,13 @@ function looksLikeUnknownElaborationField(value: string): boolean {
 }
 
 function containsLabelledOptionStart(value: string): boolean {
-  return /(?:^|\s+\/\s+|\s*;\s+)[A-Z](?:\s*(?:—|-|:)|\s*(?:\/|$))/.test(value);
+  // Unlike parseOptions' rendering grammar, this boundary detector must not
+  // treat an identifier-like future field such as `X-field:` as option X.
+  // A hyphenated option separator is therefore recognized only when spaces
+  // delimit it, while em-dash and colon forms retain their legacy handling.
+  return /(?:^|\s+\/\s+|\s*;\s+)[A-Z](?:\s*(?:—|:)|\s+-\s+|\s*(?:\/|$))/.test(
+    value,
+  );
 }
 
 function parseOptionElaborations(

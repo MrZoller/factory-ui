@@ -155,3 +155,19 @@ Day-to-day consequence: no part ships until the complete replacement passes a fr
 Cost or risk: more reimplementation time, but the replacement starts without T74's accumulated parser assumptions.
 Recommendation rationale: A follows the owner's ship-what-passes-and-split direction while restoring a fresh review budget around the unresolved blocking parser boundary.
 **A:** A — replace T74 with two fresh standard tasks that reuse the parked work Answered by Chris via operator. [factory-answer-intake: bf0bdba7-3f5c-4262-846c-0123a2a0907f]
+
+## Q13 (task T71, open, filed-at 2026-09-04T04:18:41Z) — Should T71 receive another fix-and-review round for interleaved future fields?
+Context:
+Observable failure: A maintainer places a future field such as `Future field v2:` between two answer options, but the dashboard appends that field to the first option and presents it as selectable answer text. The required initial panel and one re-panel each found a blocking defect, so work is parked on branch `factory/t71-parked-review-minors` before another unapproved round.
+Engine detail: The interleaved-field guard recognizes punctuation-bearing labels but deliberately leaves ordinary `Note:` prose alone; it does not yet distinguish a multiword alphanumeric future-field label from that prose.
+Options considered: A — authorize one additional bounded fix-and-review round for multiword alphanumeric future fields (recommended) / B — abandon T71's interleaved-field change and replan that review minor separately
+Option A: The T71 implementation owner recognizes the documented `Future field v2:` class without treating ordinary `Note:` continuations as protocol fields, adds a paired regression, and runs the complete suite plus one final panel.
+Owner: T71 implementation owner.
+Day-to-day consequence: future fields remain lossless while ordinary colon-bearing option prose stays structured.
+Cost or risk: one exception to the normal two-panel-round convergence budget and another implementation/review pass.
+Option B: The dashboard product owner removes the incomplete interleaved-field change from T71 and creates a fresh standard task for a redesigned discriminator.
+Owner: dashboard product owner.
+Day-to-day consequence: the other four parked minors can ship, but interleaved alphanumeric fields remain raw-parser debt until replacement work lands.
+Cost or risk: another PR and delayed completion of the PR #108 review minor.
+Recommendation rationale: A is a bounded correction for the exact documented field class and preserves the existing conservative treatment of ambiguous prose.
+**A:**

@@ -2509,6 +2509,76 @@ ${futureField}
     );
   });
 
+  test.each([
+    ["local", "mini"],
+    ["peer", "macbook"],
+  ] as const)(
+    "defers a $0 question landing until peer fan-out completes",
+    async (_kind, targetMachine) => {
+      const document = dashboardDocument();
+      const window = document.defaultView!;
+      const peers = [
+        { name: "macbook", origin: "https://macbook.example" },
+        { name: "legion", origin: "https://legion.example" },
+      ];
+      const resolvePeer: Record<string, (response: Response) => void> = {};
+      const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+        if (String(input) === "/api/fleet") {
+          return Promise.resolve(
+            jsonResponse(fleet("mini", peers, [answerableRepository()])),
+          );
+        }
+        return new Promise((resolve) => {
+          resolvePeer[
+            String(input).includes("macbook") ? "macbook" : "legion"
+          ] = resolve;
+        });
+      });
+
+      const loading = loadFleet(document, fetcher, { now: () => NOW });
+      await flushPromises();
+      const landing = `#machine=${targetMachine}&repo=factory-ui&question=Q9`;
+      window.location.hash = landing;
+      window.dispatchEvent(new window.Event("hashchange"));
+      if (targetMachine === "macbook") {
+        resolvePeer.macbook?.(
+          jsonResponse(fleet("macbook", [], [answerableRepository()])),
+        );
+        await flushPromises();
+      }
+      try {
+        expect(window.location.hash).toBe(landing);
+      } finally {
+        resolvePeer.macbook?.(
+          jsonResponse(fleet("macbook", [], [answerableRepository()])),
+        );
+        resolvePeer.legion?.(
+          jsonResponse(fleet("legion", [], [richRepository()])),
+        );
+        await loading;
+      }
+
+      expect(window.location.hash).toBe(
+        `#machine=${targetMachine}&repo=factory-ui`,
+      );
+      const linked = document.querySelector(".question-queue-entry-linked");
+      expect(
+        linked?.querySelector(".question-location")?.textContent,
+      ).toContain(targetMachine);
+      const target = linked?.querySelector(
+        '[data-question-landing-focus="true"]',
+      );
+      if (targetMachine === "mini") {
+        expect(target != null).toBe(true);
+        expect(document.activeElement === target).toBe(true);
+        expect(target?.isConnected).toBe(true);
+      } else {
+        expect(target).toBeNull();
+        expect(document.activeElement === document.body).toBe(true);
+      }
+    },
+  );
+
   test.each(["9", "Q404"])(
     "consumes stale or phantom question=%s links without focusing an answer control",
     (question) => {

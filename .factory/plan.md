@@ -401,7 +401,7 @@ task.
   - PR #71: correct the README trust-boundary summary to disclose uncertain-state retention of confirmed payloads and idempotency keys while preserving the no-secret guarantee.
   - pr: 72
 
-- [ ] T80 (trivial) — parked review minors (batch)
+- [~] T80 (trivial) — parked review minors (batch)
   - PR #110: Preserve question-landing focus and highlight when a hash change occurs during active peer fan-out.
   - deps: none
   - released 2026-09-05 at Chris's request in the operator session (human-asking drain trigger, 1 item)

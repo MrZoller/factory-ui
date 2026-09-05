@@ -52,6 +52,7 @@ const disclosureStates = new WeakMap();
 const answerStores = new WeakMap();
 const answerRuntimes = new WeakMap();
 const questionLandings = new WeakMap();
+const deferredQuestionLandings = new WeakSet();
 
 function receiverSafeFetcher(fetcher) {
   return (input, init) =>
@@ -3899,6 +3900,8 @@ function consumeQuestionLanding(documentRoot, landing) {
 }
 
 function completeQuestionLanding(documentRoot, views) {
+  // Hash changes must not consume the target before peer renders replace it.
+  if (deferredQuestionLandings.has(views)) return false;
   const landing = questionLanding(documentRoot);
   if (!landing) return false;
   const card = documentRoot.querySelector(".question-queue-entry-linked");
@@ -5647,6 +5650,7 @@ export function renderFleet(
       item.origin,
     ),
   );
+  if (deferQuestionLanding) deferredQuestionLandings.add(views);
   views.forEach((view, index) => {
     updateMachineView(
       view,
@@ -5845,6 +5849,7 @@ export async function loadFleet(
       generation,
     );
     if (loadGenerations.get(documentRoot) !== generation) return false;
+    deferredQuestionLandings.delete(views);
     completeQuestionLanding(documentRoot, views);
     state.peerTimedOut = peerTimedOut;
     updateSnapshotStatus(documentRoot, state, dependencies.now());

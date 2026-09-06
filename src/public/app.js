@@ -5229,7 +5229,8 @@ function renderQuestionQueue(documentRoot, views, now = new Date()) {
 function graphTaskState(task, repository) {
   const state = readerData(repository.state);
   if (task.status === "completed") return "done";
-  if (task.status === "blocked") return "question-blocked";
+  if (task.status === "blocked")
+    return graphQuestion(repository, task.id) ? "question-blocked" : "blocked";
   if (task.status === "active") return "building";
   if (task.status === "review" && state?.hold && state.currentTask === task.id)
     return "held";
@@ -5287,6 +5288,7 @@ const GRAPH_STATE_LABELS = {
   building: "Building",
   review: "Review",
   "question-blocked": "Question blocked",
+  blocked: "Blocked",
   held: "Review",
   done: "Done",
 };

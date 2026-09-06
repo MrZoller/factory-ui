@@ -9369,6 +9369,41 @@ describe("fleet dependency graph", () => {
     expect((globalThis as Record<string, unknown>).graphPwned).toBeUndefined();
   });
 
+  test("labels a blocked task without an open question as Blocked, not question-blocked", () => {
+    const document = dashboardDocument();
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          graphRepository({
+            questions: {
+              status: "available",
+              data: { open: [] },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const graph = document.querySelector("#dependency-graph");
+    expect(
+      graph?.querySelectorAll(".dependency-state-question-blocked"),
+    ).toHaveLength(0);
+    expect(
+      graph?.querySelectorAll(".dependency-state-blocked"),
+    ).not.toHaveLength(0);
+    const chip = graph?.querySelector(
+      ".dependency-state-chip.dependency-state-blocked",
+    );
+    expect(chip?.textContent).toBe("Blocked");
+    expect(graph?.textContent).not.toContain("Question blocked");
+    expect(graph?.querySelector(".dependency-state-blocked a")).toBeNull();
+  });
+
   test("excludes dependency-free todos and renders completed local prerequisites as satisfied", () => {
     const document = dashboardDocument();
     const done = graphTask("T1", "completed", { runnable: false });

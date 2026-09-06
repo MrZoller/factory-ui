@@ -592,6 +592,11 @@ p {
   color: var(--color-danger);
 }
 
+.dependency-state-blocked {
+  border-left-color: var(--color-warn);
+  color: var(--color-warn);
+}
+
 .dependency-all-done {
   margin-top: var(--space-3);
   color: var(--color-good);

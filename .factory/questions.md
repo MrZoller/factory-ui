@@ -171,3 +171,16 @@ Day-to-day consequence: the other four parked minors can ship, but interleaved a
 Cost or risk: another PR and delayed completion of the PR #108 review minor.
 Recommendation rationale: A is a bounded correction for the exact documented field class and preserves the existing conservative treatment of ambiguous prose.
 **A:** A — authorize one additional bounded fix-and-review round: recognize the multiword alphanumeric future-field class (`Future field v2:`) without reclassifying ordinary `Note:` continuations, paired regression, complete suite plus one final panel. Factory recommendation and operator assessment agree (distinct bounded defect, T71 round 3, no scope growth); answered by the operator session under the agreed-recommendation delegation and the 2026-09-03 panel-round delegation (operator, 2026-09-04).
+
+## Q14 (task T82, open, filed-at 2026-09-09T12:11:59Z) — May block-card work proceed without the external engine contract?
+Context: Observable failure: A maintainer sees a blocked task but cannot read why it is waiting or release an owner-controlled hold. Issue #115 requests explanatory cards and a Release action, but the engine contract needed for structured records and release delivery is still open.
+Engine detail: T82 depends on MrZoller/opencode-factory#147, linked from #115’s first comment and directly verified OPEN on 2026-09-09. This repository cannot import that external issue by widening its label filter. The existing answer helper accepts question answers, not block releases; qualified deps are non-gating metadata, so T82 is blocked here. Legacy-card work may land first under the issue, but it does not satisfy the full acceptance.
+Options considered: A — proceed without the external prerequisite, starting with legacy block visibility while retaining the full issue acceptance
+Option A: Remove MrZoller/opencode-factory#147 from T82’s deps and permit legacy-first work; retain all structured-card and release-action acceptance, do not invent an engine contract, and stop if the missing contract prevents safe completion.
+Owner: factory-ui implementation owner, with the product owner authorizing work before the external contract is ready.
+Day-to-day consequence: explanatory legacy cards can be developed now, but the full issue remains unfinished until structured records and supported release delivery are implemented.
+Cost or risk: early work may need revision when the engine contract lands, and the task may block again before full delivery.
+Recommendation rationale: No recommendation — the issue permits legacy-first delivery, but only the owner can decide whether early visibility is worth contract rework.
+Leaving this unanswered keeps T82 waiting. Confirmation that the external prerequisite is completed must be verified before removing this blocker; widening this repository’s filter cannot fetch another repository’s issue.
+On applying A, consume this question and remove the qualified deps entry; restore T82 only when no open or answered-unconsumed question remains. Plan approval is still required.
+**A:**

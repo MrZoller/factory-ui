@@ -166,7 +166,21 @@ task.
   - acceptance: In `src/public/styles.css` and browser-focused tests, contain the repository summary's intentional `min-width` within its own horizontal scroll wrapper by resetting the automatic minimum width along the repository grid/flex item chain and auditing the nowrap warning-code surface; with representative live fleet data at a 390×844 viewport, prove `document.scrollingElement.scrollWidth === window.innerWidth` on initial load and repeated refresh while fleet-summary, repository-summary, and task tables still scroll horizontally inside their own wrappers; preserve desktop layouts and pass `bun test` plus `bun run lint`.
   - pr: 112
 
+- [!] T82 (standard) — dashboard: render non-question blocked tasks as cards with reason, owner, release trigger, and action (Fixes #115)
+  - acceptance: In `src/readers/plan.ts`, `src/contracts.ts`, `src/snapshot.ts`, the dashboard card and dependency-graph surfaces in `src/public/app.js` and `src/public/styles.css`, the existing server/answer-intake boundary where supported by the engine contract, and colocated tests, render explanatory cards for explicit non-question blocked tasks and dependency-waiting todo tasks without changing their persisted status or treating all non-runnable completed/active/review tasks as blocked; expose bounded block records from MrZoller/opencode-factory#147 with a plain-language waiting story, owner and kind, release trigger and authoritatively checkable live state, consequence, and valid filed-at/filed-by attribution; flag a verified fired trigger without presenting unknown state as fired; show legacy `blocked:` text or a missing reason as a flagged unstructured block; provide Release only for owner-Chris tap-releasable holds through the supported engine-owned intake contract and durable lifecycle, never direct plan/question edits or fabricated question answers, while dependency/engine triggers remain read-only; preserve owning-dashboard peer routing, configured authentication and actor attribution, idempotency, bounded parsing, honest unavailable states, non-gating cross-repo metadata, text-only rendering, and responsive layout; cover structured, legacy, missing-reason, dependency-waiting, trigger-state, release-lifecycle, local/peer, and hostile-input cases, update trust/read-surface documentation as needed, and pass `bun test` plus `bun run lint`. Legacy cards may land first as the issue permits, but do not satisfy or close the full issue by themselves.
+  - deps: MrZoller/opencode-factory#147
+
+## Open questions
+
+- Q14 / T82: the external block-record and release contract is still open. Leave T82 blocked until the prerequisite is confirmed complete, or authorize proceeding without it in Q14; plan approval alone does not resolve this blocker.
+
+## Out of scope
+
+- This sync does not implement issue #115, import or modify the external engine issue, invent a release-intake contract, widen the recorded `factory` filter, or rewrite historical tasks. Legacy-only delivery does not replace the issue's full acceptance.
+
 ## Risks
+
+- T82 is standard by issue labels, but release delivery touches the existing write/authentication boundary. If the engine contract requires a new security boundary or materially exceeds a reviewable task, stop for reclassification or decomposition rather than inventing a protocol. No live GitHub polling surface is implicitly authorized by the request to show checkable trigger state.
 
 - T2 is a security boundary. If deployment requires wildcard/public binding,
   hostname binding, following a repository-controlled symlink outside its

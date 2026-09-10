@@ -9647,6 +9647,58 @@ describe("fleet dependency graph", () => {
     );
   });
 
+  test("keeps a peer reachable when a legacy task has malformed dependencies", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "peer", origin: "https://peer.example" };
+    const hostileDependency = { toString: null, valueOf: null };
+    const remote = graphRepository({
+      name: "remote",
+      plan: {
+        status: "available",
+        data: {
+          tasks: [
+            graphTask("T23", "blocked", {
+              title: "Malformed dependencies",
+              dependencies: ["T1", hostileDependency],
+              localDependencies: [hostileDependency],
+              runnable: false,
+            }),
+          ],
+          active: [],
+          review: [],
+          nextRunnable: [],
+          completed: [],
+          blocked: [],
+          remaining: [],
+        },
+        warnings: [],
+      },
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+    });
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      Promise.resolve(
+        String(input) === "/api/fleet"
+          ? jsonResponse(
+              fleet("mini", [peer], [graphRepository({ name: "local" })]),
+            )
+          : jsonResponse(fleet("peer", [], [remote])),
+      ),
+    );
+
+    await expect(
+      loadFleet(document, fetcher, { now: () => NOW }),
+    ).resolves.toBe(true);
+
+    expect(document.querySelector(".machine-unavailable")).toBeNull();
+    const peerCard = Array.from(
+      document.querySelectorAll<HTMLElement>(".task-block-card"),
+    ).find((card) =>
+      card.textContent?.includes("T23 · Malformed dependencies"),
+    );
+    expect(peerCard?.textContent).toContain("T1");
+    expect(peerCard?.textContent).not.toContain("[object Object]");
+  });
+
   test("excludes dependency-free todos and renders completed local prerequisites as satisfied", () => {
     const document = dashboardDocument();
     const done = graphTask("T1", "completed", { runnable: false });

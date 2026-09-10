@@ -1605,11 +1605,20 @@ function appendQuestionTitle(parent, tagName, text, identity, href, className) {
 // through our local plan reader. Never turn an oversized reason into silence.
 const MAX_BLOCKED_REASON_LENGTH = 4096;
 
+function taskDependencyStrings(dependencies) {
+  return Array.isArray(dependencies)
+    ? dependencies.filter((dependency) => typeof dependency === "string")
+    : [];
+}
+
 function taskBlockExplanation(task, repository) {
   if (!task || !["blocked", "todo"].includes(task.status)) return undefined;
   const tasks = readerData(repository.plan)?.tasks ?? [];
-  const local = task.localDependencies ?? task.dependencies;
-  const waiting = (Array.isArray(local) ? local : []).filter((id) => {
+  const local = taskDependencyStrings(
+    task.localDependencies ?? task.dependencies,
+  );
+  const dependencies = taskDependencyStrings(task.dependencies);
+  const waiting = local.filter((id) => {
     if (!/^T[1-9][0-9]*$/.test(id) || id === task.id) return false;
     const matches = tasks.filter((candidate) => candidate?.id === id);
     return (
@@ -1633,7 +1642,7 @@ function taskBlockExplanation(task, repository) {
             ? "Unstructured block — no legacy reason recorded"
             : undefined,
     dependencies: Array.isArray(task.dependencies)
-      ? task.dependencies.join(", ") || "None"
+      ? dependencies.join(", ") || "None"
       : "Unavailable",
     waiting: [...new Set(waiting)],
   };
@@ -5339,13 +5348,18 @@ function validGraphTask(task) {
     typeof task.runnable === "boolean" &&
     Array.isArray(local) &&
     local.length <= MAX_TASK_DEPENDENCIES &&
-    local.every((dependency) => /^T[1-9][0-9]*$/.test(dependency)) &&
+    local.every(
+      (dependency) =>
+        typeof dependency === "string" && /^T[1-9][0-9]*$/.test(dependency),
+    ) &&
     Array.isArray(cross) &&
     cross.length <= MAX_TASK_DEPENDENCIES &&
-    cross.every((dependency) =>
-      /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.{1,2}#)[A-Za-z0-9._-]+#[1-9][0-9]*$/.test(
-        dependency,
-      ),
+    cross.every(
+      (dependency) =>
+        typeof dependency === "string" &&
+        /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.{1,2}#)[A-Za-z0-9._-]+#[1-9][0-9]*$/.test(
+          dependency,
+        ),
     )
   );
 }

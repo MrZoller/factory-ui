@@ -9404,6 +9404,171 @@ describe("fleet dependency graph", () => {
     expect(graph?.querySelector(".dependency-state-blocked a")).toBeNull();
   });
 
+  test("renders explicit and uniquely resolved local blocks in repository cards and graph without release controls", () => {
+    const document = dashboardDocument();
+    const blocked = graphTask("T1", "blocked", {
+      title: 'Explicit <img src=x onerror="globalThis.blockPwned=1">',
+      blockedReason:
+        'Waiting for <img src=x onerror="globalThis.reasonPwned=1">',
+      dependencies: [],
+      runnable: false,
+    });
+    const dependency = graphTask("T2", "active", { runnable: false });
+    const waiting = graphTask("T3", "todo", {
+      localDependencies: ["T2"],
+      dependencies: ["T2", "acme/remote#17"],
+      runnable: false,
+    });
+    const unstructured = graphTask("T4", "blocked", {
+      dependencies: null,
+      runnable: false,
+    });
+    const self = graphTask("T5", "todo", {
+      localDependencies: ["T5"],
+      dependencies: ["T5"],
+      runnable: false,
+    });
+    const unknown = graphTask("T6", "todo", {
+      localDependencies: ["T99"],
+      dependencies: ["T99"],
+      runnable: false,
+    });
+    const ambiguous = graphTask("T7", "todo", {
+      localDependencies: ["T8"],
+      dependencies: ["T8"],
+      runnable: false,
+    });
+    const duplicateOne = graphTask("T8", "active", { runnable: false });
+    const duplicateTwo = graphTask("T8", "review", { runnable: false });
+    const crossOnly = graphTask("T9", "todo", {
+      localDependencies: [],
+      crossRepoDependencies: ["acme/remote#17"],
+      dependencies: ["acme/remote#17"],
+      runnable: false,
+    });
+    const repository = graphRepository({
+      plan: {
+        status: "available",
+        data: {
+          tasks: [
+            blocked,
+            dependency,
+            waiting,
+            unstructured,
+            self,
+            unknown,
+            ambiguous,
+            duplicateOne,
+            duplicateTwo,
+            crossOnly,
+          ],
+          active: [dependency, duplicateOne],
+          review: [duplicateTwo],
+          nextRunnable: [],
+          completed: [],
+          blocked: [blocked, unstructured],
+          remaining: [waiting, self, unknown, ambiguous, crossOnly],
+        },
+        warnings: [],
+      },
+      questions: {
+        status: "available",
+        data: {
+          open: [{ id: "Q1", taskId: "T1", title: "Decision", text: "Text" }],
+        },
+        warnings: [],
+      },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    const cards = document.querySelectorAll<HTMLElement>(".task-block-card");
+    expect(cards).toHaveLength(3);
+    expect(cards[0]?.textContent).toContain("Question blocked");
+    expect(cards[0]?.textContent).toContain("Waiting for <img");
+    expect(cards[0]?.textContent).toContain("None");
+    expect(cards[1]?.textContent).toContain(
+      "Waiting on incomplete local dependencies: T2.",
+    );
+    expect(cards[1]?.textContent).toContain("T2, acme/remote#17");
+    expect(cards[2]?.textContent).toContain(
+      "Unstructured block — no legacy reason recorded",
+    );
+    expect(cards[2]?.textContent).toContain("Unavailable");
+    expect(
+      document.querySelectorAll(".task-block-card img, [onerror]"),
+    ).toHaveLength(0);
+    expect((globalThis as Record<string, unknown>).blockPwned).toBeUndefined();
+    expect((globalThis as Record<string, unknown>).reasonPwned).toBeUndefined();
+    expect(document.body.textContent).not.toContain("Release");
+
+    const graphExplanations = document.querySelectorAll(
+      "#dependency-graph .block-explanation",
+    );
+    expect(graphExplanations).toHaveLength(3);
+    expect(graphExplanations[0]?.textContent).toContain("Waiting for <img");
+    expect(graphExplanations[1]?.textContent).toContain(
+      "Waiting on incomplete local dependencies: T2.",
+    );
+  });
+
+  test("keeps task-block cards and graph explanations with their peer owner", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "peer", origin: "https://peer.example" };
+    const local = graphRepository({ name: "local" });
+    const remote = graphRepository({
+      name: "remote",
+      plan: {
+        status: "available",
+        data: {
+          tasks: [
+            graphTask("T20", "blocked", {
+              title: "Peer block",
+              blockedReason: "Only the peer owner can resolve this",
+              dependencies: [],
+              runnable: false,
+            }),
+          ],
+          active: [],
+          review: [],
+          nextRunnable: [],
+          completed: [],
+          blocked: [],
+          remaining: [],
+        },
+        warnings: [],
+      },
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+    });
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      Promise.resolve(
+        String(input) === "/api/fleet"
+          ? jsonResponse(fleet("mini", [peer], [local]))
+          : jsonResponse(fleet("peer", [], [remote])),
+      ),
+    );
+
+    await expect(
+      loadFleet(document, fetcher, { now: () => NOW }),
+    ).resolves.toBe(true);
+
+    const peerCard = Array.from(
+      document.querySelectorAll<HTMLElement>(".task-block-card"),
+    ).find((card) => card.textContent?.includes("T20 · Peer block"));
+    expect(peerCard?.textContent).toContain(
+      "Only the peer owner can resolve this",
+    );
+    const peerGraph = Array.from(
+      document.querySelectorAll<HTMLElement>(".dependency-repository"),
+    ).find(
+      (repository) =>
+        repository.querySelector(".dependency-machine")?.textContent === "peer",
+    );
+    expect(peerGraph?.textContent).toContain(
+      "Only the peer owner can resolve this",
+    );
+  });
+
   test("excludes dependency-free todos and renders completed local prerequisites as satisfied", () => {
     const document = dashboardDocument();
     const done = graphTask("T1", "completed", { runnable: false });

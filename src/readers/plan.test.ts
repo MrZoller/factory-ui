@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import {
   MAX_PLAN_BYTES,
+  MAX_BLOCKED_REASON_LENGTH,
   MAX_PLAN_LINES,
   MAX_PLAN_LINE_LENGTH,
   MAX_PLAN_TASKS,
@@ -40,6 +41,10 @@ describe("plan", () => {
 
     test("MAX_PLAN_WARNINGS is 32", () => {
       expect(MAX_PLAN_WARNINGS).toBe(32);
+    });
+
+    test("MAX_BLOCKED_REASON_LENGTH is 4096", () => {
+      expect(MAX_BLOCKED_REASON_LENGTH).toBe(4096);
     });
   });
 
@@ -96,6 +101,82 @@ describe("plan", () => {
     });
 
     describe("task parsing - valid tasks", () => {
+      test("parses one exact two-space inline blocked reason without changing status", () => {
+        const result = parseFactoryPlan(`- [!] T1 (standard) — Waiting
+  - blocked:  Engine deployment is pending
+  - deps: none`);
+
+        expect(result.status).toBe("available");
+        if (result.status === "available") {
+          expect(result.data.tasks[0]).toMatchObject({
+            status: "blocked",
+            blockedReason: "Engine deployment is pending",
+          });
+        }
+      });
+
+      test("omits empty, duplicate, and overlong blocked reasons with bounded warnings", () => {
+        const tooLong = "x".repeat(MAX_BLOCKED_REASON_LENGTH + 1);
+        const result = parseFactoryPlan(`- [!] T1 (standard) — Empty
+  - blocked:
+- [!] T2 (standard) — Duplicate
+  - blocked: First
+  - blocked: Second
+- [!] T3 (standard) — Long
+  - blocked: ${tooLong}`);
+
+        expect(result.status).toBe("partial");
+        if (result.status === "partial") {
+          expect(result.data.tasks.map((task) => task.blockedReason)).toEqual([
+            undefined,
+            undefined,
+            undefined,
+          ]);
+        }
+        expect(result.warnings.map((warning) => warning.code)).toEqual([
+          "PLAN_MALFORMED_BLOCKED",
+          "PLAN_BLOCKED_TOO_LONG",
+        ]);
+      });
+
+      test("retains a blocked reason at the exact bounded length", () => {
+        const reason = "x".repeat(MAX_BLOCKED_REASON_LENGTH);
+        const result = parseFactoryPlan(`- [!] T1 (standard) — Exact bound
+  - blocked: ${reason}`);
+
+        expect(result.status).toBe("available");
+        if (result.status === "available") {
+          expect(result.data.tasks[0]?.blockedReason).toBe(reason);
+        }
+      });
+
+      test("ignores structured-looking nested fields, fenced examples, and later sections", () => {
+        const result = parseFactoryPlan(`- [!] T1 (standard) — Legacy only
+  - blocked:
+    - What is waiting: structured data is not legacy metadata
+    - Release: do not parse this
+\`\`\`markdown
+  - blocked: fenced example
+\`\`\`
+## Open questions
+  - blocked: section metadata
+- [!] T2 (standard) — Real legacy reason
+  - blocked: retained`);
+
+        expect(result.status).toBe("available");
+        if (result.status === "available") {
+          expect(
+            result.data.tasks.map(({ id, blockedReason }) => ({
+              id,
+              blockedReason,
+            })),
+          ).toEqual([
+            { id: "T1", blockedReason: undefined },
+            { id: "T2", blockedReason: "retained" },
+          ]);
+        }
+      });
+
       test("parses an optional task PR and distinct Fixes issue references", () => {
         const plan = `- [R] T17 (standard) — Link GitHub work
   - acceptance: Dashboard navigation Fixes #17 and Fixes #23, not #17 again

@@ -1601,6 +1601,10 @@ function appendQuestionTitle(parent, tagName, text, identity, href, className) {
   return heading;
 }
 
+// Mirror the legacy reader's bound for peer snapshots, which do not pass
+// through our local plan reader. Never turn an oversized reason into silence.
+const MAX_BLOCKED_REASON_LENGTH = 4096;
+
 function taskBlockExplanation(task, repository) {
   if (!task || !["blocked", "todo"].includes(task.status)) return undefined;
   const tasks = readerData(repository.plan)?.tasks ?? [];
@@ -1620,11 +1624,14 @@ function taskBlockExplanation(task, repository) {
         ? "question-blocked"
         : "blocked",
     reason:
-      typeof task.blockedReason === "string" && task.blockedReason.trim()
-        ? task.blockedReason
-        : task.status === "blocked"
-          ? "Unstructured block — no legacy reason recorded"
-          : undefined,
+      typeof task.blockedReason === "string" &&
+      task.blockedReason.length > MAX_BLOCKED_REASON_LENGTH
+        ? "Reason unavailable — exceeds the safe text limit"
+        : typeof task.blockedReason === "string" && task.blockedReason.trim()
+          ? task.blockedReason
+          : task.status === "blocked"
+            ? "Unstructured block — no legacy reason recorded"
+            : undefined,
     dependencies: Array.isArray(task.dependencies)
       ? task.dependencies.join(", ") || "None"
       : "Unavailable",

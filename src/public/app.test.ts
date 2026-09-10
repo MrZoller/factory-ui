@@ -9569,6 +9569,84 @@ describe("fleet dependency graph", () => {
     );
   });
 
+  test("bounds oversized peer blocked reasons while retaining an exact-limit reason on both surfaces", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "peer", origin: "https://peer.example" };
+    const oversizedReason = "x".repeat(5_000);
+    const exactLimitReason = "y".repeat(4_096);
+    const remote = graphRepository({
+      name: "remote",
+      plan: {
+        status: "available",
+        data: {
+          tasks: [
+            graphTask("T21", "blocked", {
+              title: "Oversized peer block",
+              blockedReason: oversizedReason,
+              dependencies: [],
+              runnable: false,
+            }),
+            graphTask("T22", "blocked", {
+              title: "Exact-limit peer block",
+              blockedReason: exactLimitReason,
+              dependencies: [],
+              runnable: false,
+            }),
+          ],
+          active: [],
+          review: [],
+          nextRunnable: [],
+          completed: [],
+          blocked: [],
+          remaining: [],
+        },
+        warnings: [],
+      },
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+    });
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      Promise.resolve(
+        String(input) === "/api/fleet"
+          ? jsonResponse(
+              fleet("mini", [peer], [graphRepository({ name: "local" })]),
+            )
+          : jsonResponse(fleet("peer", [], [remote])),
+      ),
+    );
+
+    await expect(
+      loadFleet(document, fetcher, { now: () => NOW }),
+    ).resolves.toBe(true);
+
+    const peerCardReasons = Array.from(
+      document.querySelectorAll<HTMLElement>(".task-block-card"),
+    )
+      .filter((card) => card.textContent?.includes("peer block"))
+      .map((card) => card.querySelector(".block-reason")?.textContent);
+    const peerGraph = Array.from(
+      document.querySelectorAll<HTMLElement>(".dependency-repository"),
+    ).find(
+      (repository) =>
+        repository.querySelector(".dependency-machine")?.textContent === "peer",
+    );
+    const peerGraphReasons = Array.from(
+      peerGraph?.querySelectorAll(".block-reason") ?? [],
+      (reason) => reason.textContent,
+    );
+
+    const unavailable = "Reason unavailable — exceeds the safe text limit";
+    expect(peerCardReasons).toEqual([unavailable, exactLimitReason]);
+    expect(peerGraphReasons).toEqual([unavailable, exactLimitReason]);
+    expect(peerCardReasons).not.toContain(oversizedReason);
+    expect(peerGraphReasons).not.toContain(oversizedReason);
+    expect(peerCardReasons).not.toContain(
+      "Unstructured block — no legacy reason recorded",
+    );
+    expect(peerGraphReasons).not.toContain(
+      "Unstructured block — no legacy reason recorded",
+    );
+  });
+
   test("excludes dependency-free todos and renders completed local prerequisites as satisfied", () => {
     const document = dashboardDocument();
     const done = graphTask("T1", "completed", { runnable: false });

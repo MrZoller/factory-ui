@@ -1601,6 +1601,81 @@ function appendQuestionTitle(parent, tagName, text, identity, href, className) {
   return heading;
 }
 
+function taskBlockExplanation(task, repository) {
+  if (!task || !["blocked", "todo"].includes(task.status)) return undefined;
+  const tasks = readerData(repository.plan)?.tasks ?? [];
+  const local = task.localDependencies ?? task.dependencies;
+  const waiting = (Array.isArray(local) ? local : []).filter((id) => {
+    if (!/^T[1-9][0-9]*$/.test(id) || id === task.id) return false;
+    const matches = tasks.filter((candidate) => candidate?.id === id);
+    return (
+      matches.length === 1 &&
+      ["todo", "active", "review", "blocked"].includes(matches[0].status)
+    );
+  });
+  if (task.status !== "blocked" && waiting.length === 0) return undefined;
+  return {
+    classification:
+      task.status === "blocked" && graphQuestion(repository, task.id)
+        ? "question-blocked"
+        : "blocked",
+    reason:
+      typeof task.blockedReason === "string" && task.blockedReason.trim()
+        ? task.blockedReason
+        : task.status === "blocked"
+          ? "Unstructured block — no legacy reason recorded"
+          : undefined,
+    dependencies: Array.isArray(task.dependencies)
+      ? task.dependencies.join(", ") || "None"
+      : "Unavailable",
+    waiting: [...new Set(waiting)],
+  };
+}
+
+function renderBlockExplanation(parent, explanation) {
+  const body = appendText(parent, "div", "", "block-explanation question-body");
+  if (explanation.reason) {
+    appendText(body, "p", "Reason", "question-field-label");
+    appendText(body, "p", explanation.reason, "block-reason question-context");
+  }
+  appendText(body, "p", "Dependencies", "question-field-label");
+  appendText(body, "p", explanation.dependencies, "question-context");
+  if (explanation.waiting.length > 0) {
+    appendText(
+      body,
+      "p",
+      `Waiting on incomplete local dependencies: ${explanation.waiting.join(", ")}.`,
+      "question-context",
+    );
+  }
+}
+
+function renderTaskBlocks(card, repository) {
+  const tasks = readerData(repository.plan)?.tasks;
+  if (!Array.isArray(tasks)) return;
+  let panel;
+  for (const task of tasks) {
+    const explanation = taskBlockExplanation(task, repository);
+    if (!explanation) continue;
+    panel ??= addPanel(card, "Task blocks", "task-blocks", "panel-span-12");
+    const item = appendText(panel, "article", "", "task-block-card");
+    const heading = appendText(item, "h5", "", "question-title");
+    appendText(
+      heading,
+      "span",
+      `${task.id ?? "?"} · ${task.title ?? "Untitled task"}`,
+      "question-title-text",
+    );
+    appendText(
+      heading,
+      "span",
+      GRAPH_STATE_LABELS[explanation.classification],
+      `chip dependency-state-${explanation.classification}`,
+    );
+    renderBlockExplanation(item, explanation);
+  }
+}
+
 function renderQuestions(card, repository, machine, now) {
   const open = readerData(repository.questions)?.open;
   if (Array.isArray(open) && open.length === 0) {
@@ -1902,6 +1977,10 @@ export const WARNING_EXPLANATIONS = Object.freeze({
   PLAN_MALFORMED_ISSUE: "A task has an invalid Fixes issue reference.",
   PLAN_TOO_MANY_ISSUES: "A task has more issue references than are retained.",
   PLAN_MALFORMED_DEPS: "A task dependency line does not match the plan format.",
+  PLAN_MALFORMED_BLOCKED:
+    "A task's blocked-reason entry could not be read safely; its explanation may be unavailable.",
+  PLAN_BLOCKED_TOO_LONG:
+    "A task's blocked reason exceeds the safe text limit; its explanation may be incomplete or unavailable.",
   PLAN_DUPLICATE_DEP: "A task declares the same dependency more than once.",
   PLAN_TOO_MANY_DEPS: "A task has more dependencies than are retained.",
   PLAN_MISSING_DEPS: "A task has no valid dependency declaration.",
@@ -2324,6 +2403,7 @@ function renderRepository(repository, machine, documentRoot, now, generatedAt) {
   renderLogs(card, repository ?? {}, now, generatedAt);
   renderQuestions(card, repository ?? {}, machine, now);
   renderTasks(card, repository ?? {}, disclosure);
+  renderTaskBlocks(card, repository ?? {});
   const warnings = collectWarnings(repository ?? {});
   renderWorklog(
     card,
@@ -5330,6 +5410,8 @@ function renderDependencyTask(parent, machine, repository, task, localTasks) {
   if (state === "held")
     appendText(header, "span", "Held", "chip dependency-state-held");
   item.append(header);
+  const explanation = taskBlockExplanation(task, repository);
+  if (explanation) renderBlockExplanation(item, explanation);
   const issueNumbers = Array.isArray(task.issueNumbers)
     ? task.issueNumbers
         .filter((issue) => Number.isSafeInteger(issue) && issue > 0)

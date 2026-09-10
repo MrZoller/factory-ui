@@ -166,6 +166,8 @@ export interface PlanTask {
   size: TaskSize;
   title: string;
   dependencies: string[] | null;
+  /** Bounded legacy inline blocked metadata; never a release instruction. */
+  blockedReason?: string;
   /** Executable prerequisites in this repository. */
   localDependencies?: string[] | null;
   /** Offline, non-gating owner/repository#issue references. */

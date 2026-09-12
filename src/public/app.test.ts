@@ -9699,6 +9699,331 @@ describe("fleet dependency graph", () => {
     expect(peerCard?.textContent).not.toContain("[object Object]");
   });
 
+  test("bounds damaged peer plan data without making the peer unreachable", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "peer", origin: "https://peer.example" };
+    const poison = { toString: null, valueOf: null };
+    const localDependencies = Array.from(
+      { length: 32 },
+      (_, index) => `T${1_000 + index}`,
+    );
+    const crossRepoDependencies = Array.from(
+      { length: 32 },
+      (_, index) => `acme/dependency#${index + 1}`,
+    );
+    const exactLimitTask = graphTask("T1", "blocked", {
+      title: "Exact limits retained",
+      dependencies: localDependencies,
+      localDependencies,
+      crossRepoDependencies,
+      runnable: false,
+    });
+    const oversizedDependencies = graphTask("T2", "todo", {
+      title: "Damaged dependencies",
+      dependencies: [...localDependencies, "T1032"],
+      localDependencies: [...localDependencies, "T1032"],
+      crossRepoDependencies: [...crossRepoDependencies, "acme/dependency#33"],
+    });
+    const poisonTask = {
+      ...graphTask("T999", "active"),
+      id: poison,
+      title: poison,
+    };
+    const remote = graphRepository({
+      name: "remote",
+      plan: {
+        status: "available",
+        data: {
+          tasks: [
+            exactLimitTask,
+            oversizedDependencies,
+            ...Array.from({ length: 254 }, (_, index) =>
+              graphTask(`T${index + 3}`, "completed", { runnable: false }),
+            ),
+            graphTask("T257", "blocked", {
+              title: "Beyond task cap",
+              dependencies: [],
+              runnable: false,
+            }),
+          ],
+          active: [poisonTask],
+          review: [poisonTask],
+          nextRunnable: [poisonTask],
+          completed: [poisonTask],
+          blocked: [exactLimitTask, poisonTask],
+          remaining: [poisonTask],
+        },
+        warnings: [],
+      },
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+    });
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      Promise.resolve(
+        String(input) === "/api/fleet"
+          ? jsonResponse(
+              fleet("mini", [peer], [graphRepository({ name: "local" })]),
+            )
+          : jsonResponse(fleet("peer", [], [remote])),
+      ),
+    );
+
+    await expect(
+      loadFleet(document, fetcher, { now: () => NOW }),
+    ).resolves.toBe(true);
+
+    expect(document.querySelector(".machine-unavailable")).toBeNull();
+    const peerGraph = Array.from(
+      document.querySelectorAll<HTMLElement>(".dependency-repository"),
+    ).find(
+      (repository) =>
+        repository.querySelector(".dependency-machine")?.textContent === "peer",
+    );
+    expect(peerGraph?.textContent).toContain(
+      "Some malformed task data was isolated",
+    );
+    expect(peerGraph?.textContent).toContain("T1 · Exact limits retained");
+    expect(peerGraph?.textContent).not.toContain("T2 · Damaged dependencies");
+    expect(peerGraph?.textContent).not.toContain("T257 · Beyond task cap");
+    expect(peerGraph?.querySelectorAll(".dependency-edge-local")).toHaveLength(
+      32,
+    );
+    expect(peerGraph?.querySelectorAll(".dependency-edge-cross")).toHaveLength(
+      32,
+    );
+
+    const peerCard = Array.from(
+      document.querySelectorAll<HTMLElement>(".repository"),
+    ).find((card) => card.textContent?.includes("Exact limits retained"));
+    expect(peerCard?.textContent).toContain(
+      "Task data partially unavailable — malformed or oversized peer data was isolated",
+    );
+    expect(peerCard?.textContent).not.toContain("[object Object]");
+    expect(peerCard?.querySelector(".blocked-work")?.textContent).toContain(
+      "Exact limits retained",
+    );
+    for (const className of [
+      "active-work",
+      "review-work",
+      "runnable-work",
+      "completed-work",
+    ]) {
+      const panel = peerCard?.querySelector(`.${className}`);
+      expect(panel?.textContent).toContain("No displayable tasks");
+      expect(panel?.textContent).not.toContain("None");
+    }
+  });
+
+  test.each(["id", "title"] as const)(
+    "isolates a poisoned task %s in the authoritative tasks array",
+    async (field) => {
+      const document = dashboardDocument();
+      const peer = { name: "peer", origin: "https://peer.example" };
+      const poison = { toString: null, valueOf: null };
+      const valid = graphTask("T1", "blocked", {
+        title: "Displayable task",
+        dependencies: [],
+        runnable: false,
+      });
+      const poisoned = {
+        ...graphTask("T2", "blocked", { dependencies: [], runnable: false }),
+        [field]: poison,
+      };
+      const remote = graphRepository({
+        name: "remote",
+        plan: {
+          status: "available",
+          data: {
+            tasks: [valid, poisoned],
+            active: [],
+            review: [],
+            nextRunnable: [],
+            completed: [],
+            blocked: [],
+            remaining: [],
+          },
+          warnings: [],
+        },
+        questions: { status: "available", data: { open: [] }, warnings: [] },
+      });
+      const fetcher = async (input: RequestInfo | URL) =>
+        jsonResponse(
+          String(input) === "/api/fleet"
+            ? fleet("mini", [peer], [graphRepository({ name: "local" })])
+            : fleet("peer", [], [remote]),
+        );
+
+      await expect(
+        loadFleet(document, fetcher, { now: () => NOW }),
+      ).resolves.toBe(true);
+
+      const peerCard = Array.from(
+        document.querySelectorAll<HTMLElement>(".repository"),
+      ).find((card) => card.textContent?.includes("Displayable task"));
+      const peerGraph = Array.from(
+        document.querySelectorAll<HTMLElement>(".dependency-repository"),
+      ).find(
+        (repository) =>
+          repository.querySelector(".dependency-machine")?.textContent ===
+          "peer",
+      );
+      expect(peerCard?.textContent).toContain(
+        "Task data partially unavailable — malformed or oversized peer data was isolated",
+      );
+      expect(peerCard?.querySelectorAll(".task-block-card")).toHaveLength(1);
+      expect(peerCard?.textContent).toContain("T1 · Displayable task");
+      expect(peerCard?.textContent).not.toContain("[object Object]");
+      expect(peerGraph?.textContent).toContain("T1 · Displayable task");
+      expect(peerGraph?.textContent).not.toContain("[object Object]");
+    },
+  );
+
+  test("caps 257 authoritative blocked tasks and their blocked task-list group at 256", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "peer", origin: "https://peer.example" };
+    const blocked = Array.from({ length: 257 }, (_, index) =>
+      graphTask(`T${index + 1}`, "blocked", {
+        title: `Blocked task ${index + 1}`,
+        dependencies: [],
+        runnable: false,
+      }),
+    );
+    const remote = graphRepository({
+      name: "remote",
+      plan: {
+        status: "available",
+        data: {
+          tasks: blocked,
+          active: [],
+          review: [],
+          nextRunnable: [],
+          completed: [],
+          blocked,
+          remaining: [],
+        },
+        warnings: [],
+      },
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+    });
+    const fetcher = async (input: RequestInfo | URL) =>
+      jsonResponse(
+        String(input) === "/api/fleet"
+          ? fleet("mini", [peer], [graphRepository({ name: "local" })])
+          : fleet("peer", [], [remote]),
+      );
+
+    await expect(
+      loadFleet(document, fetcher, { now: () => NOW }),
+    ).resolves.toBe(true);
+
+    const peerCard = Array.from(
+      document.querySelectorAll<HTMLElement>(".repository"),
+    ).find((card) => card.textContent?.includes("Blocked task 1"));
+    expect(peerCard?.querySelectorAll(".task-block-card")).toHaveLength(256);
+    expect(peerCard?.querySelectorAll(".blocked-work .task")).toHaveLength(256);
+    expect(peerCard?.textContent).toContain("T256 · Blocked task 256");
+    expect(peerCard?.textContent).not.toContain("T257 · Blocked task 257");
+  });
+
+  test.each([
+    ["dependencies", "T2032"],
+    ["localDependencies", "T2032"],
+    ["crossRepoDependencies", "acme/dependency#33"],
+  ] as const)(
+    "retains only 32 %s entries and marks the block dependencies partial",
+    async (field, omitted) => {
+      const document = dashboardDocument();
+      const peer = { name: "peer", origin: "https://peer.example" };
+      const local = Array.from(
+        { length: 33 },
+        (_, index) => `T${2_000 + index}`,
+      );
+      const cross = Array.from(
+        { length: 33 },
+        (_, index) => `acme/dependency#${index + 1}`,
+      );
+      const dependencies =
+        field === "crossRepoDependencies"
+          ? cross.slice(0, 32)
+          : local.slice(0, 32);
+      const task = graphTask("T1", "blocked", {
+        dependencies: field === "dependencies" ? local : dependencies,
+        localDependencies: field === "localDependencies" ? local : [],
+        crossRepoDependencies: field === "crossRepoDependencies" ? cross : [],
+        runnable: false,
+      });
+      const remote = graphRepository({
+        name: "remote",
+        plan: {
+          status: "available",
+          data: {
+            tasks: [task],
+            active: [],
+            review: [],
+            nextRunnable: [],
+            completed: [],
+            blocked: [],
+            remaining: [],
+          },
+          warnings: [],
+        },
+        questions: { status: "available", data: { open: [] }, warnings: [] },
+      });
+      const fetcher = async (input: RequestInfo | URL) =>
+        jsonResponse(
+          String(input) === "/api/fleet"
+            ? fleet("mini", [peer], [graphRepository({ name: "local" })])
+            : fleet("peer", [], [remote]),
+        );
+
+      await expect(
+        loadFleet(document, fetcher, { now: () => NOW }),
+      ).resolves.toBe(true);
+
+      const peerBlock = Array.from(
+        document.querySelectorAll<HTMLElement>(".task-block-card"),
+      ).find((card) => card.textContent?.includes("T1 · T1 task"));
+      expect(peerBlock?.textContent).toContain(dependencies[31]);
+      expect(peerBlock?.textContent).toContain(
+        "Dependencies partially unavailable",
+      );
+      expect(peerBlock?.textContent).not.toContain(omitted);
+    },
+  );
+
+  test("does not mark exactly 256 authoritative blocked tasks as partial", () => {
+    const document = dashboardDocument();
+    const blocked = Array.from({ length: 256 }, (_, index) =>
+      graphTask(`T${index + 1}`, "blocked", {
+        title: `Blocked task ${index + 1}`,
+        dependencies: [],
+        runnable: false,
+      }),
+    );
+    const repository = graphRepository({
+      plan: {
+        status: "available",
+        data: {
+          tasks: blocked,
+          active: [],
+          review: [],
+          nextRunnable: [],
+          completed: [],
+          blocked: [],
+          remaining: [],
+        },
+        warnings: [],
+      },
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+    });
+
+    renderFleet(fleet("mini", [], [repository]), document, NOW);
+
+    expect(document.querySelectorAll(".task-block-card")).toHaveLength(256);
+    expect(document.body.textContent).not.toContain(
+      "Task data partially unavailable — malformed or oversized peer data was isolated",
+    );
+  });
+
   test("excludes dependency-free todos and renders completed local prerequisites as satisfied", () => {
     const document = dashboardDocument();
     const done = graphTask("T1", "completed", { runnable: false });

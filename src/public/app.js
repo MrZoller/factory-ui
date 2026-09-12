@@ -959,7 +959,7 @@ function completedTasks(repository, tasks) {
 }
 
 function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
-  const plan = readerData(repository.plan);
+  const plan = boundedPlanData(repository.plan);
   const costsData = readerData(repository.costs);
   const costs = costsData?.tasks;
   const costsPartial = costsData?.coverage?.kind === "recent-window";
@@ -969,7 +969,12 @@ function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
   const emptyGroups = [];
   for (const [title, key, className, spanClass] of groups) {
     const planTasks = Array.isArray(plan?.[key]) ? plan[key] : [];
-    if (plan && groups === TASK_GROUPS && planTasks.length === 0) {
+    if (
+      plan &&
+      !plan.inputPartial &&
+      groups === TASK_GROUPS &&
+      planTasks.length === 0
+    ) {
       emptyGroups.push(title);
       continue;
     }
@@ -985,11 +990,24 @@ function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
       appendText(panel, "p", "Unavailable", "unavailable");
       continue;
     }
+    if (plan.inputPartial) {
+      appendText(
+        panel,
+        "p",
+        "Task data partially unavailable — malformed or oversized peer data was isolated",
+        "unavailable",
+      );
+    }
     const tasks =
       key === "completed" ? completedTasks(repository, planTasks) : planTasks;
     if (tasks.length === 0) {
       panel.classList.add("panel-empty");
-      appendText(panel, "p", "None", "empty");
+      appendText(
+        panel,
+        "p",
+        plan.inputPartial ? "No displayable tasks" : "None",
+        "empty",
+      );
       continue;
     }
     const { body, scroll } = createTaskTable(panel, title, tasks.length);
@@ -1605,15 +1623,92 @@ function appendQuestionTitle(parent, tagName, text, identity, href, className) {
 // through our local plan reader. Never turn an oversized reason into silence.
 const MAX_BLOCKED_REASON_LENGTH = 4096;
 
+// All plan consumers share this boundary: peer reader envelopes validate no
+// task fields. Slice before inspecting, never coerce an untrusted identity,
+// and carry damage explicitly rather than claiming missing data means None.
+function boundedPlanData(result) {
+  const source = readerData(result);
+  if (!source) return undefined;
+  const plan = { ...source, inputPartial: false };
+  for (const key of [
+    "tasks",
+    "active",
+    "review",
+    "nextRunnable",
+    "completed",
+    "blocked",
+    "remaining",
+  ]) {
+    const list = source[key];
+    if (!Array.isArray(list)) {
+      if (key === "tasks" || list !== undefined) plan.inputPartial = true;
+      plan[key] = [];
+      continue;
+    }
+    if (list.length > MAX_PLAN_TASKS) plan.inputPartial = true;
+    plan[key] = list.slice(0, MAX_PLAN_TASKS).flatMap((task) => {
+      if (
+        !isRecord(task) ||
+        typeof task.id !== "string" ||
+        typeof task.title !== "string" ||
+        task.id.length > MAX_QUESTION_TEXT_LENGTH ||
+        task.title.length > MAX_QUESTION_TEXT_LENGTH
+      ) {
+        plan.inputPartial = true;
+        return [];
+      }
+      const safe = { ...task, dependenciesPartial: false };
+      for (const field of [
+        "dependencies",
+        "localDependencies",
+        "crossRepoDependencies",
+      ]) {
+        // Older snapshots may carry only the split dependency fields.
+        // Absence stays absent (Unavailable in block details), not an empty set.
+        if (
+          task[field] === undefined ||
+          (field === "dependencies" && task[field] === null)
+        )
+          continue;
+        const values = task[field];
+        const retained = taskDependencyStrings(values);
+        if (
+          !Array.isArray(values) ||
+          values.length > MAX_TASK_DEPENDENCIES ||
+          retained.length !== values.length
+        ) {
+          safe.dependenciesPartial = true;
+          plan.inputPartial = true;
+        }
+        safe[field] = retained;
+      }
+      // An incomplete dependency set cannot establish runnable work.
+      if (safe.dependenciesPartial) safe.runnable = false;
+      return [safe];
+    });
+  }
+  return plan;
+}
+
 function taskDependencyStrings(dependencies) {
   return Array.isArray(dependencies)
-    ? dependencies.filter((dependency) => typeof dependency === "string")
+    ? dependencies
+        .slice(0, MAX_TASK_DEPENDENCIES)
+        .filter(
+          (dependency) =>
+            typeof dependency === "string" &&
+            dependency.length <= MAX_QUESTION_TEXT_LENGTH,
+        )
     : [];
 }
 
-function taskBlockExplanation(task, repository) {
+function taskBlockExplanation(
+  task,
+  repository,
+  plan = boundedPlanData(repository.plan),
+) {
   if (!task || !["blocked", "todo"].includes(task.status)) return undefined;
-  const tasks = readerData(repository.plan)?.tasks ?? [];
+  const tasks = plan?.tasks ?? [];
   const local = taskDependencyStrings(
     task.localDependencies ?? task.dependencies,
   );
@@ -1641,9 +1736,11 @@ function taskBlockExplanation(task, repository) {
           : task.status === "blocked"
             ? "Unstructured block — no legacy reason recorded"
             : undefined,
-    dependencies: Array.isArray(task.dependencies)
-      ? dependencies.join(", ") || "None"
-      : "Unavailable",
+    dependencies: task.dependenciesPartial
+      ? `${dependencies.join(", ")}${dependencies.length ? " — " : ""}Dependencies partially unavailable`
+      : Array.isArray(task.dependencies)
+        ? dependencies.join(", ") || "None"
+        : "Unavailable",
     waiting: [...new Set(waiting)],
   };
 }
@@ -1667,11 +1764,21 @@ function renderBlockExplanation(parent, explanation) {
 }
 
 function renderTaskBlocks(card, repository) {
-  const tasks = readerData(repository.plan)?.tasks;
+  const plan = boundedPlanData(repository.plan);
+  const tasks = plan?.tasks;
   if (!Array.isArray(tasks)) return;
   let panel;
+  if (plan.inputPartial) {
+    panel = addPanel(card, "Task blocks", "task-blocks", "panel-span-12");
+    appendText(
+      panel,
+      "p",
+      "Task data partially unavailable — malformed or oversized peer data was isolated",
+      "unavailable",
+    );
+  }
   for (const task of tasks) {
-    const explanation = taskBlockExplanation(task, repository);
+    const explanation = taskBlockExplanation(task, repository, plan);
     if (!explanation) continue;
     panel ??= addPanel(card, "Task blocks", "task-blocks", "panel-span-12");
     const item = appendText(panel, "article", "", "task-block-card");
@@ -5339,6 +5446,8 @@ function validGraphTask(task) {
   const cross = task?.crossRepoDependencies ?? [];
   return (
     isRecord(task) &&
+    !task.dependenciesPartial &&
+    typeof task.id === "string" &&
     /^T[1-9][0-9]*$/.test(task.id) &&
     typeof task.title === "string" &&
     task.title.length <= MAX_QUESTION_TEXT_LENGTH &&
@@ -5497,7 +5606,7 @@ function renderDependencyGraph(documentRoot, views) {
       continue;
     }
     for (const repository of view.fleet?.repositories ?? []) {
-      const plan = readerData(repository.plan);
+      const plan = boundedPlanData(repository.plan);
       if (
         !Array.isArray(plan?.tasks) ||
         plan.tasks.length > MAX_DEPENDENCY_GRAPH_TASKS
@@ -5517,7 +5626,7 @@ function renderDependencyGraph(documentRoot, views) {
         view,
         repository,
         validTasks,
-        malformed: validTasks.length !== plan.tasks.length,
+        malformed: plan.inputPartial || validTasks.length !== plan.tasks.length,
         liveTasks: validTasks.filter((task) => {
           if (["active", "review", "blocked"].includes(task.status))
             return true;

@@ -638,6 +638,41 @@ p {
   box-shadow: var(--shadow-card);
 }
 
+.task-blocks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--space-3);
+}
+
+.task-blocks > h4 {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.task-block-card {
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-left: 0.3rem solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.task-block-card h5 {
+  margin-bottom: 0;
+  font-size: var(--text-sm);
+}
+
+.block-explanation {
+  min-width: 0;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+.block-reason {
+  white-space: pre-wrap;
+}
+
 .stale-question-notice {
   grid-column: 1 / -1;
   min-width: 0;

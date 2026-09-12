@@ -959,7 +959,7 @@ function completedTasks(repository, tasks) {
 }
 
 function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
-  const plan = readerData(repository.plan);
+  const plan = boundedPlanData(repository.plan);
   const costsData = readerData(repository.costs);
   const costs = costsData?.tasks;
   const costsPartial = costsData?.coverage?.kind === "recent-window";
@@ -969,7 +969,12 @@ function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
   const emptyGroups = [];
   for (const [title, key, className, spanClass] of groups) {
     const planTasks = Array.isArray(plan?.[key]) ? plan[key] : [];
-    if (plan && groups === TASK_GROUPS && planTasks.length === 0) {
+    if (
+      plan &&
+      !plan.inputPartial &&
+      groups === TASK_GROUPS &&
+      planTasks.length === 0
+    ) {
       emptyGroups.push(title);
       continue;
     }
@@ -985,11 +990,24 @@ function renderTasks(card, repository, disclosure, groups = TASK_GROUPS) {
       appendText(panel, "p", "Unavailable", "unavailable");
       continue;
     }
+    if (plan.inputPartial) {
+      appendText(
+        panel,
+        "p",
+        "Task data partially unavailable — malformed or oversized peer data was isolated",
+        "unavailable",
+      );
+    }
     const tasks =
       key === "completed" ? completedTasks(repository, planTasks) : planTasks;
     if (tasks.length === 0) {
       panel.classList.add("panel-empty");
-      appendText(panel, "p", "None", "empty");
+      appendText(
+        panel,
+        "p",
+        plan.inputPartial ? "No displayable tasks" : "None",
+        "empty",
+      );
       continue;
     }
     const { body, scroll } = createTaskTable(panel, title, tasks.length);
@@ -1601,6 +1619,186 @@ function appendQuestionTitle(parent, tagName, text, identity, href, className) {
   return heading;
 }
 
+// Mirror the legacy reader's bound for peer snapshots, which do not pass
+// through our local plan reader. Never turn an oversized reason into silence.
+const MAX_BLOCKED_REASON_LENGTH = 4096;
+
+// All plan consumers share this boundary: peer reader envelopes validate no
+// task fields. Slice before inspecting, never coerce an untrusted identity,
+// and carry damage explicitly rather than claiming missing data means None.
+function boundedPlanData(result) {
+  const source = readerData(result);
+  if (!source) return undefined;
+  const plan = { ...source, inputPartial: false };
+  for (const key of [
+    "tasks",
+    "active",
+    "review",
+    "nextRunnable",
+    "completed",
+    "blocked",
+    "remaining",
+  ]) {
+    const list = source[key];
+    if (!Array.isArray(list)) {
+      if (key === "tasks" || list !== undefined) plan.inputPartial = true;
+      plan[key] = [];
+      continue;
+    }
+    if (list.length > MAX_PLAN_TASKS) plan.inputPartial = true;
+    plan[key] = list.slice(0, MAX_PLAN_TASKS).flatMap((task) => {
+      if (
+        !isRecord(task) ||
+        typeof task.id !== "string" ||
+        typeof task.title !== "string" ||
+        task.id.length > MAX_QUESTION_TEXT_LENGTH ||
+        task.title.length > MAX_QUESTION_TEXT_LENGTH
+      ) {
+        plan.inputPartial = true;
+        return [];
+      }
+      const safe = { ...task, dependenciesPartial: false };
+      for (const field of [
+        "dependencies",
+        "localDependencies",
+        "crossRepoDependencies",
+      ]) {
+        // Older snapshots may carry only the split dependency fields.
+        // Absence stays absent (Unavailable in block details), not an empty set.
+        if (
+          task[field] === undefined ||
+          (field === "dependencies" && task[field] === null)
+        )
+          continue;
+        const values = task[field];
+        const retained = taskDependencyStrings(values);
+        if (
+          !Array.isArray(values) ||
+          values.length > MAX_TASK_DEPENDENCIES ||
+          retained.length !== values.length
+        ) {
+          safe.dependenciesPartial = true;
+          plan.inputPartial = true;
+        }
+        safe[field] = retained;
+      }
+      // An incomplete dependency set cannot establish runnable work.
+      if (safe.dependenciesPartial) safe.runnable = false;
+      return [safe];
+    });
+  }
+  return plan;
+}
+
+function taskDependencyStrings(dependencies) {
+  return Array.isArray(dependencies)
+    ? dependencies
+        .slice(0, MAX_TASK_DEPENDENCIES)
+        .filter(
+          (dependency) =>
+            typeof dependency === "string" &&
+            dependency.length <= MAX_QUESTION_TEXT_LENGTH,
+        )
+    : [];
+}
+
+function taskBlockExplanation(
+  task,
+  repository,
+  plan = boundedPlanData(repository.plan),
+) {
+  if (!task || !["blocked", "todo"].includes(task.status)) return undefined;
+  const tasks = plan?.tasks ?? [];
+  const local = taskDependencyStrings(
+    task.localDependencies ?? task.dependencies,
+  );
+  const dependencies = taskDependencyStrings(task.dependencies);
+  const waiting = local.filter((id) => {
+    if (!/^T[1-9][0-9]*$/.test(id) || id === task.id) return false;
+    const matches = tasks.filter((candidate) => candidate?.id === id);
+    return (
+      matches.length === 1 &&
+      ["todo", "active", "review", "blocked"].includes(matches[0].status)
+    );
+  });
+  if (task.status !== "blocked" && waiting.length === 0) return undefined;
+  return {
+    classification:
+      task.status === "blocked" && graphQuestion(repository, task.id)
+        ? "question-blocked"
+        : "blocked",
+    reason:
+      typeof task.blockedReason === "string" &&
+      task.blockedReason.length > MAX_BLOCKED_REASON_LENGTH
+        ? "Reason unavailable — exceeds the safe text limit"
+        : typeof task.blockedReason === "string" && task.blockedReason.trim()
+          ? task.blockedReason
+          : task.status === "blocked"
+            ? "Unstructured block — no legacy reason recorded"
+            : undefined,
+    dependencies: task.dependenciesPartial
+      ? `${dependencies.join(", ")}${dependencies.length ? " — " : ""}Dependencies partially unavailable`
+      : Array.isArray(task.dependencies)
+        ? dependencies.join(", ") || "None"
+        : "Unavailable",
+    waiting: [...new Set(waiting)],
+  };
+}
+
+function renderBlockExplanation(parent, explanation) {
+  const body = appendText(parent, "div", "", "block-explanation question-body");
+  if (explanation.reason) {
+    appendText(body, "p", "Reason", "question-field-label");
+    appendText(body, "p", explanation.reason, "block-reason question-context");
+  }
+  appendText(body, "p", "Dependencies", "question-field-label");
+  appendText(body, "p", explanation.dependencies, "question-context");
+  if (explanation.waiting.length > 0) {
+    appendText(
+      body,
+      "p",
+      `Waiting on incomplete local dependencies: ${explanation.waiting.join(", ")}.`,
+      "question-context",
+    );
+  }
+}
+
+function renderTaskBlocks(card, repository) {
+  const plan = boundedPlanData(repository.plan);
+  const tasks = plan?.tasks;
+  if (!Array.isArray(tasks)) return;
+  let panel;
+  if (plan.inputPartial) {
+    panel = addPanel(card, "Task blocks", "task-blocks", "panel-span-12");
+    appendText(
+      panel,
+      "p",
+      "Task data partially unavailable — malformed or oversized peer data was isolated",
+      "unavailable",
+    );
+  }
+  for (const task of tasks) {
+    const explanation = taskBlockExplanation(task, repository, plan);
+    if (!explanation) continue;
+    panel ??= addPanel(card, "Task blocks", "task-blocks", "panel-span-12");
+    const item = appendText(panel, "article", "", "task-block-card");
+    const heading = appendText(item, "h5", "", "question-title");
+    appendText(
+      heading,
+      "span",
+      `${task.id ?? "?"} · ${task.title ?? "Untitled task"}`,
+      "question-title-text",
+    );
+    appendText(
+      heading,
+      "span",
+      GRAPH_STATE_LABELS[explanation.classification],
+      `chip dependency-state-${explanation.classification}`,
+    );
+    renderBlockExplanation(item, explanation);
+  }
+}
+
 function renderQuestions(card, repository, machine, now) {
   const open = readerData(repository.questions)?.open;
   if (Array.isArray(open) && open.length === 0) {
@@ -1902,6 +2100,10 @@ export const WARNING_EXPLANATIONS = Object.freeze({
   PLAN_MALFORMED_ISSUE: "A task has an invalid Fixes issue reference.",
   PLAN_TOO_MANY_ISSUES: "A task has more issue references than are retained.",
   PLAN_MALFORMED_DEPS: "A task dependency line does not match the plan format.",
+  PLAN_MALFORMED_BLOCKED:
+    "A task's blocked-reason entry could not be read safely; its explanation may be unavailable.",
+  PLAN_BLOCKED_TOO_LONG:
+    "A task's blocked reason exceeds the safe text limit; its explanation may be incomplete or unavailable.",
   PLAN_DUPLICATE_DEP: "A task declares the same dependency more than once.",
   PLAN_TOO_MANY_DEPS: "A task has more dependencies than are retained.",
   PLAN_MISSING_DEPS: "A task has no valid dependency declaration.",
@@ -2324,6 +2526,7 @@ function renderRepository(repository, machine, documentRoot, now, generatedAt) {
   renderLogs(card, repository ?? {}, now, generatedAt);
   renderQuestions(card, repository ?? {}, machine, now);
   renderTasks(card, repository ?? {}, disclosure);
+  renderTaskBlocks(card, repository ?? {});
   const warnings = collectWarnings(repository ?? {});
   renderWorklog(
     card,
@@ -5243,6 +5446,8 @@ function validGraphTask(task) {
   const cross = task?.crossRepoDependencies ?? [];
   return (
     isRecord(task) &&
+    !task.dependenciesPartial &&
+    typeof task.id === "string" &&
     /^T[1-9][0-9]*$/.test(task.id) &&
     typeof task.title === "string" &&
     task.title.length <= MAX_QUESTION_TEXT_LENGTH &&
@@ -5252,13 +5457,18 @@ function validGraphTask(task) {
     typeof task.runnable === "boolean" &&
     Array.isArray(local) &&
     local.length <= MAX_TASK_DEPENDENCIES &&
-    local.every((dependency) => /^T[1-9][0-9]*$/.test(dependency)) &&
+    local.every(
+      (dependency) =>
+        typeof dependency === "string" && /^T[1-9][0-9]*$/.test(dependency),
+    ) &&
     Array.isArray(cross) &&
     cross.length <= MAX_TASK_DEPENDENCIES &&
-    cross.every((dependency) =>
-      /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.{1,2}#)[A-Za-z0-9._-]+#[1-9][0-9]*$/.test(
-        dependency,
-      ),
+    cross.every(
+      (dependency) =>
+        typeof dependency === "string" &&
+        /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.{1,2}#)[A-Za-z0-9._-]+#[1-9][0-9]*$/.test(
+          dependency,
+        ),
     )
   );
 }
@@ -5293,7 +5503,14 @@ const GRAPH_STATE_LABELS = {
   done: "Done",
 };
 
-function renderDependencyTask(parent, machine, repository, task, localTasks) {
+function renderDependencyTask(
+  parent,
+  machine,
+  repository,
+  task,
+  localTasks,
+  plan,
+) {
   const item = parent.ownerDocument.createElement("li");
   const state = graphTaskState(task, repository);
   item.className = `dependency-task dependency-state-${state}`;
@@ -5330,6 +5547,8 @@ function renderDependencyTask(parent, machine, repository, task, localTasks) {
   if (state === "held")
     appendText(header, "span", "Held", "chip dependency-state-held");
   item.append(header);
+  const explanation = taskBlockExplanation(task, repository, plan);
+  if (explanation) renderBlockExplanation(item, explanation);
   const issueNumbers = Array.isArray(task.issueNumbers)
     ? task.issueNumbers
         .filter((issue) => Number.isSafeInteger(issue) && issue > 0)
@@ -5394,7 +5613,7 @@ function renderDependencyGraph(documentRoot, views) {
       continue;
     }
     for (const repository of view.fleet?.repositories ?? []) {
-      const plan = readerData(repository.plan);
+      const plan = boundedPlanData(repository.plan);
       if (
         !Array.isArray(plan?.tasks) ||
         plan.tasks.length > MAX_DEPENDENCY_GRAPH_TASKS
@@ -5413,8 +5632,9 @@ function renderDependencyGraph(documentRoot, views) {
       repositories.push({
         view,
         repository,
+        plan,
         validTasks,
-        malformed: validTasks.length !== plan.tasks.length,
+        malformed: plan.inputPartial || validTasks.length !== plan.tasks.length,
         liveTasks: validTasks.filter((task) => {
           if (["active", "review", "blocked"].includes(task.status))
             return true;
@@ -5481,6 +5701,7 @@ function renderDependencyGraph(documentRoot, views) {
         entry.repository,
         task,
         entry.localTasks,
+        entry.plan,
       );
     }
     remainingLive -= liveCount;
@@ -5553,6 +5774,7 @@ function renderDependencyGraph(documentRoot, views) {
           entry.repository,
           task,
           entry.localTasks,
+          entry.plan,
         );
       }
       renderedTasks += completedCount;

@@ -15,6 +15,7 @@ export const MAX_PLAN_LINE_LENGTH = 8192;
 export const MAX_PLAN_TASKS = 256;
 export const MAX_TASK_DEPENDENCIES = 32;
 export const MAX_TASK_ISSUES = 32;
+export const MAX_BLOCKED_REASON_LENGTH = 4096;
 export const MAX_PLAN_WARNINGS = 32;
 
 export const PLAN_WARNING_CODES = [
@@ -24,6 +25,8 @@ export const PLAN_WARNING_CODES = [
   "PLAN_MALFORMED_TASK",
   "PLAN_TOO_MANY_TASKS",
   "PLAN_MALFORMED_PR",
+  "PLAN_MALFORMED_BLOCKED",
+  "PLAN_BLOCKED_TOO_LONG",
   "PLAN_MALFORMED_ISSUE",
   "PLAN_TOO_MANY_ISSUES",
   "PLAN_MALFORMED_DEPS",
@@ -50,6 +53,7 @@ const CROSS_REPO_DEPENDENCY =
   /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.{1,2}#)[A-Za-z0-9._-]+#[1-9][0-9]*$/;
 const PR_LINE = /^  - pr:(?: (.*))?$/;
 const ACCEPTANCE_LINE = /^  - acceptance: (.*)$/;
+const BLOCKED_LINE = /^  - blocked:[ \t]*(.*)$/;
 const STATUS: Record<string, TaskStatus> = {
   " ": "todo",
   "~": "active",
@@ -192,12 +196,39 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
     let pr: number | undefined;
     let prLines = 0;
     let acceptanceLines = 0;
+    let blockedLines = 0;
+    let blockedReason: string | undefined;
+    let blockedSectionEnded = false;
     const issueNumbers: number[] = [];
     const seenIssues = new Set<number>();
     for (let child = index + 1; child < lines.length; child += 1) {
       if (fencedLines.has(child)) continue;
       const childLine = lines[child] ?? "";
       if (TASK_LINE.test(childLine) || childLine.startsWith("- [")) break;
+      // Only inline task metadata belongs to this legacy field. A subsequent
+      // section or top-level paragraph must not donate metadata to this task.
+      if (/^\S/.test(childLine)) blockedSectionEnded = true;
+      const blockedMatch = !blockedSectionEnded && BLOCKED_LINE.exec(childLine);
+      if (blockedMatch) {
+        blockedLines += 1;
+        const reason = (blockedMatch[1] ?? "").trim();
+        if (blockedLines > 1 || reason.length > MAX_BLOCKED_REASON_LENGTH) {
+          blockedReason = undefined;
+          addWarning(
+            warnings,
+            planWarning(
+              blockedLines > 1
+                ? "PLAN_MALFORMED_BLOCKED"
+                : "PLAN_BLOCKED_TOO_LONG",
+              "task blocked reason is duplicated or exceeds its bounded length",
+              child + 1,
+              childLine,
+            ),
+          );
+        } else {
+          blockedReason = reason || undefined;
+        }
+      }
       const prMatch = PR_LINE.exec(childLine);
       if (prMatch) {
         prLines += 1;
@@ -349,6 +380,7 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
       dependencies,
       localDependencies,
       crossRepoDependencies,
+      ...(blockedReason !== undefined ? { blockedReason } : {}),
       pr,
       issueNumbers,
       prMetadataPresent: prLines > 0,
@@ -416,6 +448,9 @@ export function parseFactoryPlan(text: string): ReaderResult<PlanData> {
       dependencies: task.dependencies,
       localDependencies: task.localDependencies,
       crossRepoDependencies: task.crossRepoDependencies,
+      ...(task.blockedReason !== undefined
+        ? { blockedReason: task.blockedReason }
+        : {}),
       runnable,
       ...(task.prMetadataPresent ? { pr: task.pr } : {}),
       ...(task.acceptanceMetadataPresent

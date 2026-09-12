@@ -383,6 +383,39 @@ For B or C, state whether the migration window is approved.
     }
   });
 
+  test("carries a legacy blocked reason through every enriched plan task view", async () => {
+    const fixture = createFactoryFixture();
+    try {
+      await Promise.all([
+        fixture.writeState({ project: "factory-ui", phase: "build" }),
+        fixture.writePlan(`- [!] T7 (standard) — Waiting safely
+  - blocked: Waiting for <img src=x onerror=1>
+  - deps: none`),
+      ]);
+
+      const snapshot = await readRepositoryFactorySnapshot({
+        name: "factory-ui",
+        path: fixture.root,
+      });
+      if (snapshot.plan.status === "unavailable") {
+        throw new Error("plan fixture must be available");
+      }
+
+      for (const tasks of [
+        snapshot.plan.data.tasks,
+        snapshot.plan.data.blocked,
+      ]) {
+        expect(tasks[0]).toMatchObject({
+          id: "T7",
+          status: "blocked",
+          blockedReason: "Waiting for <img src=x onerror=1>",
+        });
+      }
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   test("keeps ambiguous option grammar as the raw question and never invents task or branch links", async () => {
     const fixture = createFactoryFixture();
     try {

@@ -5503,7 +5503,14 @@ const GRAPH_STATE_LABELS = {
   done: "Done",
 };
 
-function renderDependencyTask(parent, machine, repository, task, localTasks) {
+function renderDependencyTask(
+  parent,
+  machine,
+  repository,
+  task,
+  localTasks,
+  plan,
+) {
   const item = parent.ownerDocument.createElement("li");
   const state = graphTaskState(task, repository);
   item.className = `dependency-task dependency-state-${state}`;
@@ -5540,7 +5547,7 @@ function renderDependencyTask(parent, machine, repository, task, localTasks) {
   if (state === "held")
     appendText(header, "span", "Held", "chip dependency-state-held");
   item.append(header);
-  const explanation = taskBlockExplanation(task, repository);
+  const explanation = taskBlockExplanation(task, repository, plan);
   if (explanation) renderBlockExplanation(item, explanation);
   const issueNumbers = Array.isArray(task.issueNumbers)
     ? task.issueNumbers
@@ -5625,6 +5632,7 @@ function renderDependencyGraph(documentRoot, views) {
       repositories.push({
         view,
         repository,
+        plan,
         validTasks,
         malformed: plan.inputPartial || validTasks.length !== plan.tasks.length,
         liveTasks: validTasks.filter((task) => {
@@ -5693,6 +5701,7 @@ function renderDependencyGraph(documentRoot, views) {
         entry.repository,
         task,
         entry.localTasks,
+        entry.plan,
       );
     }
     remainingLive -= liveCount;
@@ -5765,6 +5774,7 @@ function renderDependencyGraph(documentRoot, views) {
           entry.repository,
           task,
           entry.localTasks,
+          entry.plan,
         );
       }
       renderedTasks += completedCount;

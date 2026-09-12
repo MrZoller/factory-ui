@@ -10272,6 +10272,53 @@ describe("fleet dependency graph", () => {
     expect(graph.textContent).not.toContain("omittedNo tasks");
   });
 
+  test("renders bounded peer block explanations across a full graph", () => {
+    const document = dashboardDocument();
+    const tasks = Array.from({ length: 256 }, (_, index) =>
+      graphTask(`T${index + 1}`, "blocked", {
+        runnable: false,
+        blockedReason: "Waiting for a recorded decision",
+        // Peer envelopes intentionally permit unknown keys; the graph must
+        // retain its bounded rendering path despite a wide task record.
+        peerMetadata: Object.fromEntries(
+          Array.from({ length: 50 }, (_, metadataIndex) => [
+            `extra-${metadataIndex}`,
+            "bounded test metadata",
+          ]),
+        ),
+      }),
+    );
+    renderFleet(
+      fleet(
+        "mini",
+        [],
+        [
+          graphRepository({
+            plan: {
+              status: "available",
+              data: {
+                tasks,
+                active: [],
+                review: [],
+                nextRunnable: [],
+                completed: [],
+                blocked: tasks,
+                remaining: [],
+              },
+              warnings: [],
+            },
+          }),
+        ],
+      ),
+      document,
+      NOW,
+    );
+
+    const graph = document.querySelector("#dependency-graph")!;
+    expect(graph.querySelectorAll(".dependency-task")).toHaveLength(256);
+    expect(graph.querySelectorAll(".block-explanation")).toHaveLength(256);
+  });
+
   test("shares the remaining history budget across stable disclosures in repository order", () => {
     const document = dashboardDocument();
     const liveTasks = Array.from({ length: 254 }, (_, index) =>

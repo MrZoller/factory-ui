@@ -1658,6 +1658,12 @@ function boundedPlanData(result) {
         return [];
       }
       const safe = { ...task, dependenciesPartial: false };
+      // A missing legacy reason is valid; a malformed supplied reason is not.
+      if (
+        task.blockedReason !== undefined &&
+        typeof task.blockedReason !== "string"
+      )
+        plan.inputPartial = true;
       for (const field of [
         "dependencies",
         "localDependencies",
@@ -1728,14 +1734,16 @@ function taskBlockExplanation(
         ? "question-blocked"
         : "blocked",
     reason:
-      typeof task.blockedReason === "string" &&
-      task.blockedReason.length > MAX_BLOCKED_REASON_LENGTH
-        ? "Reason unavailable — exceeds the safe text limit"
-        : typeof task.blockedReason === "string" && task.blockedReason.trim()
-          ? task.blockedReason
-          : task.status === "blocked"
-            ? "Unstructured block — no legacy reason recorded"
-            : undefined,
+      task.blockedReason !== undefined && typeof task.blockedReason !== "string"
+        ? "Reason unavailable — malformed peer data"
+        : typeof task.blockedReason === "string" &&
+            task.blockedReason.length > MAX_BLOCKED_REASON_LENGTH
+          ? "Reason unavailable — exceeds the safe text limit"
+          : typeof task.blockedReason === "string" && task.blockedReason.trim()
+            ? task.blockedReason
+            : task.status === "blocked"
+              ? "Unstructured block — no legacy reason recorded"
+              : undefined,
     dependencies: task.dependenciesPartial
       ? `${dependencies.join(", ")}${dependencies.length ? " — " : ""}Dependencies partially unavailable`
       : Array.isArray(task.dependencies)

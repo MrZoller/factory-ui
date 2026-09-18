@@ -9647,6 +9647,79 @@ describe("fleet dependency graph", () => {
     );
   });
 
+  test("isolates malformed peer blocked reasons without losing their block explanations", async () => {
+    const document = dashboardDocument();
+    const peer = { name: "peer", origin: "https://peer.example" };
+    const malformed = [null, 1, true, {}, []];
+    const remote = graphRepository({
+      name: "remote",
+      plan: {
+        status: "available",
+        data: {
+          tasks: malformed.map((blockedReason, index) =>
+            graphTask(`T3${index}`, "blocked", {
+              title: `Malformed reason ${index}`,
+              blockedReason,
+              dependencies: [],
+              runnable: false,
+            }),
+          ),
+          active: [],
+          review: [],
+          nextRunnable: [],
+          completed: [],
+          blocked: [],
+          remaining: [],
+        },
+        warnings: [],
+      },
+      questions: { status: "available", data: { open: [] }, warnings: [] },
+    });
+    const fetcher = vi.fn((input: RequestInfo | URL): Promise<Response> =>
+      Promise.resolve(
+        String(input) === "/api/fleet"
+          ? jsonResponse(
+              fleet("mini", [peer], [graphRepository({ name: "local" })]),
+            )
+          : jsonResponse(fleet("peer", [], [remote])),
+      ),
+    );
+
+    await expect(
+      loadFleet(document, fetcher, { now: () => NOW }),
+    ).resolves.toBe(true);
+
+    const unavailable = "Reason unavailable — malformed peer data";
+    const peerGraph = Array.from(
+      document.querySelectorAll<HTMLElement>(".dependency-repository"),
+    ).find(
+      (repository) =>
+        repository.querySelector(".dependency-machine")?.textContent === "peer",
+    );
+    expect(
+      Array.from(document.querySelectorAll<HTMLElement>(".task-block-card"))
+        .filter((card) => card.textContent?.includes("Malformed reason"))
+        .map((card) => card.querySelector(".block-reason")?.textContent),
+    ).toEqual(Array(malformed.length).fill(unavailable));
+    expect(
+      Array.from(
+        peerGraph?.querySelectorAll(".block-reason") ?? [],
+        (reason) => reason.textContent,
+      ),
+    ).toEqual(Array(malformed.length).fill(unavailable));
+    expect(document.body.textContent).toContain(
+      "Task data partially unavailable",
+    );
+    expect(peerGraph?.textContent).toContain(
+      "Some malformed task data was isolated",
+    );
+    expect(document.querySelector(".machine-unavailable")).toBeNull();
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://peer.example/api/fleet",
+      expect.any(Object),
+    );
+  });
+
   test("keeps a peer reachable when a legacy task has malformed dependencies", async () => {
     const document = dashboardDocument();
     const peer = { name: "peer", origin: "https://peer.example" };

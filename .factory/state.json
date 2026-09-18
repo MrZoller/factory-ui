@@ -1,11 +1,11 @@
 {
   "project": "factory-ui",
-  "phase": "idle",
+  "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": null,
-  "branch": null,
+  "current_task": "T84",
+  "branch": "factory/t84-malformed-block-reasons",
   "pr": null,
   "hold": false,
-  "updated": "2026-09-12T13:03:46Z"
+  "updated": "2026-09-18T21:30:19Z"
 }

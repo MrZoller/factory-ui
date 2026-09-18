@@ -3,9 +3,9 @@
   "phase": "build",
   "spec_approved": true,
   "plan_approved": true,
-  "current_task": "T84",
-  "branch": "factory/t84-malformed-block-reasons",
-  "pr": 118,
+  "current_task": null,
+  "branch": null,
+  "pr": null,
   "hold": false,
-  "updated": "2026-09-18T21:36:16Z"
+  "updated": "2026-09-18T21:43:00Z"
 }

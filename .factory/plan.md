@@ -435,6 +435,7 @@ task.
   - released 2026-09-05 at Chris's request in the operator session (human-asking drain trigger, 1 item)
   - pr: 113
 
-- [~] T84 (standard) — parked review minors (batch)
+- [R] T84 (standard) — parked review minors (batch)
   - PR #116: Mark malformed peer `blockedReason` values as partial or unavailable rather than presenting them as an authoritative missing legacy reason.
   - released 2026-09-18 at Chris's request in the operator session (human-asking drain trigger, 1 item; the item is also tracked as issue #117, so the PR carries `Fixes #117`)
+  - pr: 118
